@@ -388,6 +388,37 @@ try {
 }
 
 /* ─── MACRO STAGE ────────────────────────────────────────────────── */
+function TV({ src, height, id }) {
+  useEffect(function() {
+    var s = document.createElement("script");
+    s.src = src;
+    s.async = true;
+    var c = document.getElementById(id);
+    if (c) c.appendChild(s);
+  }, []);
+  return <div id={id} style={{ height: height, width: "100%", overflow: "hidden" }} />;
+}
+
+function TVWidget({ config, scriptName, height }) {
+  var id = "tv-" + scriptName + "-" + Math.random().toString(36).slice(2);
+  useEffect(function() {
+    var container = document.getElementById(id);
+    if (!container) return;
+    var s = document.createElement("script");
+    s.type = "text/javascript";
+    s.src = "https://s3.tradingview.com/external-embedding/" + scriptName + ".js";
+    s.async = true;
+    s.innerHTML = JSON.stringify(config);
+    container.appendChild(s);
+  }, []);
+  return (
+    <div className="tradingview-widget-container" style={{ height: height, width: "100%" }}>
+      <div id={id} className="tradingview-widget-container__widget" style={{ height: "100%", width: "100%" }} />
+    </div>
+  );
+}
+
+
 function MacroStage({ d }) {
   const sc = SC[d.macroRegime?.season] || C.gold;
 
