@@ -628,6 +628,20 @@ function MacroStage({ d }) {
             <span style={{ color:d.vix?.level==="HIGH"||d.vix?.level==="EXTREME"?C.orange:d.vix?.level==="LOW"?C.green:C.yellow, fontWeight:700, fontSize:13 }}>{d.vix?.level}</span>
             <span style={{ color:C.textMid, fontSize:11, marginLeft:10 }}>{d.vix?.note}</span>
           </div>
+         <div style={{ marginBottom: 10, marginLeft: -18, marginRight: -18 }}>
+  <TVWidget scriptName="embed-widget-mini-symbol-overview" height={140} config={{
+    "symbol": "CBOE:VIX",
+    "width": "100%",
+    "height": 140,
+    "locale": "en",
+    "dateRange": "1M",
+    "colorTheme": "dark",
+    "trendLineColor": "rgba(255, 71, 87, 1)",
+    "underLineColor": "rgba(255, 71, 87, 0.08)",
+    "isTransparent": true,
+    "autosize": true
+  }} />
+</div>
           <div style={{ fontSize:11, color:C.textDim }}>Fear gauge: &lt;15 low · 15-25 moderate · 25-35 high · &gt;35 extreme</div>
         </Card>
 
