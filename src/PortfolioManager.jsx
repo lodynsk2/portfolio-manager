@@ -273,6 +273,42 @@ export default function App() {
       setTs(new Date().toLocaleString("en-US",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",timeZoneName:"short"}));
       setRefreshStatus("Updated!");
       setTimeout(function(){ setRefreshStatus(""); }, 4000);
+      // Fetch FRED data
+try {
+  setRefreshStatus("Fetching FRED data...");
+  var fredRes = await fetch(FRED_URL);
+  var fredJson = await fredRes.json();
+  setData(function(prev) {
+    var out = { ...prev };
+    if (fredJson.T10Y2Y) {
+      var sp = parseFloat(fredJson.T10Y2Y);
+      out.yield = { spread:(sp>=0?"+":"")+sp.toFixed(2), status:sp<0?"INVERTED":Math.abs(sp)<0.1?"FLAT":"NORMAL", recessionRisk:sp<0?"MEDIUM":"LOW", recessionPct:sp<0?35:15 };
+    }
+    if (fredJson.BAMLH0A0HYM2) {
+      var hy = parseFloat(fredJson.BAMLH0A0HYM2) * 100;
+      out.credit = { ...out.credit, hyDAS:Math.round(hy).toString(), tightNote:hy<350?"Tight — Complacency Risk":hy>500?"Wide — Stress Signal":"Normal Range" };
+    }
+    if (fredJson.FEDFUNDS) {
+      var ff = parseFloat(fredJson.FEDFUNDS);
+      out.rates = { status:ff>5?"TIGHTENING":ff<3?"EASING":"NEUTRAL", current:ff.toFixed(2), expected:(ff-0.25).toFixed(2), impliedCuts:"-1" };
+    }
+    if (fredJson.NFCI) {
+      var nfci = parseFloat(fredJson.NFCI);
+      out.fci = { ...out.fci, nfci:fredJson.NFCI, status:nfci<-0.3?"Loose":nfci>0.3?"Tight":"Neutral" };
+    }
+    if (fredJson.SAHMREALTIME) {
+      out.credit = { ...out.credit, sahmRule:parseFloat(fredJson.SAHMREALTIME).toFixed(2) };
+    }
+    if (fredJson.T10YIE) {
+      var inf = parseFloat(fredJson.T10YIE);
+      out.inflation = { ...out.inflation, truflation:fredJson.T10YIE, trend:inf<2?"Falling":inf>3?"Rising":"Stable" };
+    }
+    return out;
+  });
+  setRefreshStatus("FRED data applied!");
+} catch(fredErr) {
+  console.warn("FRED fetch failed:", fredErr.message);
+}
     } catch(e) {
       setErr("Refresh error: " + e.message);
       setRefreshStatus("");
