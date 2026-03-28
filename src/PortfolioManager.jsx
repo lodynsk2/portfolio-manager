@@ -691,12 +691,18 @@ function MacroStage({ d }) {
           </div>
           <div style={{ background:C.cardAlt, borderRadius:4, padding:"6px 6px 0", marginBottom:8 }}>
             <div style={{ fontSize:9, color:C.textDim, marginBottom:4 }}>CB Balance Sheets (USD $T)</div>
-            <svg width="100%" height="70" viewBox="0 0 240 70" preserveAspectRatio="none" style={{ display:"block" }}>
-              <polygon points="0,35 40,30 80,28 120,26 160,24 200,22 240,20 240,70 0,70" fill={C.blue} opacity="0.5" />
-              <polygon points="0,20 40,18 80,16 120,15 160,14 200,13 240,12 240,35 0,35" fill={C.orange} opacity="0.5" />
-              <polygon points="0,12 40,11 80,10 120,9 160,9 200,8 240,8 240,20 0,20" fill={C.red} opacity="0.45" />
-              <polygon points="0,8 40,7 80,6 120,6 160,5 200,5 240,5 240,12 0,12" fill={C.cyan} opacity="0.4" />
-            </svg>
+          <TVWidget scriptName="embed-widget-mini-symbol-overview" height={80} config={{
+  "symbol": "FRED:WALCL",
+  "width": "100%",
+  "height": 80,
+  "locale": "en",
+  "dateRange": "5Y",
+  "colorTheme": "dark",
+  "trendLineColor": "rgba(83, 82, 237, 1)",
+  "underLineColor": "rgba(83, 82, 237, 0.08)",
+  "isTransparent": true,
+  "autosize": true
+}} />
             <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim, marginTop:2 }}>
               <span>2021</span><span>2022</span><span>2023</span><span>2024</span><span>2026</span>
             </div>
