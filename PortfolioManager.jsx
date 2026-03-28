@@ -932,3 +932,6 @@ function MacroStage({ d }) {
     </div>
   );
 }
+
+
+export default PortfolioManager;
