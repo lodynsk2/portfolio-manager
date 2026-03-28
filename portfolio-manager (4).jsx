@@ -1,0 +1,934 @@
+import { useState, useCallback, useEffect } from "react";
+
+/* ─── CHANGE THIS to your Vercel deployment URL ─────────────────── */
+var PROXY_URL = "https://portfolio-proxy-ja56.vercel.app/api/market";
+/* ──────────────────────────────────────────────────────────────────── */
+
+const C = {
+  bg:"#08090f",panel:"#0d0e1a",card:"#111220",cardAlt:"#13141f",
+  border:"#1c1e30",green:"#00e676",red:"#ff4757",orange:"#ff9f43",
+  yellow:"#ffd32a",blue:"#5352ed",blueLight:"#70a1ff",purple:"#7c83fd",
+  cyan:"#18dcff",text:"#e8eaf0",textMid:"#a0a8c0",textDim:"#5a6080",gold:"#ffa502",
+};
+const font = "'DM Mono','Fira Code',monospace";
+const sans = "'DM Sans','Segoe UI',system-ui,sans-serif";
+const SC = { Summer:C.gold, Spring:C.green, Autumn:C.orange, Winter:C.blueLight };
+
+const SECTOR_PAIRS = [
+  { name:"Cyclical vs Defensive",    e1:"XLY",  e2:"XLP",  sub1:"Consumer Discretionary (XLY)", sub2:"Consumer Staples (XLP)" },
+  { name:"Small Cap vs Large Cap",   e1:"IWM",  e2:"SPY",  sub1:"Small Cap (IWM)",               sub2:"Large Cap (SPY)" },
+  { name:"Growth vs Value",          e1:"VUG",  e2:"VTV",  sub1:"Growth (VUG)",                  sub2:"Value (VTV)" },
+  { name:"Financials vs Utilities",  e1:"XLF",  e2:"XLU",  sub1:"Financials (XLF)",              sub2:"Utilities (XLU)" },
+  { name:"High Beta vs Low Vol",     e1:"SPHB", e2:"SPLV", sub1:"High Beta (SPHB)",              sub2:"Low Volatility (SPLV)" },
+  { name:"US vs Emerging Markets",   e1:"SPY",  e2:"EEM",  sub1:"Large Cap (SPY)",               sub2:"Emerging Markets (EEM)" },
+];
+
+const SEED = {
+  macroRegime:{ season:"Autumn", phase:"Contraction", riskOn:false, confirmed:true, confidence:72, mediumTerm:"Risk Off", shortTerm:"Defensive positioning — extreme fear regime, elevated VIX, below key MAs", description:"Autumn contraction — S&P 500 at 6,408, below both 50-day (6,615) and 200-day (6,768) MAs. VIX at 27.44 (+8.3%), CNN F&G at 18 (Extreme Fear), crypto F&G at 10. Yield curve positive but rates rising. Dollar weak at 99.86." },
+  sp500:{ price:"6,408.38", change:"-2.78", sentiment:"BEARISH", dma50:"6,615.20", dma200:"6,768.50", wkSupport:"6,400.00", wkResistance:"6,573.22", moSupport:"6,350.00", moResistance:"6,591.90" },
+  vix:{ price:"27.44", change:"+2.11", changePct:"+8.33", level:"HIGH", note:"Elevated concern" },
+  dxy:{ price:"99.86", change:"-0.04", strength:"WEAK", note:"Tailwind for risk assets", position:49, sparkline:[] },
+  yield:{ spread:"+0.42", status:"NORMAL", recessionRisk:"LOW", recessionPct:18 },
+  fg:{ score:18, label:"Extreme Fear", vsPrev:-4, cryptoScore:10, cryptoLabel:"EXTREME FEAR" },
+  rates:{ status:"NEUTRAL", current:"4.33", expected:"4.08", impliedCuts:"-1" },
+  inflation:{ cpi:"2.8", trend:"Stable", truflation:"1.80", spread:"-1.00", note:"Lead indicators point to falling inflation over the next 90 days" },
+  liquidity:{ total:"17.4", score:"58", roc13w:"-0.40", roc52w:"-1.8", trend:"Contractionary" },
+  credit:{ moveIndex:"108.0", moveSignal:"Elevated", hyDAS:"340", igHyDiff:"65", tightNote:"Tight — Complacency Risk", sloosNote:"Net Tightening", goldCopper:"850", sahmRule:"0.30", ccDelinquency:"3.1" },
+  breadth:{ pct50:"38.2", pct200:"54.6", ad5d:"Falling", ad20d:"Falling", sentiment:"BEARISH", note:"Narrow participation — majority of stocks below 50-day MA" },
+  fci:{ value:"-2.10", nfci:"-0.38", status:"Loose", fedFunds:"+0.7", t10y:"+1.1", hySpread:"0.8", sp500load:"-2.0", usd:"+0.6" },
+  options:{ dexPCR:"1.42", omegaPCR:"1.18", status:"BEARISH", conviction:"42" },
+  sectorRotation: SECTOR_PAIRS.map(function(p) {
+    var data = {
+      "Cyclical vs Defensive":{w1:"r",w1m:"r",w3m:"r",w6m:"r",bull:false,prob:"72",winner:p.sub2,diffPct:-4.2,note:"Defensive leading, risk-off trend intact"},
+      "Small Cap vs Large Cap":{w1:"r",w1m:"r",w3m:"r",w6m:"n",bull:false,prob:"68",winner:p.sub2,diffPct:-3.1,note:"Large cap outperforming, flight to quality"},
+      "Growth vs Value":{w1:"r",w1m:"r",w3m:"n",w6m:"g",bull:null,prob:"52",winner:null,diffPct:-0.8,note:"Mixed signals, rotation unclear"},
+      "Financials vs Utilities":{w1:"r",w1m:"r",w3m:"r",w6m:"r",bull:false,prob:"74",winner:p.sub2,diffPct:-5.6,note:"Utilities strongly outperforming, defensive bid"},
+      "High Beta vs Low Vol":{w1:"r",w1m:"r",w3m:"r",w6m:"r",bull:false,prob:"78",winner:p.sub2,diffPct:-7.3,note:"Low vol crushing high beta, fear regime"},
+      "US vs Emerging Markets":{w1:"r",w1m:"n",w3m:"g",w6m:"g",bull:null,prob:"55",winner:null,diffPct:1.2,note:"Mixed short-term, EM medium-term trend intact"},
+    };
+    var d = data[p.name] || {w1:"n",w1m:"n",w3m:"n",w6m:"n",bull:null,prob:"50",winner:null,diffPct:0,note:"—"};
+    return { ...p, ...d };
+  }),
+  allocation:{ stocks:{n:"60",a:"50"}, bonds:{n:"10",a:"15"}, cash:{n:"5",a:"10"}, gold:{n:"5",a:"10"}, crypto:{n:"10",a:"7"}, realAssets:{n:"10",a:"8"} },
+  topSectors:[
+    {name:"Utilities",etf:"XLU",r6m:"+11.2",r3m:"+6.8",pos:true},
+    {name:"Healthcare",etf:"XLV",r6m:"+8.4",r3m:"+3.2",pos:true},
+    {name:"Consumer Staples",etf:"XLP",r6m:"+6.1",r3m:"+4.5",pos:true},
+    {name:"Energy",etf:"XLE",r6m:"+4.8",r3m:"-2.1",pos:false},
+    {name:"Real Estate",etf:"XLRE",r6m:"+3.6",r3m:"+1.4",pos:true},
+  ],
+  sectorAlloc:{
+    season:"AUTUMN", bias:"DEFENSIVE", confidence:"72",
+    overweight:[{name:"Utilities",conviction:"HIGH",target:"8.0"},{name:"Healthcare",conviction:"HIGH",target:"14.0"},{name:"Consumer Defensive",conviction:"MEDIUM",target:"10.0"}],
+    neutral:[{name:"Energy",conviction:"LOW",target:"5.0"},{name:"Industrials",conviction:"LOW",target:"7.0"}],
+    underweight:[{name:"Technology",conviction:"HIGH",target:"6.0"},{name:"Consumer Cyclical",conviction:"MEDIUM",target:"5.0"},{name:"Financial Services",conviction:"MEDIUM",target:"8.0"}],
+  },
+  aiAnalysis:"The macro environment has shifted decisively risk-off. The S&P 500 at 6,408 sits well below both its 50-day (6,615) and 200-day (6,768) moving averages — a bearish alignment not seen since early 2024. The VIX spike to 27.44 (+8.3%) confirms elevated hedging demand, while the CNN Fear & Greed Index at 18 (Extreme Fear) signals broad capitulation sentiment. Fed funds at 4.33% remain restrictive, though market pricing implies one cut by year-end.\n\nSentiment indicators are uniformly bearish. The crypto Fear & Greed Index plunged to 10 — its lowest since the FTX collapse — while Bitcoin tests $70K support. Market breadth is deteriorating with only 38% of S&P 500 stocks above their 50-day MA. The CBOE put/call ratio at 1.42 reflects heavy hedging activity. Despite this, credit spreads remain relatively tight at 340bp HY OAS, suggesting the stress is concentrated in equities rather than credit markets.\n\nSector rotation strongly favors defensives. Utilities (+11.2% 6M), Healthcare (+8.4%), and Consumer Staples (+6.1%) are leading while Technology and Consumer Discretionary lag. The DXY at 99.86 remains weak, providing some support for EM equities and commodities. Tactical positioning: overweight defensives, gold, and cash; underweight high-beta, growth, and crypto until VIX retreats below 20 and breadth recovers above 50%.",
+};
+
+function parseFGLabel(score) {
+  if (score == null) return "—";
+  if (score <= 25) return "Extreme Fear";
+  if (score <= 44) return "Fear";
+  if (score <= 55) return "Neutral";
+  if (score <= 75) return "Greed";
+  return "Extreme Greed";
+}
+
+
+function applyLiveData(d, prev) {
+  var out = { ...prev };
+  // S&P 500
+  if (d.sp500) {
+    var chg = d.sp500Chg||"—";
+    out.sp500 = { ...out.sp500, price:d.sp500, change:chg, sentiment:String(chg).startsWith("-")?"BEARISH":"BULLISH" };
+    if (d.dma50) out.sp500.dma50 = d.dma50;
+    if (d.dma200) out.sp500.dma200 = d.dma200;
+  }
+  // VIX
+  var vv = parseFloat(d.vix);
+  if (vv) out.vix = { price:d.vix, change:d.vixChg||"—", changePct:d.vixChg||"—", level:vv>35?"EXTREME":vv>25?"HIGH":vv>15?"MODERATE":"LOW", note:vv>35?"Extreme stress":vv>25?"Elevated concern":vv>15?"Moderate concern":"Low vol regime" };
+  // DXY
+  var dv = parseFloat(d.dxy);
+  if (dv) out.dxy = { price:d.dxy, change:d.dxyChg||"—", strength:dv<98?"WEAK":dv>103?"STRONG":"NEUTRAL", note:dv<98?"Tailwind for risk assets":dv>103?"Headwind for risk assets":"Neutral for markets", position:Math.round(Math.max(5,Math.min(95,((dv-90)/20)*100))), sparkline:[] };
+  // Yields
+  var t10=parseFloat(d.t10y), t2=parseFloat(d.t2y);
+  if (t10&&t2) { var sp=(t10-t2).toFixed(2); var inv=parseFloat(sp)<0; out.yield={spread:(parseFloat(sp)>=0?"+":"")+sp,status:inv?"INVERTED":Math.abs(parseFloat(sp))<0.1?"FLAT":"NORMAL",recessionRisk:inv?"MEDIUM":"LOW",recessionPct:inv?35:15}; }
+  // Rates
+  var fr=parseFloat(d.fed); if(fr) out.rates={status:fr>5?"TIGHTENING":fr<3?"EASING":"NEUTRAL",current:String(d.fed),expected:(fr-0.25).toFixed(2),impliedCuts:"-1"};
+  // Inflation
+  if(d.cpi) { var trufV=parseFloat(d.truf)||0; var cpiV=parseFloat(d.cpi)||0; var spr=trufV&&cpiV?(trufV-cpiV).toFixed(2):"—"; out.inflation={cpi:d.cpi,trend:cpiV<2.5?"Falling":cpiV>3.5?"Rising":"Stable",truflation:d.truf||out.inflation.truflation,spread:spr,note:trufV<cpiV?"Lead indicators point to falling inflation":"Inflation indicators stable"}; }
+  // Fear & Greed
+  if(d.fg!=null) out.fg={score:d.fg,label:d.fgLabel||parseFGLabel(d.fg),vsPrev:null,cryptoScore:d.cryptoFG!=null?d.cryptoFG:out.fg.cryptoScore,cryptoLabel:d.cryptoLabel||parseFGLabel(d.cryptoFG)};
+  // Credit
+  if(d.move) out.credit={...out.credit,moveIndex:d.move,hyDAS:d.hyOAS||out.credit.hyDAS,tightNote:parseInt(d.hyOAS)<350?"Tight — Complacency Risk":parseInt(d.hyOAS)>500?"Wide — Stress":"Normal"};
+  // Breadth
+  var b50=parseFloat(d.b50); if(b50) out.breadth={pct50:String(d.b50),pct200:String(d.b200||out.breadth.pct200),ad5d:"Flat",ad20d:b50<45?"Falling":"Rising",sentiment:b50<45?"BEARISH":"BULLISH",note:b50<45?"Narrow participation — majority of stocks below 50-day MA":"Broad participation — healthy market internals"};
+  // Options
+  var pcrV=parseFloat(d.pcr); if(pcrV) out.options={dexPCR:d.pcr,omegaPCR:(pcrV*0.85).toFixed(3),status:pcrV>1.3?"BEARISH":pcrV<0.7?"BULLISH":"NEUTRAL",conviction:Math.round(Math.abs((pcrV-1.0))*100).toString()};
+  // NFCI
+  if(d.nfci) out.fci={...out.fci,nfci:d.nfci,status:parseFloat(d.nfci)<-0.3?"Loose":parseFloat(d.nfci)>0.3?"Tight":"Neutral"};
+  return out;
+}
+
+/* ─── UI HELPERS ─────────────────────────────────────────────────── */
+const Badge = ({ label, color }) => (
+  <span style={{ background:color+"22", color, border:"1px solid " + color + "44", borderRadius:4, padding:"2px 8px", fontSize:11, fontFamily:font, fontWeight:700, letterSpacing:1 }}>{label}</span>
+);
+const Card = ({ children, style, glow }) => (
+  <div style={{ background:C.card, border:"1px solid " + C.border, borderRadius:10, padding:"16px 18px", position:"relative", boxShadow:glow?"0 0 22px " + glow + "18":"none", ...style }}>
+    <div style={{ position:"absolute", top:0, right:0, width:5, height:5, borderRadius:"0 0 0 5px", background:C.green, opacity:0.5 }} />
+    {children}
+  </div>
+);
+const SecTitle = ({ icon, title, badge, bc }) => (
+  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
+    <span style={{ fontSize:13 }}>{icon}</span>
+    <span style={{ fontFamily:sans, fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase" }}>{title}</span>
+    {badge && <Badge label={badge} color={bc||C.green} />}
+  </div>
+);
+const Row = ({ label, val, color }) => (
+  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
+    <span style={{ fontSize:12, color:C.textMid }}>{label}</span>
+    <span style={{ fontSize:12, fontFamily:font, color:color||C.text }}>{val||"—"}</span>
+  </div>
+);
+const Bar = ({ pct, color, height=4 }) => (
+  <div style={{ height, background:C.border, borderRadius:2 }}>
+    <div style={{ width:Math.min(100,Math.max(0,+pct||0)) + "%", height:"100%", background:color, borderRadius:2 }} />
+  </div>
+);
+const Dot = ({ c }) => <span style={{ display:"inline-block", width:8, height:8, borderRadius:"50%", background:c, marginRight:4 }} />;
+const Skel = ({ w="100%", h=14, mb=0 }) => (
+  <div style={{ width:w, height:h, marginBottom:mb, background:C.border, borderRadius:4, opacity:0.5, animation:"pulse 1.5s ease-in-out infinite" }} />
+);
+const Spinner = ({ size=12 }) => (
+  <span style={{ display:"inline-block", width:size, height:size, border:"2px solid " + C.cyan + "33", borderTop:"2px solid " + C.cyan, borderRadius:"50%", animation:"spin 0.8s linear infinite", flexShrink:0 }} />
+);
+
+function Sparkline({ data, color, height=40, width="100%" }) {
+  if (!data || data.length < 2) return <div style={{ height, background:C.border, borderRadius:4, opacity:0.3 }} />;
+  const min = Math.min(...data), max = Math.max(...data);
+  const range = max - min || 1;
+  const pts = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * 260;
+    const y = height - ((v - min) / range) * (height - 4) - 2;
+    return x + "," + y;
+  }).join(" ");
+  return (
+    <svg width={width} height={height} viewBox={"0 0 260 " + height} preserveAspectRatio="none" style={{ display:"block" }}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function SemiGauge({ label, pcr, sub }) {
+  const val = parseFloat(pcr) || 1.0;
+  const angle = Math.max(-80, Math.min(80, (val - 1.0) * 120));
+  const rad = (angle - 90) * Math.PI / 180;
+  const r = 34, cx = 50, cy = 52;
+  const nx = cx + r * Math.cos(rad);
+  const ny = cy + r * Math.sin(rad);
+  const color = val < 0.8 ? C.green : val > 1.2 ? C.red : C.orange;
+  const dispVal = val >= 1.0 ? "+" + (val-1.0).toFixed(2) : "-" + (1.0-val).toFixed(2);
+  return (
+    <div style={{ textAlign:"center", flex:1 }}>
+      <div style={{ fontSize:10, color:C.textDim, marginBottom:6, letterSpacing:1 }}>{label}</div>
+      <svg width="100" height="64" viewBox="0 0 100 64" style={{ display:"block", margin:"0 auto" }}>
+        <path d="M 16 52 A 34 34 0 0 1 84 52" fill="none" stroke={C.border} strokeWidth="7" strokeLinecap="round" />
+        <path d="M 16 52 A 34 34 0 0 1 33 24" fill="none" stroke={C.red} strokeWidth="7" strokeLinecap="round" opacity="0.7" />
+        <path d="M 33 24 A 34 34 0 0 1 67 24" fill="none" stroke={C.orange} strokeWidth="7" strokeLinecap="round" opacity="0.7" />
+        <path d="M 67 24 A 34 34 0 0 1 84 52" fill="none" stroke={C.green} strokeWidth="7" strokeLinecap="round" opacity="0.7" />
+        <line x1={cx} y1={cy} x2={nx} y2={ny} stroke={color} strokeWidth="2.5" strokeLinecap="round" />
+        <circle cx={cx} cy={cy} r="3.5" fill={color} />
+      </svg>
+      <div style={{ fontSize:15, fontWeight:700, color, fontFamily:font, marginTop:-4 }}>{dispVal}</div>
+      <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>{sub}</div>
+      <div style={{ fontSize:11, color:C.textMid, marginTop:3 }}>{label} PCR: {pcr}</div>
+    </div>
+  );
+}
+
+/* ─── MAIN APP ───────────────────────────────────────────────────── */
+export default function App() {
+  const [data, setData] = useState(SEED);
+  const [stage, setStage] = useState(1);
+  const [p1, setP1] = useState(false);
+  const [ts, setTs] = useState("Mar 27, 2026");
+  const [err, setErr] = useState(null);
+
+  const [refreshStatus, setRefreshStatus] = useState("");
+
+  const doRefresh = useCallback(async () => {
+    setErr(null); setP1(true); setRefreshStatus("Fetching live data...");
+    try {
+      var parsed = null;
+
+      // Attempt 1: Vercel proxy (works outside sandbox)
+      try {
+        setRefreshStatus("Trying Vercel proxy...");
+        var proxyRes = await fetch(PROXY_URL);
+        var proxyJson = await proxyRes.json();
+        var quotes = (proxyJson.quoteResponse && proxyJson.quoteResponse.result) || [];
+        if (quotes.length > 0) {
+          parsed = {};
+          var bySymbol = {};
+          quotes.forEach(function(q) { bySymbol[q.symbol] = q; });
+          var sp = bySymbol["^GSPC"];
+          if (sp) { parsed.sp500 = sp.regularMarketPrice.toFixed(2); parsed.sp500Chg = (sp.regularMarketChangePercent >= 0 ? "+" : "") + sp.regularMarketChangePercent.toFixed(2); }
+          var vx = bySymbol["^VIX"];
+          if (vx) { parsed.vix = vx.regularMarketPrice.toFixed(2); parsed.vixChg = (vx.regularMarketChangePercent >= 0 ? "+" : "") + vx.regularMarketChangePercent.toFixed(2); }
+          var dx = bySymbol["DX-Y.NYB"];
+          if (dx) { parsed.dxy = dx.regularMarketPrice.toFixed(2); parsed.dxyChg = (dx.regularMarketChangePercent >= 0 ? "+" : "") + dx.regularMarketChangePercent.toFixed(2); }
+          var tn = bySymbol["^TNX"];
+          if (tn) { parsed.t10y = tn.regularMarketPrice.toFixed(3); }
+          setRefreshStatus("Got " + quotes.length + " quotes from proxy!");
+        }
+      } catch(proxyErr) {
+        setRefreshStatus("Proxy blocked, trying Claude API...");
+      }
+
+      // Attempt 2: Claude API with web_search (works in sandbox)
+      if (!parsed) {
+        var d = new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
+        var response = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 1000,
+            tools: [{ type: "web_search_20250305", name: "web_search" }],
+            messages: [{ role: "user", content: "Today is " + d + ". Search for current S&P 500 price, VIX, DXY, 10Y yield. Return ONLY JSON, no other text: {\"sp500\":\"6xxx.xx\",\"sp500Chg\":\"-x.xx\",\"vix\":\"xx.xx\",\"vixChg\":\"+x.xx\",\"dxy\":\"xxx.xx\",\"t10y\":\"x.xx\"}" }]
+          })
+        });
+        setRefreshStatus("API responded HTTP " + response.status + "...");
+        if (response.status === 429) {
+          setErr("Rate limited — try again in a few minutes");
+          setP1(false); setRefreshStatus(""); return;
+        }
+        var apiJson = await response.json();
+        var text = (apiJson.content || []).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("\n");
+        setRefreshStatus("Got " + text.length + " chars, extracting JSON...");
+        var clean = text.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
+        try { parsed = JSON.parse(clean); } catch(e1) {}
+        if (!parsed) {
+          var last = null, depth = 0, start = -1;
+          for (var i = 0; i < clean.length; i++) {
+            if (clean[i]==="{"){if(depth===0)start=i;depth++}
+            else if (clean[i]==="}"){depth--;if(depth===0&&start>=0){try{last=JSON.parse(clean.slice(start,i+1))}catch(e2){}start=-1}}
+          }
+          parsed = last;
+        }
+        if (!parsed) {
+          setErr("Got response but no JSON. First 200 chars: " + text.slice(0,200));
+          setP1(false); setRefreshStatus(""); return;
+        }
+      }
+
+      // Apply data
+      setRefreshStatus("Applying " + Object.keys(parsed).length + " data points...");
+      setData(function(prev) { return applyLiveData(parsed, prev); });
+      setTs(new Date().toLocaleString("en-US",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",timeZoneName:"short"}));
+      setRefreshStatus("Updated!");
+      setTimeout(function(){ setRefreshStatus(""); }, 4000);
+    } catch(e) {
+      setErr("Refresh error: " + e.message);
+      setRefreshStatus("");
+    }
+    setP1(false);
+  }, []);
+
+  useEffect(function() {
+    doRefresh();
+  }, []);
+
+  const stages = [{n:1,label:"Macro Analysis"},{n:2,label:"Portfolio Analy..."},{n:3,label:"Asset Screener"},{n:4,label:"Portfolio Builder"},{n:5,label:"Execution"}];
+  const d = data;
+
+  return (
+    <div style={{ display:"flex", height:"100vh", background:C.bg, fontFamily:sans, color:C.text, overflow:"hidden" }}>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}`}</style>
+
+      {/* SIDEBAR */}
+      <div style={{ width:188, background:C.panel, borderRight:"1px solid " + C.border, display:"flex", flexDirection:"column", padding:"13px 0", flexShrink:0 }}>
+        <div style={{ padding:"0 13px 12px", borderBottom:"1px solid " + C.border }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <div style={{ width:24, height:24, borderRadius:6, background:"linear-gradient(135deg," + C.purple + "," + C.blue + ")", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12 }}>📈</div>
+            <span style={{ fontWeight:700, fontSize:10, letterSpacing:1.5, textTransform:"uppercase" }}>Portfolio Manager</span>
+          </div>
+        </div>
+        <div style={{ padding:"10px 8px 5px" }}>
+          <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:5 }}>Pipeline</div>
+          <div style={{ height:3, background:C.border, borderRadius:2, marginBottom:8 }}>
+            <div style={{ width:(stage/5)*100 + "%", height:"100%", background:"linear-gradient(90deg," + C.blue + "," + C.purple + ")", borderRadius:2, transition:"width .3s" }} />
+          </div>
+          <div style={{ fontSize:10, color:C.textDim, marginBottom:10 }}>5/5 stages</div>
+          {stages.map(st => (
+            <div key={st.n} onClick={()=>setStage(st.n)} style={{ display:"flex", alignItems:"center", gap:7, padding:"6px 7px", borderRadius:6, marginBottom:3, background:stage===st.n?C.blue+"20":"transparent", border:stage===st.n?"1px solid " + C.blue + "44":"1px solid transparent", cursor:"pointer" }}>
+              <div style={{ width:16, height:16, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", background:stage===st.n?C.blue:C.border, fontSize:9, fontWeight:700, flexShrink:0 }}>{st.n}</div>
+              <span style={{ fontSize:11, color:stage===st.n?C.text:C.textMid, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{st.label}</span>
+              <span style={{ fontSize:9, color:C.green }}>✓</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ flex:1 }} />
+        <div style={{ padding:"5px 13px", fontSize:9, color:C.textDim, display:"flex", gap:8 }}>
+          <span style={{ color:C.green }}>● Done</span><span style={{ color:C.orange }}>◌ Running</span><span>○ Pending</span>
+        </div>
+      </div>
+
+      {/* MAIN */}
+      <div style={{ flex:1, overflow:"auto", padding:"13px 16px" }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+          <div style={{ display:"flex", gap:18 }}>
+            {["Analysis","Portfolio","Themes","Active Trader","Intelligence"].map(t => (
+              <span key={t} style={{ fontSize:13, color:t==="Analysis"?C.text:C.textMid, fontWeight:t==="Analysis"?600:400, cursor:"pointer", borderBottom:t==="Analysis"?"2px solid " + C.blue:"none", paddingBottom:3 }}>{t}</span>
+            ))}
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            {refreshStatus && <span style={{ fontSize:10, color:C.cyan, fontFamily:font, maxWidth:300, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{refreshStatus}</span>}
+            {!refreshStatus && <span style={{ fontSize:10, color:C.green, fontFamily:font }}>● {ts}</span>}
+            <button onClick={doRefresh} disabled={p1} style={{ background:p1?C.border:"linear-gradient(135deg," + C.cyan + "dd," + C.blue + ")", border:"none", borderRadius:6, color:p1?C.textMid:C.bg, padding:"6px 13px", fontSize:11, fontWeight:700, cursor:p1?"wait":"pointer", whiteSpace:"nowrap" }}>
+              {p1?"Refreshing...":"⚡ Refresh"}
+            </button>
+            <button style={{ background:"linear-gradient(135deg," + C.blue + "," + C.purple + ")", border:"none", borderRadius:6, color:C.text, padding:"6px 13px", fontSize:11, fontWeight:600, cursor:"pointer" }}>▶ Run Pipeline</button>
+          </div>
+        </div>
+
+        {err && <div style={{ background:"#2b0d10", border:"1px solid " + C.red + "44", borderRadius:8, padding:"7px 13px", marginBottom:11, fontSize:12, color:C.red }}>⚠ {err}</div>}
+
+        {stage===1 && <MacroStage d={d} />}
+        {stage!==1 && (
+          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:400 }}>
+            <div style={{ fontSize:28, opacity:0.2, marginBottom:8 }}>🚧</div>
+            <div style={{ color:C.textDim, fontSize:14 }}>Stage {stage} — coming soon</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── MACRO STAGE ────────────────────────────────────────────────── */
+function MacroStage({ d }) {
+  const sc = SC[d.macroRegime?.season] || C.gold;
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+
+      {/* ROW 1: Regime + S&P */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 295px", gap:12 }}>
+        <Card glow={sc}>
+          <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:10 }}>Macro Regime</div>
+          <div style={{ display:"flex", gap:13 }}>
+            <div style={{ width:44, height:44, borderRadius:10, background:sc+"20", border:"1px solid " + sc + "40", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>
+              {d.macroRegime?.season==="Summer"?"☀️":d.macroRegime?.season==="Spring"?"🌱":d.macroRegime?.season==="Autumn"?"🍂":"❄️"}
+            </div>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:21, fontWeight:700, color:sc, marginBottom:7 }}>{d.macroRegime?.season} ({d.macroRegime?.phase})</div>
+              <div style={{ display:"flex", gap:7, alignItems:"center", marginBottom:7, flexWrap:"wrap" }}>
+                <Badge label={d.macroRegime?.riskOn?"RISK ON":"RISK OFF"} color={d.macroRegime?.riskOn?C.green:C.red} />
+                <span style={{ fontSize:11, color:C.textMid }}>{d.macroRegime?.confirmed?"Confirmed":"Unconfirmed"}</span>
+                <span style={{ fontSize:11, color:C.textMid }}>│</span>
+                <span style={{ fontSize:11, color:C.textMid }}>{d.macroRegime?.confidence}% confidence</span>
+              </div>
+              <div style={{ height:3, background:C.border, borderRadius:2, marginBottom:8 }}>
+                <div style={{ width:(d.macroRegime?.confidence||63) + "%", height:"100%", background:sc, borderRadius:2 }} />
+              </div>
+              <div style={{ marginBottom:3 }}><span style={{ fontSize:12, color:C.textDim }}>Medium term: </span><span style={{ fontSize:12, color:C.green }}>{d.macroRegime?.mediumTerm}</span></div>
+              <div style={{ marginBottom:8 }}><span style={{ fontSize:12, color:C.textDim }}>Short term: </span><span style={{ fontSize:12, color:C.orange }}>{d.macroRegime?.shortTerm}</span></div>
+              <p style={{ fontSize:11, color:C.textMid, lineHeight:1.6, margin:0 }}>{d.macroRegime?.description}</p>
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <SecTitle icon="📈" title="S&P 500" />
+          {false ? (
+            <div><Skel w="70%" h={30} mb={7} /><Skel w="40%" h={13} mb={10} /><Skel w="50%" h={20} mb={8} /></div>
+          ) : (
+            <div>
+              <div style={{ fontSize:29, fontWeight:700, fontFamily:font, marginBottom:3 }}>{d.sp500?.price}</div>
+              <div style={{ fontSize:13, color:String(d.sp500?.change||"").startsWith("-")?C.red:C.green, marginBottom:10, fontFamily:font }}>{d.sp500?.change}%</div>
+              <div style={{ marginBottom:8 }}><Badge label={d.sp500?.sentiment} color={d.sp500?.sentiment==="BEARISH"?C.red:d.sp500?.sentiment==="BULLISH"?C.green:C.textMid} /></div>
+            </div>
+          )}
+          <Row label="50 DMA" val={false?"...":d.sp500?.dma50} color={C.red} />
+          <Row label="200 DMA" val={false?"...":d.sp500?.dma200} color={C.red} />
+          <div style={{ borderTop:"1px solid " + C.border, marginTop:8, paddingTop:8 }}>
+            <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:5 }}>SUPPORT / RESISTANCE</div>
+            <div style={{ display:"grid", gridTemplateColumns:"auto 1fr 1fr", gap:"3px 7px", fontSize:11 }}>
+              <span /><span style={{ color:C.textDim, textAlign:"right" }}>Support</span><span style={{ color:C.textDim, textAlign:"right" }}>Resistance</span>
+              <span style={{ color:C.textMid }}>Weekly</span>
+              <span style={{ textAlign:"right", fontFamily:font, color:C.blueLight }}>{false?"...":d.sp500?.wkSupport}</span>
+              <span style={{ textAlign:"right", fontFamily:font, color:C.orange }}>{false?"...":d.sp500?.wkResistance}</span>
+              <span style={{ color:C.textMid }}>Monthly</span>
+              <span style={{ textAlign:"right", fontFamily:font, color:C.blueLight }}>{false?"...":d.sp500?.moSupport}</span>
+              <span style={{ textAlign:"right", fontFamily:font, color:C.orange }}>{false?"...":d.sp500?.moResistance}</span>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* ROW 2: Rates + DXY + Yield */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
+        <Card>
+          <SecTitle icon="↘" title="Forward Rates" />
+          {false ? <Skel w="80px" h={20} mb={12} /> : <div style={{ fontSize:20, fontWeight:700, color:d.rates?.status==="EASING"?C.green:d.rates?.status==="TIGHTENING"?C.red:C.orange, marginBottom:12 }}>{d.rates?.status}</div>}
+          <Row label="Current Rate" val={false?"...":d.rates?.current + "%"} />
+          <div style={{ display:"flex", justifyContent:"center", margin:"8px 0" }}>
+            <div style={{ width:36, height:36, borderRadius:"50%", background:(d.rates?.status==="EASING"?C.green:C.red)+"20", border:"1px solid " + (d.rates?.status==="EASING"?C.green:C.red) + "44", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>{d.rates?.status==="EASING"?"↘":"↗"}</div>
+          </div>
+          <Row label="Expected Rate" val={false?"...":d.rates?.expected + "%"} />
+          <Row label="Implied Cuts" val={false?"...":d.rates?.impliedCuts} color={C.red} />
+        </Card>
+
+        <Card>
+          <SecTitle icon="$" title="US Dollar (DXY)" />
+          {false ? (
+            <div><Skel w="65%" h={25} mb={5} /><Skel w="40%" h={11} mb={10} /></div>
+          ) : (
+            <div>
+              <div style={{ fontSize:25, fontWeight:700, fontFamily:font, marginBottom:3 }}>{d.dxy?.price}</div>
+              <div style={{ fontSize:11, color:C.textMid, marginBottom:8, fontFamily:font }}>— {d.dxy?.change}%</div>
+            </div>
+          )}
+          <div style={{ marginBottom:10, height:40, background:C.cardAlt, borderRadius:4, overflow:"hidden" }}>
+            <div style={{ height:40, display:"flex", alignItems:"center", justifyContent:"center" }}>
+              <svg width="100%" height="30" viewBox="0 0 260 30" preserveAspectRatio="none">
+                <polyline points="0,20 26,18 52,22 78,15 104,17 130,14 156,16 182,12 208,14 234,11 260,13" fill="none" stroke={C.blueLight} strokeWidth="1.5" />
+              </svg>
+            </div>
+          </div>
+          <div style={{ marginBottom:10 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:C.textDim, marginBottom:3 }}><span>Weak</span><span>Neutral</span><span>Strong</span></div>
+            <div style={{ position:"relative", height:5, background:"linear-gradient(90deg," + C.red + "," + C.textDim + "," + C.green + ")", borderRadius:3 }}>
+              <div style={{ position:"absolute", width:10, height:10, borderRadius:"50%", background:C.blue, border:"2px solid " + C.text, top:-3, left:(d.dxy?.position||48) + "%", transform:"translateX(-50%)" }} />
+            </div>
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:C.textDim, marginTop:2 }}><span>90</span><span>100</span><span>110</span></div>
+          </div>
+          <div style={{ display:"flex", gap:7, alignItems:"center" }}>
+            <Badge label={d.dxy?.strength||"NEUTRAL"} color={d.dxy?.strength==="WEAK"?C.red:d.dxy?.strength==="STRONG"?C.green:C.yellow} />
+            <span style={{ fontSize:11, color:C.textMid }}>{false?"...":d.dxy?.note}</span>
+          </div>
+        </Card>
+
+        <Card>
+          <SecTitle icon="〜" title="Yield Curve" />
+          <div style={{ marginBottom:8 }}><Badge label={d.yield?.status||"NORMAL"} color={d.yield?.status==="INVERTED"?C.red:C.green} /></div>
+          <div style={{ fontSize:11, color:C.textDim, marginBottom:3 }}>10Y - 2Y Spread</div>
+          {false ? <Skel w="60%" h={25} mb={10} /> : (
+            <div style={{ fontSize:24, fontWeight:700, color:d.yield?.status==="INVERTED"?C.red:C.green, fontFamily:font, marginBottom:3 }}>
+              {d.yield?.spread}% <span style={{ fontSize:11, color:C.textMid }}>({d.yield?.status})</span>
+            </div>
+          )}
+          <div style={{ borderTop:"1px solid " + C.border, marginTop:12, paddingTop:10 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
+              <span style={{ fontSize:12, color:C.textMid }}>Recession Risk</span>
+              <Badge label={d.yield?.recessionRisk||"LOW"} color={d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red} />
+            </div>
+            <Bar pct={d.yield?.recessionPct||15} color={d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red} height={5} />
+            <div style={{ display:"flex", justifyContent:"space-between", marginTop:4 }}>
+              <span style={{ fontSize:11, color:C.textDim }}>Probability</span>
+              <span style={{ fontSize:13, fontFamily:font }}>{d.yield?.recessionPct||15}%</span>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* ROW 3: F&G + VIX + Inflation */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
+        <Card>
+          <SecTitle icon="🎯" title="Fear & Greed Index" />
+          <div style={{ textAlign:"center", marginBottom:4 }}>
+            {false ? <div><Skel w="80px" h={46} mb={7} /><Skel w="120px" h={15} mb={0} /></div> : (
+              <div>
+                <div style={{ fontSize:46, fontWeight:700, fontFamily:font, color:d.fg?.score==null?C.textDim:d.fg?.score<25?C.red:d.fg?.score<45?C.orange:d.fg?.score<55?C.textMid:d.fg?.score<75?C.green:C.cyan }}>
+                  {d.fg?.score != null ? d.fg.score : "—"}
+                </div>
+                <div style={{ fontSize:14, fontWeight:700, color:d.fg?.score==null?C.textDim:d.fg?.score<25?C.red:d.fg?.score<45?C.orange:C.green }}>
+                  {d.fg?.label || "—"}
+                </div>
+              </div>
+            )}
+          </div>
+          <div style={{ height:6, background:"linear-gradient(90deg," + C.red + "," + C.orange + ",#888," + C.green + "," + C.cyan + ")", borderRadius:3, marginBottom:3, position:"relative" }}>
+            <div style={{ position:"absolute", width:7, height:11, background:C.text, top:-3, left:(d.fg?.score != null ? d.fg.score : 50) + "%", transform:"translateX(-50%)", borderRadius:2 }} />
+          </div>
+          <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:C.textDim, marginBottom:10 }}><span>Extreme Fear</span><span>Neutral</span><span>Extreme Greed</span></div>
+          <Row label="vs Previous" val={d.fg?.vsPrev != null ? (d.fg.vsPrev >= 0 ? "+" : "") + d.fg.vsPrev : "—"} />
+          <div style={{ borderTop:"1px solid " + C.border, paddingTop:7, marginTop:3 }}>
+            <div style={{ fontSize:11, color:C.textDim, marginBottom:5 }}>₿ Crypto Fear & Greed</div>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:20, fontWeight:700, fontFamily:font, color:d.fg?.cryptoScore==null?C.textDim:d.fg?.cryptoScore<25?C.red:d.fg?.cryptoScore<45?C.orange:C.green }}>
+                {d.fg?.cryptoScore != null ? d.fg.cryptoScore : "—"}
+              </span>
+              <Badge label={d.fg?.cryptoLabel||"—"} color={d.fg?.cryptoScore==null?C.textDim:d.fg?.cryptoScore<25?C.red:d.fg?.cryptoScore<45?C.orange:C.green} />
+            </div>
+            <div style={{ height:5, background:"linear-gradient(90deg," + C.red + "," + C.orange + ",#888," + C.green + "," + C.cyan + ")", borderRadius:3, marginTop:7, position:"relative" }}>
+              <div style={{ position:"absolute", width:7, height:9, background:C.text, top:-2, left:(d.fg?.cryptoScore != null ? d.fg.cryptoScore : 50) + "%", transform:"translateX(-50%)", borderRadius:2 }} />
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <SecTitle icon="📉" title="VIX (Volatility)" />
+          {false ? (
+            <div><Skel w="58%" h={32} mb={5} /><Skel w="38%" h={13} mb={12} /></div>
+          ) : (
+            <div>
+              <div style={{ fontSize:32, fontWeight:700, fontFamily:font, marginBottom:3 }}>{d.vix?.price}</div>
+              <div style={{ fontSize:12, color:String(d.vix?.change||"").startsWith("-")?C.green:C.red, fontFamily:font, marginBottom:12 }}>{d.vix?.change} ({d.vix?.changePct}%)</div>
+            </div>
+          )}
+          <div style={{ background:(d.vix?.level==="HIGH"||d.vix?.level==="EXTREME"?C.orange:d.vix?.level==="LOW"?C.green:C.yellow)+"18", border:"1px solid " + (d.vix?.level==="HIGH"||d.vix?.level==="EXTREME"?C.orange:d.vix?.level==="LOW"?C.green:C.yellow) + "38", borderRadius:6, padding:"8px 11px", marginBottom:10 }}>
+            <span style={{ color:d.vix?.level==="HIGH"||d.vix?.level==="EXTREME"?C.orange:d.vix?.level==="LOW"?C.green:C.yellow, fontWeight:700, fontSize:13 }}>{d.vix?.level}</span>
+            <span style={{ color:C.textMid, fontSize:11, marginLeft:10 }}>{d.vix?.note}</span>
+          </div>
+          <div style={{ fontSize:11, color:C.textDim }}>Fear gauge: &lt;15 low · 15-25 moderate · 25-35 high · &gt;35 extreme</div>
+        </Card>
+
+        <Card>
+          <SecTitle icon="🌡" title="Inflation" badge={d.inflation?.trend} bc={d.inflation?.trend==="Falling"?C.green:d.inflation?.trend==="Rising"?C.red:C.yellow} />
+          {false ? <Skel w="55%" h={29} mb={4} /> : <div style={{ fontSize:29, fontWeight:700, fontFamily:font, marginBottom:2 }}>{d.inflation?.cpi}%</div>}
+          <div style={{ fontSize:11, color:C.textDim, marginBottom:10 }}>CPI YoY (official rate)</div>
+          <div style={{ display:"flex", justifyContent:"space-between", marginBottom:5 }}>
+            <span style={{ fontSize:12, color:C.textMid }}>Truflation (real-time)</span>
+            <span style={{ fontSize:12, fontFamily:font }}>{d.inflation?.truflation}%</span>
+          </div>
+          <div style={{ background:(parseFloat(d.inflation?.spread)<0?C.green:C.red)+"18", border:"1px solid " + (parseFloat(d.inflation?.spread)<0?C.green:C.red) + "28", borderRadius:4, padding:"4px 8px", marginBottom:9, textAlign:"center" }}>
+            <span style={{ fontSize:11, color:parseFloat(d.inflation?.spread)<0?C.green:C.red }}>Spread: {parseFloat(d.inflation?.spread)<0?"▼":"▲"} {d.inflation?.spread}%</span>
+          </div>
+          <p style={{ fontSize:11, color:C.orange, margin:"0 0 10px", lineHeight:1.5 }}>{d.inflation?.note}</p>
+          <div>
+            <div style={{ height:6, background:"linear-gradient(90deg," + C.blue + "," + C.green + "," + C.yellow + "," + C.orange + "," + C.red + ")", borderRadius:3, position:"relative", marginBottom:3 }}>
+              <div style={{ position:"absolute", width:9, height:9, background:C.text, border:"2px solid " + C.card, top:-2, left:Math.min(90,Math.max(5,(parseFloat(d.inflation?.cpi||2.4)/6)*100)) + "%", transform:"translateX(-50%)", borderRadius:"50%" }} />
+            </div>
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim }}><span>Deflation</span><span>2% target</span><span>High</span></div>
+          </div>
+          <div style={{ fontSize:10, color:C.textDim, marginTop:8 }}>Truflation leads CPI by ~90 days</div>
+        </Card>
+      </div>
+
+      {/* ROW 4: Liquidity + Credit + Breadth */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
+        <Card>
+          <SecTitle icon="💧" title="Global Liquidity" badge={d.liquidity?.trend} bc={d.liquidity?.trend==="Contractionary"?C.red:d.liquidity?.trend==="Expansionary"?C.green:C.yellow} />
+          <div style={{ fontSize:26, fontWeight:700, fontFamily:font, marginBottom:2 }}>${d.liquidity?.total}T</div>
+          <div style={{ fontSize:11, color:C.textDim, marginBottom:8 }}>Score: {d.liquidity?.score}/100</div>
+          <div style={{ display:"flex", gap:12, marginBottom:10 }}>
+            <div><div style={{ fontSize:10, color:C.textDim }}>13w RoC</div><div style={{ fontSize:13, color:C.red, fontFamily:font }}>▼ {d.liquidity?.roc13w}%</div></div>
+            <div><div style={{ fontSize:10, color:C.textDim }}>52w</div><div style={{ fontSize:13, color:C.red, fontFamily:font }}>{d.liquidity?.roc52w}%</div></div>
+          </div>
+          <div style={{ background:C.cardAlt, borderRadius:4, padding:"6px 6px 0", marginBottom:8 }}>
+            <div style={{ fontSize:9, color:C.textDim, marginBottom:4 }}>CB Balance Sheets (USD $T)</div>
+            <svg width="100%" height="70" viewBox="0 0 240 70" preserveAspectRatio="none" style={{ display:"block" }}>
+              <polygon points="0,35 40,30 80,28 120,26 160,24 200,22 240,20 240,70 0,70" fill={C.blue} opacity="0.5" />
+              <polygon points="0,20 40,18 80,16 120,15 160,14 200,13 240,12 240,35 0,35" fill={C.orange} opacity="0.5" />
+              <polygon points="0,12 40,11 80,10 120,9 160,9 200,8 240,8 240,20 0,20" fill={C.red} opacity="0.45" />
+              <polygon points="0,8 40,7 80,6 120,6 160,5 200,5 240,5 240,12 0,12" fill={C.cyan} opacity="0.4" />
+            </svg>
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim, marginTop:2 }}>
+              <span>2021</span><span>2022</span><span>2023</span><span>2024</span><span>2026</span>
+            </div>
+          </div>
+          <div style={{ display:"flex", gap:8, fontSize:9, flexWrap:"wrap" }}>
+            {["Fed (net)","ECB","BoJ","PBoC","BoE"].map((l,i) => <span key={l} style={{ color:[C.blue,C.orange,C.red,C.cyan,C.purple][i] }}>● {l}</span>)}
+          </div>
+          <div style={{ marginTop:10 }}>
+            <div style={{ height:4, background:"linear-gradient(90deg," + C.red + "," + C.yellow + "," + C.green + ")", borderRadius:2 }} />
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim, marginTop:2 }}><span>Tight</span><span>Neutral</span><span>Loose</span></div>
+          </div>
+        </Card>
+
+        <Card>
+          <SecTitle icon="⚠" title="Credit & Bond Stress" badge={"MOVE: " + (d.credit?.moveSignal||"—")} bc={C.orange} />
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, fontSize:12 }}>
+            <div style={{ gridColumn:"1/-1" }}><span style={{ fontSize:9, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Bond Volatility</span></div>
+            <div><div style={{ fontSize:10, color:C.textDim }}>MOVE Index</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.moveIndex}</div></div>
+            <div><div style={{ fontSize:10, color:C.textDim }}>MOVE/VIX Signal</div><div style={{ color:C.orange, fontFamily:font }}>{d.credit?.moveSignal}</div></div>
+            <div style={{ gridColumn:"1/-1", borderTop:"1px solid " + C.border, paddingTop:5, marginTop:2 }}><span style={{ fontSize:9, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Credit Spreads</span></div>
+            <div><div style={{ fontSize:10, color:C.textDim }}>HY DAS (bp)</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.hyDAS}</div></div>
+            <div><div style={{ fontSize:10, color:C.textDim }}>IG-HY Diff (bp)</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.igHyDiff}</div></div>
+            <div style={{ gridColumn:"1/-1", fontSize:10, color:C.orange }}>{d.credit?.tightNote}</div>
+            <div style={{ gridColumn:"1/-1", borderTop:"1px solid " + C.border, paddingTop:5, marginTop:2 }}><span style={{ fontSize:9, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Lending Conditions</span></div>
+            <div><div style={{ fontSize:10, color:C.textDim }}>SLOOS</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.sloosNote}</div></div>
+            <div><div style={{ fontSize:10, color:C.textDim }}>Gold / Copper</div><div style={{ color:C.red, fontFamily:font }}>{d.credit?.goldCopper}</div></div>
+            <div style={{ gridColumn:"1/-1", borderTop:"1px solid " + C.border, paddingTop:5, marginTop:2 }}><span style={{ fontSize:9, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Consumer Stress</span></div>
+            <div><div style={{ fontSize:10, color:C.textDim }}>Sahm Rule</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.sahmRule}</div></div>
+            <div><div style={{ fontSize:10, color:C.textDim }}>CC Delinquency</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.ccDelinquency}%</div></div>
+          </div>
+        </Card>
+
+        <Card>
+          <SecTitle icon="📊" title="Market Breadth" badge={d.breadth?.sentiment} bc={d.breadth?.sentiment==="BEARISH"?C.red:C.green} />
+          <div style={{ fontSize:30, fontWeight:700, fontFamily:font, marginBottom:2 }}>{d.breadth?.pct50}%</div>
+          <div style={{ fontSize:11, color:C.textDim, marginBottom:10 }}>above 50-day MA</div>
+          <div style={{ marginBottom:8 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:3 }}>
+              <span style={{ fontSize:11, color:C.textMid }}>50-day MA</span>
+              <span style={{ fontSize:11, fontFamily:font }}>{d.breadth?.pct50}%</span>
+            </div>
+            <Bar pct={d.breadth?.pct50} color={C.orange} height={4} />
+          </div>
+          <div style={{ marginBottom:10 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:3 }}>
+              <span style={{ fontSize:11, color:C.textMid }}>200-day MA</span>
+              <span style={{ fontSize:11, fontFamily:font }}>{d.breadth?.pct200}%</span>
+            </div>
+            <Bar pct={d.breadth?.pct200} color={C.green} height={4} />
+          </div>
+          <div style={{ display:"flex", gap:10, fontSize:11, color:C.textDim, marginBottom:8 }}>
+            <span>A/D 5d → {d.breadth?.ad5d}</span>
+            <span>A/D 20d → <span style={{ color:C.red }}>{d.breadth?.ad20d}</span></span>
+          </div>
+          <div style={{ background:C.cardAlt, borderRadius:4, padding:"4px 6px", marginBottom:8 }}>
+            <svg width="100%" height="28" viewBox="0 0 200 28" preserveAspectRatio="none">
+              <polyline points="0,14 25,16 50,15 75,17 100,16 125,18 150,17 175,19 200,18" fill="none" stroke={C.red} strokeWidth="1.5" opacity="0.8" />
+            </svg>
+          </div>
+          <div style={{ background:(d.breadth?.sentiment==="BEARISH"?C.red:C.green)+"18", border:"1px solid " + (d.breadth?.sentiment==="BEARISH"?C.red:C.green) + "28", borderRadius:4, padding:"5px 9px", fontSize:11, color:d.breadth?.sentiment==="BEARISH"?C.red:C.green }}>{d.breadth?.note}</div>
+        </Card>
+      </div>
+
+      {/* OPTIONS SENTIMENT */}
+      <Card>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+          <SecTitle icon="📡" title="Options Sentiment" />
+          <Badge label={d.options?.status||"NEUTRAL"} color={d.options?.status==="BULLISH"?C.green:d.options?.status==="BEARISH"?C.red:C.textMid} />
+        </div>
+        <div style={{ display:"flex", gap:20, justifyContent:"center", marginBottom:12 }}>
+          <SemiGauge label="DEX PCR" pcr={d.options?.dexPCR||"1.0"} sub="Institutional" />
+          <SemiGauge label="Omega PCR" pcr={d.options?.omegaPCR||"1.0"} sub="Retail" />
+        </div>
+        <div style={{ borderTop:"1px solid " + C.border, paddingTop:10 }}>
+          <Row label="Conviction" val={(d.options?.conviction||0) + "%"} />
+          <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"6px 10px", marginTop:6, fontSize:11, color:C.textDim }}>Options sentiment within normal range</div>
+        </div>
+      </Card>
+
+      {/* FCI */}
+      <Card>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
+          <div>
+            <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:4 }}>Financial Conditions Index</div>
+            <div style={{ display:"flex", alignItems:"baseline", gap:10 }}>
+              {false ? <Skel w="80px" h={32} mb={0} /> : <span style={{ fontSize:32, fontWeight:700, fontFamily:font, color:d.fci?.status==="Loose"?C.green:d.fci?.status==="Tight"?C.red:C.yellow }}>{d.fci?.nfci||"—"}</span>}
+              <span style={{ fontSize:12, color:C.textMid }}>NFCI ({d.fci?.status||"—"})</span>
+            </div>
+          </div>
+          <Badge label={d.fci?.status||"—"} color={d.fci?.status==="Loose"?C.green:d.fci?.status==="Tight"?C.red:C.yellow} />
+        </div>
+        <div style={{ marginBottom:12 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:C.textDim, marginBottom:3 }}><span>Looser</span><span>Tighter</span></div>
+          <div style={{ height:5, background:C.border, borderRadius:3 }}>
+            <div style={{ width:"17%", height:"100%", background:"linear-gradient(90deg," + C.green + "," + C.cyan + ")", borderRadius:3 }} />
+          </div>
+        </div>
+        <div style={{ background:C.cardAlt, borderRadius:6, padding:"10px 10px 6px", marginBottom:12 }}>
+          <div style={{ fontSize:9, color:C.textDim, marginBottom:6 }}>FCI History (z-score)</div>
+          <svg width="100%" height="100" viewBox="0 0 800 100" preserveAspectRatio="none" style={{ display:"block" }}>
+            <rect x="0" y="0" width="800" height="40" fill={C.red} opacity="0.08" />
+            <rect x="0" y="60" width="800" height="40" fill={C.green} opacity="0.06" />
+            <line x1="0" y1="50" x2="800" y2="50" stroke={C.textDim} strokeWidth="0.5" strokeDasharray="4,4" opacity="0.5" />
+            <polyline points="0,30 45,35 90,42 135,38 180,55 220,60 265,62 310,55 355,50 400,45 445,38 490,32 535,28 570,30 600,25 640,20 680,18 720,20 760,19 800,22" fill="none" stroke={C.cyan} strokeWidth="2" />
+          </svg>
+          <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim, marginTop:2 }}>
+            {["2015","2017","2019","2021","2023","2026"].map(y => <span key={y}>{y}</span>)}
+          </div>
+        </div>
+        <div style={{ borderTop:"1px solid " + C.border, paddingTop:10 }}>
+          <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:7 }}>Component Loadings</div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:"4px 12px", fontSize:12 }}>
+            {[["Fed Funds Rate","fedFunds"],["10Y Treasury","t10y"],["HY Credit Spre.","hySpread"],["S&P 500 (inv)","sp500load"],["USD Index","usd"]].map(function(pair) {
+              var l = pair[0], k = pair[1];
+              return (
+                <div key={k} style={{ display:"contents" }}>
+                  <span style={{ fontSize:11, color:C.textMid }}>{l}</span>
+                  <span style={{ fontFamily:font, fontSize:12, color:String(d.fci?.[k]||"").startsWith("-")?C.red:C.green, textAlign:"right" }}>{d.fci?.[k]||"—"}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </Card>
+
+      {/* AI ANALYSIS */}
+      <Card glow={C.purple}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <span style={{ fontSize:13 }}>🧠</span>
+            <span style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase" }}>AI-Enhanced Macro Analysis</span>
+          </div>
+          <Badge label={false?"Writing...":"Live · Sonnet"} color={C.purple} />
+        </div>
+        {false ? (
+          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+            <Skel w="100%" h={13} mb={0} /><Skel w="94%" h={13} mb={0} /><Skel w="88%" h={13} mb={8} />
+            <Skel w="100%" h={13} mb={0} /><Skel w="91%" h={13} mb={0} /><Skel w="65%" h={13} mb={0} />
+          </div>
+        ) : (
+          <div style={{ fontSize:13, lineHeight:1.85, color:C.textMid }}>
+            {(d.aiAnalysis||"Click ⚡ Refresh to load AI analysis.").split("\n\n").map(function(para,i) {
+              return <p key={i} style={{ margin:"0 0 12px" }}>{para}</p>;
+            })}
+          </div>
+        )}
+        <div style={{ display:"flex", gap:6, marginTop:8 }}>
+          {["gmi everything_code","multi framework_model","ray dalio"].map(function(t) {
+            return <span key={t} style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"2px 7px", fontSize:11, color:C.textDim }}>{t}</span>;
+          })}
+        </div>
+      </Card>
+
+      {/* SECTOR ROTATION */}
+      <Card>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <div style={{ width:28, height:28, borderRadius:6, background:C.blue+"30", border:"1px solid " + C.blue + "44", display:"flex", alignItems:"center", justifyContent:"center", fontSize:13 }}>🔄</div>
+            <div>
+              <div style={{ fontSize:13, fontWeight:700, letterSpacing:1.5, color:C.text }}>SECTOR ROTATION</div>
+              <div style={{ fontSize:10, color:C.textDim }}>HMM Regime Detection</div>
+            </div>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+            <span style={{ fontSize:11, color:C.green }}>✓</span>
+            <span style={{ fontSize:11, color:C.textDim }}>OK</span>
+          </div>
+        </div>
+
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:7, marginBottom:16 }}>
+          {(d.sectorRotation||[]).map(function(pair, i) {
+            var bg = pair.bull===true ? C.green+"15" : pair.bull===false ? C.red+"15" : C.cardAlt;
+            var border = pair.bull===true ? "1px solid " + C.green + "44" : pair.bull===false ? "1px solid " + C.red + "44" : "1px solid " + C.border;
+            var dotColor = pair.bull===true ? C.green : pair.bull===false ? C.red : C.textDim;
+            var winnerColor = pair.bull===true ? C.green : pair.bull===false ? C.red : C.textMid;
+            return (
+              <div key={i} style={{ background:bg, border:border, borderRadius:7, padding:"8px 7px", textAlign:"center" }}>
+                <div style={{ width:8, height:8, borderRadius:"50%", background:dotColor, margin:"0 auto 6px" }} />
+                <div style={{ fontSize:10, color:C.textMid, marginBottom:4, lineHeight:1.3 }}>{pair.name}</div>
+                <div style={{ fontSize:10, fontWeight:700, color:winnerColor, lineHeight:1.3 }}>{pair.winner || "—"}</div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ display:"flex", gap:12, alignItems:"center", marginBottom:14, fontSize:12 }}>
+          <span style={{ color:C.textDim }}>Overall:</span>
+          <span style={{ color:C.orange, fontWeight:700 }}>MIXED</span>
+          <span style={{ fontSize:10, color:C.textDim }}>│</span>
+          <span style={{ color:C.green }}>{(d.sectorRotation||[]).filter(function(p){return p.bull===true}).length} bull</span>
+          <span style={{ color:C.red }}>{(d.sectorRotation||[]).filter(function(p){return p.bull===false}).length} bear</span>
+          <span style={{ color:C.textMid }}>{(d.sectorRotation||[]).filter(function(p){return p.bull===null}).length} neutral</span>
+        </div>
+
+        <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:8 }}>Multi-Timeframe Momentum</div>
+        <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12, marginBottom:16 }}>
+          <thead>
+            <tr style={{ borderBottom:"1px solid " + C.border }}>
+              <th style={{ textAlign:"left", padding:"5px 7px", color:C.textDim, fontSize:10, fontWeight:600 }}>PAIR</th>
+              {["1W","1M","3M","6M"].map(function(t) { return <th key={t} style={{ padding:"5px 8px", color:C.textDim, fontSize:10, fontWeight:600 }}>{t}</th>; })}
+              <th style={{ textAlign:"left", padding:"5px 7px", color:C.textDim, fontSize:10, fontWeight:600 }}>NOTE</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(d.sectorRotation||[]).map(function(pair, i) {
+              return (
+                <tr key={i} style={{ borderBottom:"1px solid " + C.border }}>
+                  <td style={{ padding:"7px 7px", color:C.text, fontSize:12 }}>{pair.name}</td>
+                  {[pair.w1, pair.w1m, pair.w3m, pair.w6m].map(function(w, j) {
+                    return <td key={j} style={{ textAlign:"center", padding:"7px 8px" }}><span style={{ display:"inline-block", width:10, height:10, borderRadius:"50%", background:w==="g"?C.green:w==="r"?C.red:C.textDim }} /></td>;
+                  })}
+                  <td style={{ padding:"7px 7px", color:C.textDim, fontSize:11, fontStyle:"italic" }}>{pair.note}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+
+        <div style={{ borderTop:"1px solid " + C.border, paddingTop:12 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+            <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase" }}>Axis</div>
+            <div style={{ display:"flex", gap:12, fontSize:10 }}>
+              <span style={{ color:C.red }}>Bearish</span>
+              <span style={{ color:C.green }}>Bullish</span>
+              <span style={{ color:C.textDim, marginLeft:20 }}>PROB</span>
+            </div>
+          </div>
+          {(d.sectorRotation||[]).map(function(pair, i) {
+            var prob = parseInt(pair.prob) || 50;
+            var barW = Math.min(48, Math.round((prob - 50) * 1.0));
+            return (
+              <div key={i} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 0", borderBottom:i < ((d.sectorRotation||[]).length-1) ? "1px solid " + C.border : "none" }}>
+                <div style={{ width:160, flexShrink:0 }}>
+                  <div style={{ fontSize:12, color:C.text, fontWeight:500 }}>{pair.name}</div>
+                  <div style={{ fontSize:10, color:C.textDim }}>{pair.sub1} vs</div>
+                  <div style={{ fontSize:10, color:C.textDim }}>{pair.sub2}</div>
+                </div>
+                <div style={{ flex:1, height:8, position:"relative" }}>
+                  <div style={{ position:"absolute", inset:0, background:C.border, borderRadius:4 }} />
+                  <div style={{ position:"absolute", left:"50%", top:0, bottom:0, width:1, background:C.textDim, transform:"translateX(-50%)" }} />
+                  {pair.bull===true && <div style={{ position:"absolute", left:"50%", top:0, bottom:0, width:barW + "%", background:C.green, borderRadius:"0 4px 4px 0" }} />}
+                  {pair.bull===false && <div style={{ position:"absolute", right:"50%", top:0, bottom:0, width:barW + "%", background:C.red, borderRadius:"4px 0 0 4px" }} />}
+                  {pair.bull===null && <div style={{ position:"absolute", left:"50%", top:"50%", transform:"translate(-50%,-50%)", width:6, height:6, borderRadius:"50%", background:C.textDim }} />}
+                </div>
+                <div style={{ width:55, textAlign:"right", flexShrink:0 }}>
+                  <span style={{ fontSize:13, fontFamily:font, fontWeight:700, color:pair.bull===true?C.green:pair.bull===false?C.red:C.textMid }}>{pair.prob}%</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      {/* ASSET ALLOCATION */}
+      <Card>
+        <SecTitle icon="⚖" title="Asset Allocation" />
+        <div style={{ fontSize:12, color:C.textDim, marginBottom:12 }}>
+          Neutral vs <span style={{ color:SC[d.macroRegime?.season]||C.gold, fontWeight:700 }}>{d.macroRegime?.season?.toUpperCase()}</span> adjusted
+        </div>
+        <div style={{ display:"grid", gridTemplateColumns:"138px 1fr 72px 72px 52px", gap:"8px 12px", alignItems:"center" }}>
+          <div style={{ fontSize:10, color:C.textDim }}>ASSET CLASS</div><div />
+          <div style={{ fontSize:10, color:C.textDim, textAlign:"right" }}>NEUTRAL</div>
+          <div style={{ fontSize:10, color:C.textDim, textAlign:"right" }}>ADJUSTED</div>
+          <div style={{ fontSize:10, color:C.textDim, textAlign:"right" }}>CHANGE</div>
+          {Object.entries(d.allocation||{}).map(function([key,val]) {
+            var cols = {stocks:C.blueLight,bonds:C.green,cash:C.textDim,gold:C.gold,crypto:C.purple,realAssets:C.orange};
+            var labs = {stocks:"Stocks",bonds:"Bonds",cash:"Cash",gold:"Gold",crypto:"Crypto",realAssets:"Real Assets"};
+            var diff = +val.a - +val.n;
+            return [
+              <div key={key+"l"} style={{ display:"flex", alignItems:"center", gap:6 }}><Dot c={cols[key]}/><span style={{ fontSize:13 }}>{labs[key]}</span></div>,
+              <div key={key+"b"} style={{ height:4, background:C.border, borderRadius:2 }}><div style={{ width:val.a + "%", height:"100%", background:cols[key], borderRadius:2, opacity:0.7 }}/></div>,
+              <span key={key+"n"} style={{ textAlign:"right", fontFamily:font, fontSize:13 }}>{val.n}%</span>,
+              <span key={key+"a"} style={{ textAlign:"right", fontFamily:font, fontSize:13, fontWeight:700 }}>{val.a}%</span>,
+              <span key={key+"c"} style={{ textAlign:"right", fontFamily:font, fontSize:12, color:diff>0?C.green:diff<0?C.red:C.textMid }}>{diff>0?"+":""}{diff}%</span>,
+            ];
+          })}
+        </div>
+      </Card>
+
+      {/* TOP SECTORS */}
+      <Card>
+        <SecTitle icon="📋" title="Top Sectors (6M Returns)" />
+        <div style={{ fontSize:11, color:C.textDim, marginBottom:12 }}>Top 5 performing sectors by 6-month total return</div>
+        <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+          <thead>
+            <tr style={{ borderBottom:"1px solid " + C.border }}>
+              {["RANK","SECTOR","ETF","6M RETURN","3M RETURN"].map(function(h) {
+                return <th key={h} style={{ textAlign:h==="RANK"?"center":h.includes("RETURN")?"right":"left", padding:"5px 8px", fontSize:10, color:C.textDim, letterSpacing:1, fontWeight:600 }}>{h}</th>;
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {(d.topSectors||[]).map(function(s,i) {
+              return (
+                <tr key={i} style={{ borderBottom:"1px solid " + C.border }}>
+                  <td style={{ textAlign:"center", padding:"8px" }}>
+                    <div style={{ width:18, height:18, borderRadius:"50%", background:i===0?C.gold:i===1?C.textMid:C.border, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700, margin:"0 auto" }}>{i+1}</div>
+                  </td>
+                  <td style={{ padding:"8px" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+                      <span style={{ width:7, height:7, borderRadius:"50%", background:[C.gold,C.green,C.cyan,C.blue,C.orange][i], display:"inline-block" }} />
+                      {s.name}
+                    </div>
+                  </td>
+                  <td style={{ padding:"8px", color:C.textDim, fontFamily:font }}>{s.etf}</td>
+                  <td style={{ padding:"8px", textAlign:"right", color:parseFloat(s.r6m)>=0?C.green:C.red, fontFamily:font, fontWeight:700 }}>{parseFloat(s.r6m)>=0?"↗":"↘"} {s.r6m}%</td>
+                  <td style={{ padding:"8px", textAlign:"right" }}>
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", gap:6 }}>
+                      <span style={{ fontFamily:font, fontSize:11, color:s.pos?C.green:C.red }}>{s.r3m}%</span>
+                      <div style={{ width:42, height:4, background:C.border, borderRadius:2 }}>
+                        <div style={{ width:Math.min(100,Math.abs(parseFloat(s.r3m)||0)*2) + "%", height:"100%", background:s.pos?C.green:C.red, borderRadius:2 }} />
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <div style={{ display:"flex", justifyContent:"space-between", marginTop:10, fontSize:10, color:C.textDim }}>
+          <span>Based on S&P 500 sector ETFs (SPDR)</span>
+          <span style={{ display:"flex", gap:10 }}><span><Dot c={C.green}/>Positive</span><span><Dot c={C.red}/>Negative</span></span>
+        </div>
+      </Card>
+
+      {/* SECTOR ALLOCATIONS */}
+      <Card style={{ marginBottom:22 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+          <div>
+            <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:3 }}>Sector Allocations</div>
+            <div style={{ fontSize:12, color:C.textMid }}>Confidence: {d.sectorAlloc?.confidence}%</div>
+          </div>
+          <div style={{ display:"flex", gap:8 }}>
+            <div><span style={{ fontSize:10, color:C.textDim, marginRight:4 }}>Season:</span><Badge label={d.sectorAlloc?.season} color={SC[d.macroRegime?.season]||C.gold} /></div>
+            <div><span style={{ fontSize:10, color:C.textDim, marginRight:4 }}>Bias:</span><Badge label={d.sectorAlloc?.bias} color={C.blue} /></div>
+          </div>
+        </div>
+        {[["OVERWEIGHT","overweight",C.green],["NEUTRAL","neutral",C.textDim],["UNDERWEIGHT","underweight",C.red]].map(function([title,key,clr]) {
+          return d.sectorAlloc?.[key]?.length > 0 && (
+            <div key={title} style={{ marginBottom:12 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:6 }}>
+                <span style={{ color:clr, fontSize:13 }}>{title==="OVERWEIGHT"?"↑":title==="UNDERWEIGHT"?"↓":"→"}</span>
+                <span style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:clr, textTransform:"uppercase" }}>{title}</span>
+              </div>
+              {d.sectorAlloc[key].map(function(sec,si) {
+                return (
+                  <div key={si} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 12px", background:C.cardAlt, border:"1px solid " + clr + "20", borderRadius:6, marginBottom:5 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+                      <span style={{ fontSize:13, fontWeight:600 }}>{sec.name}</span>
+                      <Badge label={sec.conviction} color={sec.conviction==="HIGH"?clr:sec.conviction==="MEDIUM"?C.orange:C.textMid} />
+                      <Badge label="Regime" color={C.blue} />
+                    </div>
+                    <span style={{ fontSize:14, fontWeight:700, fontFamily:font, color:clr }}>{sec.target}%</span>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </Card>
+    </div>
+  );
+}
