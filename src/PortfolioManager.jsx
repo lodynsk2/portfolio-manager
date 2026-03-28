@@ -373,6 +373,26 @@ try {
           </div>
         </div>
 
+<div style={{ marginBottom: 12, marginLeft: -16, marginRight: -16, marginTop: -13 }}>
+  <TVWidget scriptName="embed-widget-ticker-tape" height={46} config={{
+    "symbols": [
+      {"proName": "SP:SPX", "title": "S&P 500"},
+      {"proName": "CBOE:VIX", "title": "VIX"},
+      {"proName": "TVC:DXY", "title": "DXY"},
+      {"proName": "TVC:GOLD", "title": "Gold"},
+      {"proName": "BITSTAMP:BTCUSD", "title": "Bitcoin"},
+      {"proName": "TVC:TNX", "title": "10Y Yield"},
+      {"proName": "AMEX:SPY", "title": "SPY"},
+      {"proName": "AMEX:QQQ", "title": "QQQ"},
+      {"proName": "AMEX:IWM", "title": "IWM"}
+    ],
+    "showSymbolLogo": true,
+    "isTransparent": true,
+    "displayMode": "adaptive",
+    "colorTheme": "dark",
+    "locale": "en"
+  }} />
+</div>        
         {err && <div style={{ background:"#2b0d10", border:"1px solid " + C.red + "44", borderRadius:8, padding:"7px 13px", marginBottom:11, fontSize:12, color:C.red }}>⚠ {err}</div>}
 
         {stage===1 && <MacroStage d={d} />}
