@@ -3,6 +3,8 @@ import { useState, useCallback, useEffect } from "react";
 /* ─── CHANGE THIS to your Vercel deployment URL ─────────────────── */
 var PROXY_URL = "https://portfolio-proxy-ja56.vercel.app/api/market";
 var FRED_URL = "https://portfolio-proxy-ja56.vercel.app/api/fred";
+var SECTORS_URL = "https://portfolio-proxy-ja56.vercel.app/api/sectors";
+
 /* ──────────────────────────────────────────────────────────────────── */
 
 const C = {
