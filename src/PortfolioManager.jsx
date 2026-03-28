@@ -305,6 +305,18 @@ try {
     }
     return out;
   });
+  // Global Liquidity
+if (fredJson.WALCL) {
+  var fed = parseFloat(fredJson.WALCL) / 1000000;
+  var ecb = parseFloat(fredJson.ECBASSETSW) / 1000000;
+  var boj = parseFloat(fredJson.JPNASSETS) / 1000000;
+  var total = (fed + ecb + (boj * 0.0067)).toFixed(1);
+  out.liquidity = { ...out.liquidity,
+    total: total,
+    score: Math.round(Math.min(100, Math.max(0, (parseFloat(total) / 25) * 100))).toString(),
+    trend: parseFloat(total) > 17 ? "Expansionary" : "Contractionary"
+  };
+}
   setRefreshStatus("FRED data applied!");
 } catch(fredErr) {
   console.warn("FRED fetch failed:", fredErr.message);
