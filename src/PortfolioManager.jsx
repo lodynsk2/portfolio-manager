@@ -377,7 +377,7 @@ try {
   <TVWidget scriptName="embed-widget-ticker-tape" height={46} config={{
     "symbols": [
       {"proName": "AMEX:SPY", "title": "S&P 500"},
-      {"proName": "CBOE:VIX", "title": "VIX"},
+      {"proName": "TVC:VIX", "title": "VIX"},
       {"proName": "TVC:DXY", "title": "DXY"},
       {"proName": "TVC:GOLD", "title": "Gold"},
       {"proName": "BITSTAMP:BTCUSD", "title": "Bitcoin"},
@@ -630,7 +630,7 @@ function MacroStage({ d }) {
           </div>
          <div style={{ marginBottom: 10, marginLeft: -18, marginRight: -18 }}>
   <TVWidget scriptName="embed-widget-mini-symbol-overview" height={140} config={{
-    "symbol": "CBOE:VIX",
+    "symbol": "TVC:VIX",
     "width": "100%",
     "height": 140,
     "locale": "en",
