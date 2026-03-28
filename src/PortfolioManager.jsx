@@ -695,50 +695,88 @@ function MacroStage({ d }) {
           </div>
           <div style={{ background:C.cardAlt, borderRadius:4, padding:"6px 6px 0", marginBottom:8 }}>
             <div style={{ fontSize:9, color:C.textDim, marginBottom:4 }}>CB Balance Sheets (USD $T)</div>
-         <svg width="100%" height="70" viewBox="0 0 240 70" preserveAspectRatio="none" style={{ display:"block" }}>
-  <defs>
-    <linearGradient id="fedGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stopColor={C.blue} stopOpacity="0.8"/>
-      <stop offset="100%" stopColor={C.blue} stopOpacity="0.3"/>
-    </linearGradient>
-    <linearGradient id="ecbGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stopColor={C.orange} stopOpacity="0.8"/>
-      <stop offset="100%" stopColor={C.orange} stopOpacity="0.3"/>
-    </linearGradient>
-    <linearGradient id="bojGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stopColor={C.red} stopOpacity="0.8"/>
-      <stop offset="100%" stopColor={C.red} stopOpacity="0.3"/>
-    </linearGradient>
-    <linearGradient id="pbocGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stopColor={C.cyan} stopOpacity="0.8"/>
-      <stop offset="100%" stopColor={C.cyan} stopOpacity="0.3"/>
-    </linearGradient>
-  </defs>
-  {(function() {
-    var fedT = parseFloat(d.liquidity?.fedTotal || "6.6");
-    var ecbT = parseFloat(d.liquidity?.ecbTotal || "6.2");
-    var bojT = parseFloat(d.liquidity?.bojTotal || "4.6");
-    var pbocT = parseFloat(d.liquidity?.pbocTotal || "6.0");
-    var total = fedT + ecbT + bojT + pbocT;
-    var fedH = Math.round((fedT / total) * 65);
-    var ecbH = Math.round((ecbT / total) * 65);
-    var bojH = Math.round((bojT / total) * 65);
-    var pbocH = Math.round((pbocT / total) * 65);
-    var y4 = 68;
-    var y3 = y4 - pbocH;
-    var y2 = y3 - bojH;
-    var y1 = y2 - ecbH;
-    var y0 = y1 - fedH;
-    return (
-      <>
-        <polygon points={"0," + y0 + " 240," + (y0-2) + " 240,0 0,0"} fill="url(#fedGrad)" />
-        <polygon points={"0," + y1 + " 240," + (y1-2) + " 240," + y0 + " 0," + y0} fill="url(#ecbGrad)" />
-        <polygon points={"0," + y2 + " 240," + (y2-2) + " 240," + y1 + " 0," + y1} fill="url(#bojGrad)" />
-        <polygon points={"0,68 240,68 240," + y2 + " 0," + y2} fill="url(#pbocGrad)" />
-      </>
-    );
-  })()}
-</svg>
+         <div style={{ position:"relative" }}>
+  <svg width="100%" height="70" viewBox="0 0 240 70" preserveAspectRatio="none" style={{ display:"block" }}>
+    <defs>
+      <linearGradient id="fedGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor={C.blue} stopOpacity="0.9"/>
+        <stop offset="100%" stopColor={C.blue} stopOpacity="0.4"/>
+      </linearGradient>
+      <linearGradient id="ecbGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor={C.orange} stopOpacity="0.9"/>
+        <stop offset="100%" stopColor={C.orange} stopOpacity="0.4"/>
+      </linearGradient>
+      <linearGradient id="bojGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor={C.red} stopOpacity="0.9"/>
+        <stop offset="100%" stopColor={C.red} stopOpacity="0.4"/>
+      </linearGradient>
+      <linearGradient id="pbocGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor={C.cyan} stopOpacity="0.9"/>
+        <stop offset="100%" stopColor={C.cyan} stopOpacity="0.4"/>
+      </linearGradient>
+    </defs>
+    {(function() {
+      var fedT = parseFloat(d.liquidity?.fedTotal || "6.6");
+      var ecbT = parseFloat(d.liquidity?.ecbTotal || "6.2");
+      var bojT = parseFloat(d.liquidity?.bojTotal || "4.6");
+      var pbocT = parseFloat(d.liquidity?.pbocTotal || "6.0");
+      var total = fedT + ecbT + bojT + pbocT;
+      var fedH = Math.round((fedT / total) * 65);
+      var ecbH = Math.round((ecbT / total) * 65);
+      var bojH = Math.round((bojT / total) * 65);
+      var pbocH = Math.round((pbocT / total) * 65);
+      var y4 = 68;
+      var y3 = y4 - pbocH;
+      var y2 = y3 - bojH;
+      var y1 = y2 - ecbH;
+      var y0 = y1 - fedH;
+      return (
+        <>
+          <polygon points={"0," + y0 + " 240," + (y0-2) + " 240,0 0,0"} fill="url(#fedGrad)">
+            <title>Fed: ${fedT.toFixed(1)}T</title>
+          </polygon>
+          <polygon points={"0," + y1 + " 240," + (y1-2) + " 240," + y0 + " 0," + y0} fill="url(#ecbGrad)">
+            <title>ECB: ${ecbT.toFixed(1)}T</title>
+          </polygon>
+          <polygon points={"0," + y2 + " 240," + (y2-2) + " 240," + y1 + " 0," + y1} fill="url(#bojGrad)">
+            <title>BoJ: ${bojT.toFixed(1)}T</title>
+          </polygon>
+          <polygon points={"0,68 240,68 240," + y2 + " 0," + y2} fill="url(#pbocGrad)">
+            <title>PBoC: ${pbocT.toFixed(1)}T</title>
+          </polygon>
+        </>
+      );
+    })()}
+  </svg>
+  <div style={{ position:"absolute", top:0, left:0, right:0, bottom:0, display:"flex", flexDirection:"column" }}>
+    {(function() {
+      var fedT = parseFloat(d.liquidity?.fedTotal || "6.6");
+      var ecbT = parseFloat(d.liquidity?.ecbTotal || "6.2");
+      var bojT = parseFloat(d.liquidity?.bojTotal || "4.6");
+      var pbocT = parseFloat(d.liquidity?.pbocTotal || "6.0");
+      var total = fedT + ecbT + bojT + pbocT;
+      var banks = [
+        { label:"Fed", val:fedT, color:C.blue },
+        { label:"ECB", val:ecbT, color:C.orange },
+        { label:"BoJ", val:bojT, color:C.red },
+        { label:"PBoC", val:pbocT, color:C.cyan },
+      ];
+      return banks.map(function(b) {
+        var h = Math.round((b.val / total) * 70);
+        return (
+          <div key={b.label} style={{ height:h, width:"100%", cursor:"crosshair", display:"flex", alignItems:"center", justifyContent:"center", opacity:0 , transition:"opacity 0.2s" }}
+            onMouseEnter={function(e){ e.currentTarget.style.opacity="1"; }}
+            onMouseLeave={function(e){ e.currentTarget.style.opacity="0"; }}
+          >
+            <div style={{ background:"rgba(0,0,0,0.85)", border:"1px solid " + b.color, borderRadius:4, padding:"2px 8px", fontSize:11, color:b.color, fontFamily:font, fontWeight:700, pointerEvents:"none" }}>
+              {b.label}: ${b.val.toFixed(1)}T
+            </div>
+          </div>
+        );
+      });
+    })()}
+  </div>
+</div>
             <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim, marginTop:2 }}>
               <span>2021</span><span>2022</span><span>2023</span><span>2024</span><span>2026</span>
             </div>
