@@ -324,6 +324,60 @@ if (fredJson.WALCL) {
 };
 }
   setRefreshStatus("FRED data applied!");
+  // Fetch Sector data
+try {
+  setRefreshStatus("Fetching sector data...");
+  var secRes = await fetch(SECTORS_URL);
+  var secJson = await secRes.json();
+  if (secJson.sectors && secJson.sectors.length > 0) {
+    setData(function(prev) {
+      var out = { ...prev };
+      var sectors = secJson.sectors;
+
+      // Top Sectors — top 5 by 6M return
+      out.topSectors = sectors.slice(0, 5).map(function(s) {
+        return { name:s.name, etf:s.etf, r6m:s.r6m, r3m:s.r3m, pos:s.pos };
+      });
+
+      // Sector Allocations — auto generate from momentum
+      var overweight = sectors.filter(function(s) { return parseFloat(s.r6m) > 3; })
+        .slice(0, 3).map(function(s) {
+          return { name:s.name, conviction: parseFloat(s.r6m) > 8 ? "HIGH" : "MEDIUM", target:(8 + parseFloat(s.r6m) * 0.2).toFixed(1) };
+        });
+      var underweight = sectors.filter(function(s) { return parseFloat(s.r6m) < -5; })
+        .slice(0, 3).map(function(s) {
+          return { name:s.name, conviction: parseFloat(s.r6m) < -10 ? "HIGH" : "MEDIUM", target:(5 + parseFloat(s.r6m) * 0.1).toFixed(1) };
+        });
+      var neutral = sectors.filter(function(s) { return parseFloat(s.r6m) >= -5 && parseFloat(s.r6m) <= 3; })
+        .slice(0, 3).map(function(s) {
+          return { name:s.name, conviction:"LOW", target:"7.0" };
+        });
+
+      out.sectorAlloc = { ...out.sectorAlloc, overweight, underweight, neutral };
+
+      // Asset Allocation — adjust based on market conditions
+      var vix = parseFloat(prev.vix?.price || "20");
+      var hySpread = parseFloat(prev.credit?.hyDAS || "300");
+      var bullSectors = sectors.filter(function(s) { return parseFloat(s.r6m) > 0; }).length;
+      var bearish = vix > 25 || hySpread > 400 || bullSectors < 5;
+      var veryBearish = vix > 35 || hySpread > 500 || bullSectors < 3;
+
+      out.allocation = {
+        stocks:    { n:"60", a: veryBearish?"35": bearish?"45":"55" },
+        bonds:     { n:"10", a: veryBearish?"20": bearish?"15":"10" },
+        cash:      { n:"5",  a: veryBearish?"20": bearish?"15":"8"  },
+        gold:      { n:"5",  a: veryBearish?"15": bearish?"12":"7"  },
+        crypto:    { n:"10", a: veryBearish?"3":  bearish?"5":"10"  },
+        realAssets:{ n:"10", a: veryBearish?"7":  bearish?"8":"10"  },
+      };
+
+      return out;
+    });
+    setRefreshStatus("Sector data applied!");
+  }
+} catch(secErr) {
+  console.warn("Sector fetch failed:", secErr.message);
+}
 } catch(fredErr) {
   console.warn("FRED fetch failed:", fredErr.message);
 }
