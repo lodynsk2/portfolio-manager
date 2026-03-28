@@ -312,10 +312,14 @@ if (fredJson.WALCL) {
   var boj = parseFloat(fredJson.JPNASSETS) / 1000000;
   var total = (fed + ecb + (boj * 0.0067)).toFixed(1);
   out.liquidity = { ...out.liquidity,
-    total: total,
-    score: Math.round(Math.min(100, Math.max(0, (parseFloat(total) / 25) * 100))).toString(),
-    trend: parseFloat(total) > 17 ? "Expansionary" : "Contractionary"
-  };
+  total: total,
+  score: Math.round(Math.min(100, Math.max(0, (parseFloat(total) / 25) * 100))).toString(),
+  trend: parseFloat(total) > 17 ? "Expansionary" : "Contractionary",
+  fedTotal: fed.toFixed(1),
+  ecbTotal: ecb.toFixed(1),
+  bojTotal: (boj * 0.0067).toFixed(1),
+  pbocTotal: "6.0"
+};
 }
   setRefreshStatus("FRED data applied!");
 } catch(fredErr) {
