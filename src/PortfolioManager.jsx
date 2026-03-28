@@ -305,8 +305,6 @@ try {
       var inf = parseFloat(fredJson.T10YIE);
       out.inflation = { ...out.inflation, truflation:fredJson.T10YIE, trend:inf<2?"Falling":inf>3?"Rising":"Stable" };
     }
-    return out;
-  });
   // Global Liquidity
 if (fredJson.WALCL) {
   var fed = parseFloat(fredJson.WALCL) / 1000000;
@@ -314,16 +312,18 @@ if (fredJson.WALCL) {
   var boj = parseFloat(fredJson.JPNASSETS) / 1000000;
   var total = (fed + ecb + (boj * 0.0067)).toFixed(1);
   out.liquidity = { ...out.liquidity,
-  total: total,
-  score: Math.round(Math.min(100, Math.max(0, (parseFloat(total) / 25) * 100))).toString(),
-  trend: parseFloat(total) > 17 ? "Expansionary" : "Contractionary",
-  fedTotal: fed.toFixed(1),
-  ecbTotal: ecb.toFixed(1),
-  bojTotal: (boj * 0.0067).toFixed(1),
-  pbocTotal: "6.0"
-};
+    total: total,
+    score: Math.round(Math.min(100, Math.max(0, (parseFloat(total) / 25) * 100))).toString(),
+    trend: parseFloat(total) > 17 ? "Expansionary" : "Contractionary",
+    fedTotal: fed.toFixed(1),
+    ecbTotal: ecb.toFixed(1),
+    bojTotal: (boj * 0.0067).toFixed(1),
+    pbocTotal: "6.0"
+  };
 }
-  setRefreshStatus("FRED data applied!");
+return out;
+});
+  setRefreshStatus("FRED data applied!");;
   // Fetch Sector data
 try {
   setRefreshStatus("Fetching sector data...");
