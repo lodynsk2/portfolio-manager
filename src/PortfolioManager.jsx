@@ -933,5 +933,3 @@ function MacroStage({ d }) {
   );
 }
 
-
-export default PortfolioManager;
