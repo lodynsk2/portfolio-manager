@@ -375,6 +375,32 @@ try {
       return out;
     });
     setRefreshStatus("Sector data applied!");
+    // Fetch Fear & Greed data
+try {
+  setRefreshStatus("Fetching Fear & Greed...");
+  var fgRes = await fetch(FG_URL);
+  var fgJson = await fgRes.json();
+  setData(function(prev) {
+    var out = { ...prev };
+    if (fgJson.cnnScore != null || fgJson.cryptoScore != null) {
+      var cnnScore = fgJson.cnnScore != null ? fgJson.cnnScore : prev.fg.score;
+      var cryptoScore = fgJson.cryptoScore != null ? fgJson.cryptoScore : prev.fg.cryptoScore;
+      var prevScore = fgJson.cnnScore != null && prev.fg.score != null
+        ? fgJson.cnnScore - prev.fg.score : null;
+      out.fg = {
+        score: cnnScore,
+        label: fgJson.cnnLabel || prev.fg.label,
+        vsPrev: prevScore,
+        cryptoScore: cryptoScore,
+        cryptoLabel: fgJson.cryptoLabel || prev.fg.cryptoLabel
+      };
+    }
+    return out;
+  });
+  setRefreshStatus("Fear & Greed updated!");
+} catch(fgErr) {
+  console.warn("F&G fetch failed:", fgErr.message);
+}
   }
 } catch(secErr) {
   console.warn("Sector fetch failed:", secErr.message);
