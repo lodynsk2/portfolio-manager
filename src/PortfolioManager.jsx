@@ -1064,6 +1064,19 @@ function MacroStage({ d }) {
             </div>
           );
         })}
+     {/* ECONOMIC CALENDAR */}
+<Card>
+  <SecTitle icon="📅" title="Economic Calendar" badge="LIVE" bc={C.blue} />
+  <TVWidget scriptName="embed-widget-events" height={500} config={{
+    "colorTheme": "dark",
+    "isTransparent": true,
+    "width": "100%",
+    "height": 500,
+    "locale": "en",
+    "importanceFilter": "0,1",
+    "countryFilter": "us"
+  }} />
+</Card>
       </Card>
     </div>
   );
