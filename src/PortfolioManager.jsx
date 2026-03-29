@@ -533,7 +533,6 @@ try {
 
   return (
     <style>{`*{outline:none}button{outline:none}input{outline:none}textarea{outline:none}select{outline:none}*:focus{outline:none}@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}`}</style>
-    
       {/* SIDEBAR */}
       <div style={{ width:188, background:C.panel, borderRight:"1px solid " + C.border, display:"flex", flexDirection:"column", padding:"13px 0", flexShrink:0 }}>
         <div style={{ padding:"0 13px 12px", borderBottom:"1px solid " + C.border }}>
