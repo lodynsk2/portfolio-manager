@@ -16,6 +16,41 @@ const C = {
 };
 const font = "'DM Mono','Fira Code',monospace";
 const sans = "'DM Sans','Segoe UI',system-ui,sans-serif";
+const MIT_SEASONS = {
+  Spring: {
+    phase: "Disinflationary Boom", cycle: "Early Cycle",
+    description: "Disinflationary Boom is classic early cycle. Less credit availability leads to reduced spending, driving profit growth lower and prompting central banks to counter-ease. The yield curve steepens and risk assets begin a new bull market.",
+    keyTheme: "Central banks easing · Yield curve steepening · Credit improving · Buy the dip",
+    growth: "Rising", inflation: "Falling", bias: "RISK ON",
+    overweight: ["Technology","Consumer Cyclical","Financials","Small Cap"],
+    underweight: ["Utilities","Consumer Staples","Cash"],
+  },
+  Summer: {
+    phase: "Inflationary Boom", cycle: "Mid Cycle",
+    description: "Inflationary Boom is typical of mid-cycle. Central banks are still easing and the flood of liquidity creates declining interest rates and tighter risk premiums. This self-reinforcing expansion supports cash flows. Later in this stage, central banks become less accommodative and the output gap shrinks.",
+    keyTheme: "Peak liquidity · Shrinking output gap · CB becoming less accommodative · Ride the wave",
+    growth: "Rising", inflation: "Rising", bias: "RISK ON",
+    overweight: ["Energy","Materials","Industrials","Real Assets","Commodities"],
+    underweight: ["Long Duration Bonds","Utilities"],
+  },
+  Autumn: {
+    phase: "Stagflation", cycle: "Late Cycle",
+    description: "Stagflation is typical of the late cycle. Growth is above potential but peaking and central banks are turning hawkish. Risk assets are typically in their final melt-up phase. Monetary tightening pushes asset yields higher, amplifying market reactions to adverse news. The output gap is wide.",
+    keyTheme: "Hawkish central banks · Wide output gap · Tightening amplifies volatility · Reduce risk",
+    growth: "Slowing", inflation: "Rising", bias: "DEFENSIVE",
+    overweight: ["Utilities","Healthcare","Consumer Staples","Gold","Cash"],
+    underweight: ["Technology","Consumer Cyclical","High Beta","Crypto"],
+  },
+  Winter: {
+    phase: "Deflationary Bust", cycle: "Slowdown / Recession",
+    description: "Deflationary Bust is typical of slowdown/recession. Monetary drag generates wider risk premiums, filtering through to the real economy and earnings with a lag. The output gap is wide. Central banks eventually pivot to easing, setting the stage for the next Spring cycle.",
+    keyTheme: "Wide risk premiums · Earnings deterioration · Await central bank pivot · Preserve capital",
+    growth: "Slowing", inflation: "Falling", bias: "RISK OFF",
+    overweight: ["Long Duration Bonds","Gold","Cash","Utilities"],
+    underweight: ["Equities","High Yield","Crypto","Cyclicals"],
+  },
+};
+
 const SC = { Summer:C.gold, Spring:C.green, Autumn:C.orange, Winter:C.blueLight };
 
 const SECTOR_PAIRS = [
