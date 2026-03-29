@@ -283,6 +283,80 @@ try {
   var fredJson = await fredRes.json();
   setData(function(prev) {
     var out = { ...prev };
+    // Auto-detect Macro Season from live data
+if (fredJson.GDPC1 && fredJson.GDPC1_PREV && fredJson.CPIAUCSL && fredJson.CPI_PREV) {
+  var gdpCurrent = parseFloat(fredJson.GDPC1);
+  var gdpPrev = parseFloat(fredJson.GDPC1_PREV);
+  var cpiCurrent = parseFloat(fredJson.CPIAUCSL);
+  var cpiPrev = parseFloat(fredJson.CPI_PREV);
+  var fedCurrent = parseFloat(fredJson.FEDFUNDS);
+  var fedPrev = parseFloat(fredJson.FEDFUNDS_PREV);
+  var yieldCurve = parseFloat(fredJson.T10Y2Y);
+  var hySpreadVal = parseFloat(fredJson.BAMLH0A0HYM2);
+  var sahmVal = parseFloat(fredJson.SAHMREALTIME);
+
+  // Determine growth and inflation direction
+  var growthRising = gdpCurrent > gdpPrev;
+  var inflationRising = cpiCurrent > cpiPrev;
+  var fedTightening = fedCurrent >= fedPrev;
+  var creditStress = hySpreadVal > 4.0;
+  var recessionSignal = sahmVal > 0.5;
+
+  // MIT Season Detection
+  var detectedSeason;
+  var detectedPhase;
+  var detectedConfidence;
+
+  if (recessionSignal || (creditStress && !growthRising)) {
+    // Override to Winter if recession signals are present
+    detectedSeason = "Winter";
+    detectedPhase = "Deflationary Bust";
+    detectedConfidence = Math.round(60 + sahmVal * 20);
+  } else if (growthRising && !inflationRising) {
+    detectedSeason = "Spring";
+    detectedPhase = "Disinflationary Boom";
+    detectedConfidence = Math.round(65 + (gdpCurrent - gdpPrev) / gdpPrev * 1000);
+  } else if (growthRising && inflationRising) {
+    detectedSeason = "Summer";
+    detectedPhase = "Inflationary Boom";
+    detectedConfidence = Math.round(65 + (cpiCurrent - cpiPrev) / cpiPrev * 500);
+  } else if (!growthRising && inflationRising) {
+    detectedSeason = "Autumn";
+    detectedPhase = "Stagflation";
+    detectedConfidence = Math.round(65 + hySpreadVal * 3);
+  } else {
+    detectedSeason = "Winter";
+    detectedPhase = "Deflationary Bust";
+    detectedConfidence = 60;
+  }
+
+  // Cap confidence at 95
+  detectedConfidence = Math.min(95, Math.max(50, detectedConfidence));
+
+  // Additional signals to boost confidence
+  if (detectedSeason === "Autumn" && fedTightening) detectedConfidence = Math.min(95, detectedConfidence + 5);
+  if (detectedSeason === "Summer" && yieldCurve > 0.3) detectedConfidence = Math.min(95, detectedConfidence + 5);
+  if (detectedSeason === "Winter" && yieldCurve < 0) detectedConfidence = Math.min(95, detectedConfidence + 5);
+
+  out.macroRegime = { ...out.macroRegime,
+    season: detectedSeason,
+    phase: detectedPhase,
+    confidence: detectedConfidence,
+    riskOn: detectedSeason === "Spring" || detectedSeason === "Summer",
+    confirmed: true,
+    mediumTerm: detectedSeason === "Spring" || detectedSeason === "Summer" ? "Risk On" : "Risk Off",
+    shortTerm: detectedSeason === "Autumn" ? "Defensive positioning — slowing growth, rising inflation" :
+               detectedSeason === "Winter" ? "Capital preservation — recession risk elevated" :
+               detectedSeason === "Summer" ? "Risk on — inflationary boom, peak liquidity" :
+               "Early cycle — disinflationary boom, central banks easing",
+    description: "Auto-detected: GDP " + (growthRising ? "▲" : "▼") + " " + gdpCurrent.toFixed(0) +
+      " | CPI " + (inflationRising ? "▲" : "▼") + " " + cpiCurrent.toFixed(1) +
+      " | Fed Funds " + fedCurrent.toFixed(2) + "%" +
+      " | Yield Curve " + (yieldCurve >= 0 ? "+" : "") + yieldCurve.toFixed(2) +
+      " | HY Spread " + hySpreadVal.toFixed(2) + "%" +
+      " | Sahm Rule " + sahmVal.toFixed(2)
+  };
+}
     if (fredJson.T10Y2Y) {
       var sp = parseFloat(fredJson.T10Y2Y);
       out.yield = { spread:(sp>=0?"+":"")+sp.toFixed(2), status:sp<0?"INVERTED":Math.abs(sp)<0.1?"FLAT":"NORMAL", recessionRisk:sp<0?"MEDIUM":"LOW", recessionPct:sp<0?35:15 };
