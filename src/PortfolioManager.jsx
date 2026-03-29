@@ -731,7 +731,7 @@ function MacroStage({ d }) {
           {false ? <Skel w="80px" h={20} mb={12} /> : <div style={{ fontSize:20, fontWeight:700, color:d.rates?.status==="EASING"?C.green:d.rates?.status==="TIGHTENING"?C.red:C.orange, marginBottom:12 }}>{d.rates?.status}</div>}
           <Row label="Current Rate" val={false?"...":d.rates?.current + "%"} />
           <div style={{ display:"flex", justifyContent:"center", margin:"8px 0" }}>
-            <div style={{ width:36, height:36, borderRadius:"50%", background:(d.rates?.status==="EASING"?C.green:C.red)+"20", border:"1px solid " + (d.rates?.status==="EASING"?C.green:C.red) + "44", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>{d.rates?.status==="EASING"?"↘":"↗"}</div>
+            <div style={{ width:36, height:36, borderRadius:"50%", background:(d.rates?.status==="EASING"?C.green:C.red)+"20", border:"1px solid transparent", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>{d.rates?.status==="EASING"?"↘":"↗"}</div>
           </div>
           <Row label="Expected Rate" val={false?"...":d.rates?.expected + "%"} />
           <Row label="Implied Cuts" val={false?"...":d.rates?.impliedCuts} color={C.red} />
