@@ -581,26 +581,6 @@ try {
           </div>
         </div>
 
-<div style={{ marginBottom: 12, marginLeft: -16, marginRight: -16, marginTop: -13 }}>
-  <TVWidget scriptName="embed-widget-ticker-tape" height={46} config={{
-    "symbols": [
-      {"proName": "AMEX:SPY", "title": "S&P 500"},
-      {"proName": "TVC:VIX", "title": "VIX"},
-      {"proName": "TVC:DXY", "title": "DXY"},
-      {"proName": "TVC:GOLD", "title": "Gold"},
-      {"proName": "BITSTAMP:BTCUSD", "title": "Bitcoin"},
-      {"proName": "TVC:TNX", "title": "10Y Yield"},
-      {"proName": "AMEX:SPY", "title": "SPY"},
-      {"proName": "AMEX:QQQ", "title": "QQQ"},
-      {"proName": "AMEX:IWM", "title": "IWM"}
-    ],
-    "showSymbolLogo": true,
-    "isTransparent": true,
-    "displayMode": "adaptive",
-    "colorTheme": "dark",
-    "locale": "en"
-  }} />
-</div>        
         {err && <div style={{ background:"#2b0d10", border:"1px solid " + C.red + "44", borderRadius:8, padding:"7px 13px", marginBottom:11, fontSize:12, color:C.red }}>⚠ {err}</div>}
 
         {stage===1 && <MacroStage d={d} />}
@@ -752,19 +732,7 @@ function MacroStage({ d }) {
             <div style={{ display:"grid", gridTemplateColumns:"auto 1fr 1fr", gap:"3px 7px", fontSize:11 }}>
               <span /><span style={{ color:C.textDim, textAlign:"right" }}>Support</span><span style={{ color:C.textDim, textAlign:"right" }}>Resistance</span>
               <span style={{ color:C.textMid }}>Weekly</span>
-              <span style={{ textAlign:"right", fontFamily:font, color:C.blueLight }}>{false?"...":d.sp500?.wkSupport}</span>
-              <span style={{ textAlign:"right", fontFamily:font, color:C.orange }}>{false?"...":d.sp500?.wkResistance}</span>
-              <span style={{ color:C.textMid }}>Monthly</span>
-              <span style={{ textAlign:"right", fontFamily:font, color:C.blueLight }}>{false?"...":d.sp500?.moSupport}</span>
-              <span style={{ textAlign:"right", fontFamily:font, color:C.orange }}>{false?"...":d.sp500?.moResistance}</span>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* ROW 2: Rates + DXY + Yield */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
-        <Card>
+         
           <SecTitle icon="↘" title="Forward Rates" />
           {false ? <Skel w="80px" h={20} mb={12} /> : <div style={{ fontSize:20, fontWeight:700, color:d.rates?.status==="EASING"?C.green:d.rates?.status==="TIGHTENING"?C.red:C.orange, marginBottom:12 }}>{d.rates?.status}</div>}
           <Row label="Current Rate" val={false?"...":d.rates?.current + "%"} />
@@ -1389,19 +1357,7 @@ function MacroStage({ d }) {
             </div>
           );
         })}
-     {/* ECONOMIC CALENDAR */}
-<Card>
-  <SecTitle icon="📅" title="Economic Calendar" badge="LIVE" bc={C.blue} />
-  <TVWidget scriptName="embed-widget-events" height={500} config={{
-    "colorTheme": "dark",
-    "isTransparent": true,
-    "width": "100%",
-    "height": 500,
-    "locale": "en",
-    "importanceFilter": "0,1",
-    "countryFilter": "us"
-  }} />
-</Card>
+  
       </Card>
     </div>
   );
