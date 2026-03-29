@@ -725,14 +725,22 @@ function MacroStage({ d }) {
     "autosize": true
   }} />
 </div>
-          <Row label="50 DMA" val={false?"...":d.sp500?.dma50} color={C.red} />
-          <Row label="200 DMA" val={false?"...":d.sp500?.dma200} color={C.red} />
+          <Row label="50 DMA" val={d.sp500?.dma50} color={C.red} />
+          <Row label="200 DMA" val={d.sp500?.dma200} color={C.red} />
           <div style={{ borderTop:"1px solid " + C.border, marginTop:8, paddingTop:8 }}>
             <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:5 }}>SUPPORT / RESISTANCE</div>
             <div style={{ display:"grid", gridTemplateColumns:"auto 1fr 1fr", gap:"3px 7px", fontSize:11 }}>
               <span /><span style={{ color:C.textDim, textAlign:"right" }}>Support</span><span style={{ color:C.textDim, textAlign:"right" }}>Resistance</span>
               <span style={{ color:C.textMid }}>Weekly</span>
-         
+              <span style={{ textAlign:"right", fontFamily:font, color:C.blueLight }}>{d.sp500?.wkSupport}</span>
+              <span style={{ textAlign:"right", fontFamily:font, color:C.orange }}>{d.sp500?.wkResistance}</span>
+              <span style={{ color:C.textMid }}>Monthly</span>
+              <span style={{ textAlign:"right", fontFamily:font, color:C.blueLight }}>{d.sp500?.moSupport}</span>
+              <span style={{ textAlign:"right", fontFamily:font, color:C.orange }}>{d.sp500?.moResistance}</span>
+            </div>
+          </div>
+        </Card>
+        <Card>
           <SecTitle icon="↘" title="Forward Rates" />
           {false ? <Skel w="80px" h={20} mb={12} /> : <div style={{ fontSize:20, fontWeight:700, color:d.rates?.status==="EASING"?C.green:d.rates?.status==="TIGHTENING"?C.red:C.orange, marginBottom:12 }}>{d.rates?.status}</div>}
           <Row label="Current Rate" val={false?"...":d.rates?.current + "%"} />
