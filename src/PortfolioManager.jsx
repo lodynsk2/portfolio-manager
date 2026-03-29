@@ -674,7 +674,48 @@ function MacroStage({ d }) {
               </div>
               <div style={{ marginBottom:3 }}><span style={{ fontSize:12, color:C.textDim }}>Medium term: </span><span style={{ fontSize:12, color:C.green }}>{d.macroRegime?.mediumTerm}</span></div>
               <div style={{ marginBottom:8 }}><span style={{ fontSize:12, color:C.textDim }}>Short term: </span><span style={{ fontSize:12, color:C.orange }}>{d.macroRegime?.shortTerm}</span></div>
-              <p style={{ fontSize:11, color:C.textMid, lineHeight:1.6, margin:0 }}>{d.macroRegime?.description}</p>
+            <p style={{ fontSize:11, color:C.textMid, lineHeight:1.6, margin:"0 0 10px" }}>
+  {MIT_SEASONS[d.macroRegime?.season]?.description || d.macroRegime?.description}
+</p>
+<div style={{ display:"flex", gap:8, marginBottom:8, flexWrap:"wrap" }}>
+  <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"3px 8px", fontSize:11 }}>
+    <span style={{ color:C.textDim }}>Growth: </span>
+    <span style={{ color:MIT_SEASONS[d.macroRegime?.season]?.growth==="Rising"?C.green:C.red, fontWeight:700 }}>{MIT_SEASONS[d.macroRegime?.season]?.growth} ▲</span>
+  </div>
+  <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"3px 8px", fontSize:11 }}>
+    <span style={{ color:C.textDim }}>Inflation: </span>
+    <span style={{ color:MIT_SEASONS[d.macroRegime?.season]?.inflation==="Rising"?C.red:C.green, fontWeight:700 }}>{MIT_SEASONS[d.macroRegime?.season]?.inflation} {MIT_SEASONS[d.macroRegime?.season]?.inflation==="Rising"?"▲":"▼"}</span>
+  </div>
+  <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"3px 8px", fontSize:11 }}>
+    <span style={{ color:C.textDim }}>Bias: </span>
+    <span style={{ color:sc, fontWeight:700 }}>{MIT_SEASONS[d.macroRegime?.season]?.bias}</span>
+  </div>
+  <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"3px 8px", fontSize:11 }}>
+    <span style={{ color:C.textDim }}>Cycle: </span>
+    <span style={{ color:C.text, fontWeight:700 }}>{MIT_SEASONS[d.macroRegime?.season]?.cycle}</span>
+  </div>
+</div>
+<div style={{ background:C.cardAlt, border:"1px solid " + sc + "33", borderRadius:6, padding:"7px 10px", marginBottom:8 }}>
+  <div style={{ fontSize:10, color:C.textDim, marginBottom:4, letterSpacing:1 }}>🔑 KEY THEME</div>
+  <div style={{ fontSize:11, color:sc }}>{MIT_SEASONS[d.macroRegime?.season]?.keyTheme}</div>
+</div>
+<div style={{ display:"flex", gap:10 }}>
+  <div style={{ flex:1, background:C.cardAlt, border:"1px solid " + C.green + "33", borderRadius:6, padding:"7px 10px" }}>
+    <div style={{ fontSize:10, color:C.green, marginBottom:4, letterSpacing:1 }}>↑ OVERWEIGHT</div>
+    {(MIT_SEASONS[d.macroRegime?.season]?.overweight||[]).map(function(s) {
+      return <div key={s} style={{ fontSize:11, color:C.textMid, marginBottom:2 }}>• {s}</div>;
+    })}
+  </div>
+  <div style={{ flex:1, background:C.cardAlt, border:"1px solid " + C.red + "33", borderRadius:6, padding:"7px 10px" }}>
+    <div style={{ fontSize:10, color:C.red, marginBottom:4, letterSpacing:1 }}>↓ UNDERWEIGHT</div>
+    {(MIT_SEASONS[d.macroRegime?.season]?.underweight||[]).map(function(s) {
+      return <div key={s} style={{ fontSize:11, color:C.textMid, marginBottom:2 }}>• {s}</div>;
+    })}
+  </div>
+</div>
+<div style={{ marginTop:8, fontSize:10, color:C.textDim, fontFamily:font }}>
+  {d.macroRegime?.description}
+</div>
             </div>
           </div>
         </Card>
