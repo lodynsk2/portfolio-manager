@@ -711,20 +711,6 @@ function MacroStage({ d }) {
               <div style={{ marginBottom:8 }}><Badge label={d.sp500?.sentiment} color={d.sp500?.sentiment==="BEARISH"?C.red:d.sp500?.sentiment==="BULLISH"?C.green:C.textMid} /></div>
             </div>
           )}
-          <div style={{ marginBottom: 10, marginLeft: -18, marginRight: -18 }}>
-  <TVWidget scriptName="embed-widget-mini-symbol-overview" height={180} config={{
-    "symbol": "AMEX:SPY",
-    "width": "100%",
-    "height": 180,
-    "locale": "en",
-    "dateRange": "3M",
-    "colorTheme": "dark",
-    "trendLineColor": "rgba(0, 230, 118, 1)",
-    "underLineColor": "rgba(0, 230, 118, 0.08)",
-    "isTransparent": true,
-    "autosize": true
-  }} />
-</div>
           <Row label="50 DMA" val={d.sp500?.dma50} color={C.red} />
           <Row label="200 DMA" val={d.sp500?.dma200} color={C.red} />
           <div style={{ borderTop:"1px solid " + C.border, marginTop:8, paddingTop:8 }}>
