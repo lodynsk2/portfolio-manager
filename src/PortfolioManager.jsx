@@ -1037,34 +1037,84 @@ function MacroStage({ d }) {
 
         <Card>
           <SecTitle icon="📊" title="Market Breadth" badge={d.breadth?.sentiment} bc={d.breadth?.sentiment==="BEARISH"?C.red:C.green} />
-          <div style={{ fontSize:30, fontWeight:700, fontFamily:font, marginBottom:2 }}>{d.breadth?.pct50}%</div>
-          <div style={{ fontSize:11, color:C.textDim, marginBottom:10 }}>above 50-day MA</div>
-          <div style={{ marginBottom:8 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:3 }}>
-              <span style={{ fontSize:11, color:C.textMid }}>50-day MA</span>
-              <span style={{ fontSize:11, fontFamily:font }}>{d.breadth?.pct50}%</span>
+          
+          {/* SHORT TERM: 50-day MA */}
+          <div style={{ marginBottom:12 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:5 }}>
+              <div>
+                <div style={{ fontSize:11, color:C.textDim, marginBottom:2 }}>📈 SHORT TERM (50-day)</div>
+                <div style={{ fontSize:24, fontWeight:700, fontFamily:font, color:parseFloat(d.breadth?.pct50) < 40 ? C.red : parseFloat(d.breadth?.pct50) < 60 ? C.orange : C.green }}>{d.breadth?.pct50}%</div>
+              </div>
+              <div style={{ textAlign:"right", fontSize:10, color:C.textMid }}>
+                {parseFloat(d.breadth?.pct50) < 40 
+                  ? "🔴 Weak — mostly down" 
+                  : parseFloat(d.breadth?.pct50) < 60 
+                  ? "🟡 Mixed — some weakness" 
+                  : "🟢 Strong — mostly up"}
+              </div>
             </div>
-            <Bar pct={d.breadth?.pct50} color={C.orange} height={4} />
-          </div>
-          <div style={{ marginBottom:10 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:3 }}>
-              <span style={{ fontSize:11, color:C.textMid }}>200-day MA</span>
-              <span style={{ fontSize:11, fontFamily:font }}>{d.breadth?.pct200}%</span>
+            <Bar pct={d.breadth?.pct50} color={parseFloat(d.breadth?.pct50) < 40 ? C.red : parseFloat(d.breadth?.pct50) < 60 ? C.orange : C.green} height={6} />
+            <div style={{ fontSize:10, color:C.textDim, marginTop:4, lineHeight:1.4 }}>
+              Out of 500 stocks, {d.breadth?.pct50} are performing better than their recent 50-day trend
             </div>
-            <Bar pct={d.breadth?.pct200} color={C.green} height={4} />
           </div>
-          <div style={{ display:"flex", gap:10, fontSize:11, color:C.textDim, marginBottom:8 }}>
-            <span>A/D 5d → {d.breadth?.ad5d}</span>
-            <span>A/D 20d → <span style={{ color:C.red }}>{d.breadth?.ad20d}</span></span>
+
+          {/* LONG TERM: 200-day MA */}
+          <div style={{ marginBottom:12 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:5 }}>
+              <div>
+                <div style={{ fontSize:11, color:C.textDim, marginBottom:2 }}>📅 LONG TERM (200-day)</div>
+                <div style={{ fontSize:24, fontWeight:700, fontFamily:font, color:parseFloat(d.breadth?.pct200) < 40 ? C.red : parseFloat(d.breadth?.pct200) < 70 ? C.orange : C.green }}>{d.breadth?.pct200}%</div>
+              </div>
+              <div style={{ textAlign:"right", fontSize:10, color:C.textMid }}>
+                {parseFloat(d.breadth?.pct200) < 40 
+                  ? "🔴 Downtrend" 
+                  : parseFloat(d.breadth?.pct200) < 70 
+                  ? "🟡 Shaky" 
+                  : "🟢 Uptrend"}
+              </div>
+            </div>
+            <Bar pct={d.breadth?.pct200} color={parseFloat(d.breadth?.pct200) < 40 ? C.red : parseFloat(d.breadth?.pct200) < 70 ? C.orange : C.green} height={6} />
+            <div style={{ fontSize:10, color:C.textDim, marginTop:4, lineHeight:1.4 }}>
+              {parseFloat(d.breadth?.pct200) >= 70 
+                ? "Most stocks are in long-term uptrends — healthy"
+                : parseFloat(d.breadth?.pct200) >= 40
+                ? "Mixed — some stocks in uptrends, some in downtrends"
+                : "Most stocks are in downtrends — weak foundation"}
+            </div>
           </div>
-          <div style={{ background:C.cardAlt, borderRadius:4, padding:"4px 6px", marginBottom:8 }}>
-            <svg width="100%" height="28" viewBox="0 0 200 28" preserveAspectRatio="none">
-              <polyline points="0,14 25,16 50,15 75,17 100,16 125,18 150,17 175,19 200,18" fill="none" stroke={C.red} strokeWidth="1.5" opacity="0.8" />
-            </svg>
+
+          {/* MOMENTUM: A/D Indicators */}
+          <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px", marginBottom:12 }}>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:6, fontWeight:700 }}>📊 MOMENTUM (Gaining vs Losing Stocks)</div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+              <div>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Last 5 days</div>
+                <div style={{ fontSize:12, fontWeight:700, color:d.breadth?.ad5d==="Falling"?C.red:d.breadth?.ad5d==="Rising"?C.green:C.orange }}>
+                  {d.breadth?.ad5d==="Falling" ? "📉 Selling" : d.breadth?.ad5d==="Rising" ? "📈 Buying" : "➡️ Flat"}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Last 20 days</div>
+                <div style={{ fontSize:12, fontWeight:700, color:d.breadth?.ad20d==="Falling"?C.red:d.breadth?.ad20d==="Rising"?C.green:C.orange }}>
+                  {d.breadth?.ad20d==="Falling" ? "📉 Selling" : d.breadth?.ad20d==="Rising" ? "📈 Buying" : "➡️ Flat"}
+                </div>
+              </div>
+            </div>
           </div>
-          <div style={{ background:(d.breadth?.sentiment==="BEARISH"?C.red:C.green)+"18", border:"1px solid " + (d.breadth?.sentiment==="BEARISH"?C.red:C.green) + "28", borderRadius:4, padding:"5px 9px", fontSize:11, color:d.breadth?.sentiment==="BEARISH"?C.red:C.green }}>{d.breadth?.note}</div>
+
+          {/* OVERALL SIGNAL */}
+          <div style={{ background:(d.breadth?.sentiment==="BEARISH"?C.red:C.green)+"15", border:"1px solid " + (d.breadth?.sentiment==="BEARISH"?C.red:C.green) + "40", borderRadius:6, padding:"10px 12px" }}>
+            <div style={{ fontSize:12, fontWeight:700, color:d.breadth?.sentiment==="BEARISH"?C.red:C.green, marginBottom:4 }}>
+              {d.breadth?.sentiment==="BEARISH" ? "⚠️ WEAK LEADERSHIP" : "✓ HEALTHY BREADTH"}
+            </div>
+            <div style={{ fontSize:11, color:C.textMid, lineHeight:1.5 }}>
+              {d.breadth?.sentiment==="BEARISH" 
+                ? "Only a few big stocks are pulling the market up. Most individual stocks are struggling. This is fragile — watch for a reversal."
+                : "Most stocks are performing well alongside the index. Strong, healthy market participation. This is sustainable."}
+            </div>
+          </div>
         </Card>
-      </div>
 
       {/* OPTIONS SENTIMENT */}
       <Card>
