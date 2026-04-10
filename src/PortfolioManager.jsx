@@ -506,7 +506,7 @@ try {
         underweight 
       };
 
-      // Asset Allocation — adjust based on market conditions
+// Asset Allocation — adjust based on market conditions
       var vix = parseFloat(prev.vix?.price || "20");
       var hySpread = parseFloat(prev.credit?.hyDAS || "300");
       var bullSectors = sectors.filter(function(s) { return parseFloat(s.r6m) > 0; }).length;
@@ -523,7 +523,7 @@ try {
       };
 
       return out;
-   });
+    });
   
     setRefreshStatus("Sector data applied!");
     // Fetch Fear & Greed data
