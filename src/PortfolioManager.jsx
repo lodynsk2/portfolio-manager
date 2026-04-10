@@ -1183,16 +1183,51 @@ function MacroStage({ d }) {
       {/* OPTIONS SENTIMENT */}
       <Card>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
-          <SecTitle icon="📡" title="Options Sentiment" />
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <span style={{ fontSize:13 }}>📡</span>
+            <span style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase" }}>Options Sentiment</span>
+          </div>
           <Badge label={d.options?.status||"NEUTRAL"} color={d.options?.status==="BULLISH"?C.green:d.options?.status==="BEARISH"?C.red:C.textMid} />
         </div>
-        <div style={{ display:"flex", gap:20, justifyContent:"center", marginBottom:12 }}>
-          <SemiGauge label="DEX PCR" pcr={d.options?.dexPCR||"1.0"} sub="Institutional" />
-          <SemiGauge label="Omega PCR" pcr={d.options?.omegaPCR||"1.0"} sub="Retail" />
+
+        <div style={{ background:C.cardAlt, borderRadius:6, padding:10, marginBottom:14 }}>
+          <div style={{ fontSize:11, color:C.textMid, lineHeight:1.5 }}>
+            <strong style={{ color:C.text }}>What this means:</strong> Options traders bet on stock direction. Smart money (institutions) vs dumb money (retail) — who's buying protection or betting on crashes?
+          </div>
         </div>
-        <div style={{ borderTop:"1px solid " + C.border, paddingTop:10 }}>
-          <Row label="Conviction" val={(d.options?.conviction||0) + "%"} />
-          <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"6px 10px", marginTop:6, fontSize:11, color:C.textDim }}>Options sentiment within normal range</div>
+
+        <div style={{ marginBottom:14, paddingBottom:14, borderTop:"1px solid " + C.border, borderBottom:"1px solid " + C.border, paddingTop:14 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
+            <div>
+              <div style={{ fontSize:12, color:C.textDim, fontWeight:700, marginBottom:6 }}>🏦 DEX PCR (Institutions)</div>
+              <div style={{ fontSize:22, fontWeight:700, fontFamily:font, color:C.red }}>{d.options?.dexPCR}</div>
+              <p style={{ margin:"6px 0 0", fontSize:10, color:C.textDim }}>Puts-to-Calls</p>
+            </div>
+            <Badge label={parseFloat(d.options?.dexPCR) > 1.3 ? "BEARISH" : "NEUTRAL"} color={parseFloat(d.options?.dexPCR) > 1.3 ? C.red : C.orange} />
+          </div>
+          <p style={{ margin:0, fontSize:11, color:C.textMid, lineHeight:1.5 }}>Smart money buying insurance against stocks falling. When > 1.3, fear among pros.</p>
+        </div>
+
+        <div style={{ marginBottom:14, paddingBottom:14, borderBottom:"1px solid " + C.border }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
+            <div>
+              <div style={{ fontSize:12, color:C.textDim, fontWeight:700, marginBottom:6 }}>📱 Omega PCR (Retail)</div>
+              <div style={{ fontSize:22, fontWeight:700, fontFamily:font, color:C.orange }}>{d.options?.omegaPCR}</div>
+              <p style={{ margin:"6px 0 0", fontSize:10, color:C.textDim }}>Puts-to-Calls</p>
+            </div>
+            <Badge label={parseFloat(d.options?.omegaPCR) > 1.3 ? "BEARISH" : "NEUTRAL"} color={parseFloat(d.options?.omegaPCR) > 1.3 ? C.red : C.orange} />
+          </div>
+          <p style={{ margin:0, fontSize:11, color:C.textMid, lineHeight:1.5 }}>Retail traders hedging bets. Less nervous than institutions. When > 1.0, they see risk ahead.</p>
+        </div>
+
+        <div style={{ background:(d.options?.status==="BEARISH"?C.red:C.green)+"15", border:"1px solid " + (d.options?.status==="BEARISH"?C.red:C.green) + "40", borderRadius:6, padding:12 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+            <div style={{ fontSize:12, fontWeight:700, color:d.options?.status==="BEARISH"?C.red:C.green }}>Conviction</div>
+            <div style={{ fontSize:16, fontWeight:700, fontFamily:font, color:d.options?.status==="BEARISH"?C.red:C.green }}>{d.options?.conviction}%</div>
+          </div>
+          <p style={{ margin:0, fontSize:11, color:C.textMid, lineHeight:1.5 }}>
+            {d.options?.status === "BEARISH" ? "Moderately bearish. Hedging but not panicked. Caution flag." : "Balanced. Mixed signals. Neither bullish nor bearish."}
+          </p>
         </div>
       </Card>
 
