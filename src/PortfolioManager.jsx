@@ -770,15 +770,48 @@ function MacroStage({ d }) {
             </div>
           </div>
         </Card>
-        <Card>
+       <Card>
           <SecTitle icon="↘" title="Forward Rates" />
-          {false ? <Skel w="80px" h={20} mb={12} /> : <div style={{ fontSize:20, fontWeight:700, color:d.rates?.status==="EASING"?C.green:d.rates?.status==="TIGHTENING"?C.red:C.orange, marginBottom:12 }}>{d.rates?.status}</div>}
-          <Row label="Current Rate" val={false?"...":d.rates?.current + "%"} />
-          <div style={{ display:"flex", justifyContent:"center", margin:"8px 0" }}>
-            <div style={{ width:36, height:36, borderRadius:"50%", background:(d.rates?.status==="EASING"?C.green:C.red)+"20", border:"1px solid transparent", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>{d.rates?.status==="EASING"?"↘":"↗"}</div>
+          {false ? <Skel w="80px" h={20} mb={12} /> : (
+            <div>
+              <div style={{ fontSize:12, color:C.textDim, marginBottom:4 }}>Status</div>
+              <div style={{ fontSize:22, fontWeight:700, color:d.rates?.status==="EASING"?C.green:d.rates?.status==="TIGHTENING"?C.red:C.orange, marginBottom:12 }}>{d.rates?.status}</div>
+              <p style={{ fontSize:11, color:C.textMid, margin:"0 0 12px", lineHeight:1.4 }}>
+                {d.rates?.status==="EASING" 
+                  ? "The Fed is cutting rates. Good for stocks, mortgages, and borrowers. Economy might be slowing." 
+                  : d.rates?.status==="TIGHTENING" 
+                  ? "The Fed is raising rates. Expensive to borrow, bonds more attractive. Fighting inflation."
+                  : "The Fed is holding steady. No major changes coming. Market waiting for clarity."}
+              </p>
+            </div>
+          )}
+          
+          <div style={{ marginBottom:12, paddingBottom:12, borderTop:"1px solid " + C.border, borderBottom:"1px solid " + C.border, paddingTop:12 }}>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:4 }}>Current Fed Funds Rate</div>
+            <div style={{ fontSize:20, fontWeight:700, fontFamily:font, marginBottom:2 }}>{d.rates?.current}%</div>
+            <p style={{ fontSize:10, color:C.textDim, margin:0 }}>What banks charge each other to borrow overnight</p>
           </div>
-          <Row label="Expected Rate" val={false?"...":d.rates?.expected + "%"} />
-          <Row label="Implied Cuts" val={false?"...":d.rates?.impliedCuts} color={C.red} />
+
+          <div style={{ marginBottom:12, paddingBottom:12, borderBottom:"1px solid " + C.border }}>
+            <div style={{ display:"flex", justifyContent:"center", margin:"8px 0" }}>
+              <div style={{ width:44, height:44, borderRadius:"50%", background:(d.rates?.status==="EASING"?C.green:C.red)+"20", border:"1px solid transparent", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20 }}>{d.rates?.status==="EASING"?"↘":"↗"}</div>
+            </div>
+            <p style={{ fontSize:10, color:C.textDim, textAlign:"center", margin:0 }}>
+              {d.rates?.status==="EASING" ? "Rates heading DOWN" : d.rates?.status==="TIGHTENING" ? "Rates heading UP" : "Rates STEADY"}
+            </p>
+          </div>
+
+          <div>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:4 }}>Market expects by year end</div>
+            <div style={{ fontSize:20, fontWeight:700, fontFamily:font, marginBottom:6 }}>{d.rates?.expected}%</div>
+            <div style={{ fontSize:10, color:C.textDim, background:C.cardAlt, padding:"6px 8px", borderRadius:4 }}>
+              {d.rates?.impliedCuts === "-1" 
+                ? "Market prices in about 1 rate cut before December" 
+                : d.rates?.impliedCuts === "-2" 
+                ? "Market prices in about 2 rate cuts" 
+                : "No major cuts or hikes expected"}
+            </div>
+          </div>
         </Card>
 
         <Card>
@@ -811,25 +844,56 @@ function MacroStage({ d }) {
           </div>
         </Card>
 
-        <Card>
+    <Card>
           <SecTitle icon="〜" title="Yield Curve" />
-          <div style={{ marginBottom:8 }}><Badge label={d.yield?.status||"NORMAL"} color={d.yield?.status==="INVERTED"?C.red:C.green} /></div>
-          <div style={{ fontSize:11, color:C.textDim, marginBottom:3 }}>10Y - 2Y Spread</div>
-          {false ? <Skel w="60%" h={25} mb={10} /> : (
-            <div style={{ fontSize:24, fontWeight:700, color:d.yield?.status==="INVERTED"?C.red:C.green, fontFamily:font, marginBottom:3 }}>
-              {d.yield?.spread}% <span style={{ fontSize:11, color:C.textMid }}>({d.yield?.status})</span>
+          
+          <div style={{ marginBottom:12, paddingBottom:12, borderBottom:"1px solid " + C.border }}>
+            <div style={{ fontSize:11, color:C.textDim, marginBottom:6 }}>10-Year vs 2-Year Spread</div>
+            <div style={{ fontSize:26, fontWeight:700, fontFamily:font, color:d.yield?.status==="INVERTED"?C.red:C.green, marginBottom:4 }}>
+              {d.yield?.spread}
             </div>
-          )}
-          <div style={{ borderTop:"1px solid " + C.border, marginTop:12, paddingTop:10 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
-              <span style={{ fontSize:12, color:C.textMid }}>Recession Risk</span>
-              <Badge label={d.yield?.recessionRisk||"LOW"} color={d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red} />
+            <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.4 }}>
+              {d.yield?.status==="INVERTED"
+                ? "🔴 INVERTED - This is a serious recession warning. Investors expect tough times ahead."
+                : d.yield?.status==="FLAT"
+                ? "🟡 FLAT - Market is uncertain. Changes coming."
+                : "🟢 NORMAL - Healthy curve. Long-term rates higher than short-term (as they should be)."}
+            </p>
+          </div>
+
+          <div style={{ marginBottom:12, paddingBottom:12, borderBottom:"1px solid " + C.border }}>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:6 }}>What this means</div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+              <div>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:4 }}>Short-term (2Y)</div>
+                <p style={{ fontSize:11, color:C.textMid, margin:0 }}>What people think will happen soon</p>
+              </div>
+              <div>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:4 }}>Long-term (10Y)</div>
+                <p style={{ fontSize:11, color:C.textMid, margin:0 }}>What people expect over 10 years</p>
+              </div>
             </div>
-            <Bar pct={d.yield?.recessionPct||15} color={d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red} height={5} />
-            <div style={{ display:"flex", justifyContent:"space-between", marginTop:4 }}>
-              <span style={{ fontSize:11, color:C.textDim }}>Probability</span>
-              <span style={{ fontSize:13, fontFamily:font }}>{d.yield?.recessionPct||15}%</span>
+          </div>
+
+          <div style={{ background:(d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red)+"15", border:"1px solid " + (d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red) + "40", borderRadius:6, padding:"10px 12px" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:C.textDim }}>Recession Risk</div>
+              <span style={{ background:(d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red)+"25", color:(d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red), padding:"2px 8px", borderRadius:4, fontSize:11, fontWeight:700 }}>
+                {d.yield?.recessionRisk || "LOW"}
+              </span>
             </div>
+            <Bar pct={d.yield?.recessionPct || 15} color={d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red} height={5} />
+            <div style={{ display:"flex", justifyContent:"space-between", marginTop:6, fontSize:10 }}>
+              <span style={{ color:C.textDim }}>Probability</span>
+              <span style={{ fontFamily:font, fontWeight:700, color:C.text }}>{d.yield?.recessionPct || 15}%</span>
+            </div>
+            <p style={{ fontSize:10, color:C.textMid, margin:"8px 0 0", lineHeight:1.4 }}>
+              {d.yield?.recessionRisk==="LOW" 
+                ? "Economy looks healthy. Normal times ahead."
+                : d.yield?.recessionRisk==="MEDIUM"
+                ? "Be cautious. Recession risk is elevated."
+                : "🔴 Serious recession risk. Major economic slowdown likely."}
+            </p>
           </div>
         </Card>
       </div>
