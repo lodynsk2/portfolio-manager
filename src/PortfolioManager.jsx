@@ -1404,25 +1404,26 @@ function MacroStage({ d }) {
       </Card>
 
      {/* SECTOR HEATMAP */}
-<Card>
-  <SecTitle icon="🌡" title="Sector Heatmap" badge="LIVE" bc={C.green} />
-  <TVWidget scriptName="embed-widget-stock-heatmap" height={500} config={{
-    "exchanges": [],
-    "dataSource": "SPX500",
-    "grouping": "sector",
-    "blockSize": "market_cap_basic",
-    "blockColor": "change",
-    "locale": "en",
-    "colorTheme": "dark",
-    "hasTopBar": false,
-    "isDataSetEnabled": false,
-    "isZoomEnabled": true,
-    "hasSymbolTooltip": true,
-    "isMonoSize": false,
-    "width": "100%",
-    "height": 500
-  }} />
-</Card>
+      <Card>
+        <SecTitle icon="🌡" title="Sector Heatmap" badge="LIVE" bc={C.green} />
+        <TVWidget scriptName="embed-widget-stock-heatmap" height={500} config={{
+          "exchanges": [],
+          "dataSource": "SPX500",
+          "grouping": "sector",
+          "blockSize": "market_cap_basic",
+          "blockColor": "change",
+          "locale": "en",
+          "colorTheme": "dark",
+          "hasTopBar": false,
+          "isDataSetEnabled": false,
+          "isZoomEnabled": true,
+          "hasSymbolTooltip": true,
+          "isMonoSize": false,
+          "width": "100%",
+          "height": 500
+        }} />
+      </Card>
+
       {/* ASSET ALLOCATION */}
       <Card>
         <SecTitle icon="⚖" title="Asset Allocation" />
@@ -1498,5 +1499,4 @@ function MacroStage({ d }) {
     </div>
   );
 }
-
 
