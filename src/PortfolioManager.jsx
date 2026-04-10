@@ -1485,20 +1485,16 @@ function MacroStage({ d }) {
                     </div>
                   </td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        <div style={{ display:"flex", justifyContent:"space-between", marginTop:10, fontSize:10, color:C.textDim }}>
-          <span>Based on S&P 500 sector ETFs (SPDR)</span>
-          <span style={{ display:"flex", gap:10 }}><span><Dot c={C.green}/>Positive</span><span><Dot c={C.red}/>Negative</span></span>
-        </div>
-      </Card>
+            );
+          })}
+        </tbody>
+      </table>
+      <div style={{ display:"flex", justifyContent:"space-between", marginTop:10, fontSize:10, color:C.textDim }}>
+        <span>Based on S&P 500 sector ETFs (SPDR)</span>
+        <span style={{ display:"flex", gap:10 }}><span><Dot c={C.green}/>Positive</span><span><Dot c={C.red}/>Negative</span></span>
+      </div>
+    </Card>
 
-  
-  
-      </Card>
-    </div>
-  );
+  </div>
+);
 }
-
