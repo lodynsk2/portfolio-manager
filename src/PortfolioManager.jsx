@@ -510,41 +510,41 @@ try {
     });
 
 // Asset Allocation — adjust based on market conditions
-      var vix = parseFloat(prev.vix?.price || "20");
-      var hySpread = parseFloat(prev.credit?.hyDAS || "300");
-      var bullSectors = sectors.filter(function(s) { return parseFloat(s.r6m) > 0; }).length;
-      var bearish = vix > 25 || hySpread > 400 || bullSectors < 5;
-      var veryBearish = vix > 35 || hySpread > 500 || bullSectors < 3;
+var vix = parseFloat(prev.vix?.price || "20");
+var hySpread = parseFloat(prev.credit?.hyDAS || "300");
+var bullSectors = sectors.filter(function(s) { return parseFloat(s.r6m) > 0; }).length;
+var bearish = vix > 25 || hySpread > 400 || bullSectors < 5;
+var veryBearish = vix > 35 || hySpread > 500 || bullSectors < 3;
 
-      out.allocation = {
-        stocks: { 
-  n: "60", 
-  a: veryBearish ? "35" : (bearish ? "45" : "55") 
-},
-bonds: { 
-  n: "10", 
-  a: veryBearish ? "20" : (bearish ? "15" : "10") 
-},
-cash: { 
-  n: "5", 
-  a: veryBearish ? "20" : (bearish ? "15" : "8") 
-},
-gold: { 
-  n: "5", 
-  a: veryBearish ? "15" : (bearish ? "12" : "7") 
-},
-crypto: { 
-  n: "10", 
-  a: veryBearish ? "3" : (bearish ? "5" : "10") 
-},
-realAssets: { 
-  n: "10", 
-  a: veryBearish ? "7" : (bearish ? "8" : "10") 
-}
-      };
+out.allocation = {
+  stocks: {
+    n: "60",
+    a: veryBearish ? "35" : bearish ? "45" : "55"
+  },
+  bonds: {
+    n: "10",
+    a: veryBearish ? "20" : bearish ? "15" : "10"
+  },
+  cash: {
+    n: "5",
+    a: veryBearish ? "20" : bearish ? "15" : "8"
+  },
+  gold: {
+    n: "5",
+    a: veryBearish ? "15" : bearish ? "12" : "7"
+  },
+  crypto: {
+    n: "10",
+    a: veryBearish ? "3" : bearish ? "5" : "10"
+  },
+  realAssets: {
+    n: "10",
+    a: veryBearish ? "7" : bearish ? "8" : "10"
+  }
+};
 
-      return out;
-    });
+return out;
+});
   
     setRefreshStatus("Sector data applied!");
     // Fetch Fear & Greed data
