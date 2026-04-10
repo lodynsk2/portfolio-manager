@@ -506,7 +506,7 @@ try {
         underweight 
       };
 
-// Asset Allocation — adjust based on market conditions
+      // Asset Allocation — adjust based on market conditions
       var vix = parseFloat(prev.vix?.price || "20");
       var hySpread = parseFloat(prev.credit?.hyDAS || "300");
       var bullSectors = sectors.filter(function(s) { return parseFloat(s.r6m) > 0; }).length;
@@ -1485,16 +1485,16 @@ function MacroStage({ d }) {
                     </div>
                   </td>
                 </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      <div style={{ display:"flex", justifyContent:"space-between", marginTop:10, fontSize:10, color:C.textDim }}>
-        <span>Based on S&P 500 sector ETFs (SPDR)</span>
-        <span style={{ display:"flex", gap:10 }}><span><Dot c={C.green}/>Positive</span><span><Dot c={C.red}/>Negative</span></span>
-      </div>
-    </Card>
-
-  </div>
-);
+              );
+            })}
+          </tbody>
+        </table>
+        <div style={{ display:"flex", justifyContent:"space-between", marginTop:10, fontSize:10, color:C.textDim }}>
+          <span>Based on S&P 500 sector ETFs (SPDR)</span>
+          <span style={{ display:"flex", gap:10 }}><span><Dot c={C.green}/>Positive</span><span><Dot c={C.red}/>Negative</span></span>
+        </div>
+      </Card>
+    </div>
+  );
 }
+
