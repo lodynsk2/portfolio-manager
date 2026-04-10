@@ -1348,40 +1348,7 @@ function MacroStage({ d }) {
         </div>
       </Card>
 
-      {/* SECTOR ALLOCATIONS */}
-      <Card style={{ marginBottom:22 }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
-          <div>
-            <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:3 }}>Sector Allocations</div>
-            <div style={{ fontSize:12, color:C.textMid }}>Confidence: {d.sectorAlloc?.confidence}%</div>
-          </div>
-          <div style={{ display:"flex", gap:8 }}>
-            <div><span style={{ fontSize:10, color:C.textDim, marginRight:4 }}>Season:</span><Badge label={d.sectorAlloc?.season} color={SC[d.macroRegime?.season]||C.gold} /></div>
-            <div><span style={{ fontSize:10, color:C.textDim, marginRight:4 }}>Bias:</span><Badge label={d.sectorAlloc?.bias} color={C.blue} /></div>
-          </div>
-        </div>
-        {[["OVERWEIGHT","overweight",C.green],["NEUTRAL","neutral",C.textDim],["UNDERWEIGHT","underweight",C.red]].map(function([title,key,clr]) {
-          return d.sectorAlloc?.[key]?.length > 0 && (
-            <div key={title} style={{ marginBottom:12 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:6 }}>
-                <span style={{ color:clr, fontSize:13 }}>{title==="OVERWEIGHT"?"↑":title==="UNDERWEIGHT"?"↓":"→"}</span>
-                <span style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:clr, textTransform:"uppercase" }}>{title}</span>
-              </div>
-              {d.sectorAlloc[key].map(function(sec,si) {
-                return (
-                  <div key={si} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 12px", background:C.cardAlt, border:"1px solid " + clr + "20", borderRadius:6, marginBottom:5 }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-                      <span style={{ fontSize:13, fontWeight:600 }}>{sec.name}</span>
-                      <Badge label={sec.conviction} color={sec.conviction==="HIGH"?clr:sec.conviction==="MEDIUM"?C.orange:C.textMid} />
-                      <Badge label="Regime" color={C.blue} />
-                    </div>
-                    <span style={{ fontSize:14, fontWeight:700, fontFamily:font, color:clr }}>{sec.target}%</span>
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })}
+  
   
       </Card>
     </div>
