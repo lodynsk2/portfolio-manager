@@ -443,27 +443,71 @@ try {
     setData(function(prev) {
       var out = { ...prev };
       var sectors = secJson.sectors;
+      var season = prev.macroRegime?.season || "Autumn";
 
       // Top Sectors — top 5 by 6M return
       out.topSectors = sectors.slice(0, 5).map(function(s) {
         return { name:s.name, etf:s.etf, r6m:s.r6m, r3m:s.r3m, pos:s.pos };
       });
 
-      // Sector Allocations — auto generate from momentum
-      var overweight = sectors.filter(function(s) { return parseFloat(s.r6m) > 3; })
-        .slice(0, 3).map(function(s) {
-          return { name:s.name, conviction: parseFloat(s.r6m) > 8 ? "HIGH" : "MEDIUM", target:(8 + parseFloat(s.r6m) * 0.2).toFixed(1) };
-        });
-      var underweight = sectors.filter(function(s) { return parseFloat(s.r6m) < -5; })
-        .slice(0, 3).map(function(s) {
-          return { name:s.name, conviction: parseFloat(s.r6m) < -10 ? "HIGH" : "MEDIUM", target:(5 + parseFloat(s.r6m) * 0.1).toFixed(1) };
-        });
-      var neutral = sectors.filter(function(s) { return parseFloat(s.r6m) >= -5 && parseFloat(s.r6m) <= 3; })
-        .slice(0, 3).map(function(s) {
-          return { name:s.name, conviction:"LOW", target:"7.0" };
-        });
+      // ─── MIT SEASON PREFERENCE MAPPING ───
+      var seasonalBias = {
+        "Spring": ["Technology", "Industrials", "Consumer Discretionary", "Financials", "Small Cap"],
+        "Summer": ["Energy", "Materials", "Industrials", "Financials", "Real Assets"],
+        "Autumn": ["Utilities", "Healthcare", "Consumer Staples", "Gold", "Cash"],
+        "Winter": ["Long Duration Bonds", "Gold", "Utilities", "Healthcare", "Cash"]
+      };
 
-      out.sectorAlloc = { ...out.sectorAlloc, overweight, underweight, neutral };
+      var preferred = seasonalBias[season] || seasonalBias["Autumn"];
+      var avoided = season === "Spring" || season === "Summer" 
+        ? ["Utilities", "Consumer Staples", "Bonds"]
+        : ["Technology", "Consumer Cyclical", "High Beta"];
+
+      // Score each sector: momentum + seasonal preference
+      var scored = sectors.map(function(s) {
+        var momentum = parseFloat(s.r6m) || 0;
+        var isPreferred = preferred.some(p => s.name.includes(p));
+        var isAvoided = avoided.some(a => s.name.includes(a));
+        
+        var score = momentum;
+        if (isPreferred) score += 5;  // Boost preferred sectors
+        if (isAvoided) score -= 5;    // Penalize avoided sectors
+        
+        return { ...s, score, momentum, isPreferred };
+      });
+
+      // Sort by composite score
+      scored.sort(function(a, b) { return b.score - a.score; });
+
+      // Allocate: top 3 overweight, next 3 neutral, bottom 3 underweight
+      var overweight = scored.slice(0, 3).map(function(s) {
+        var conviction = s.isPreferred ? "HIGH" : s.momentum > 5 ? "MEDIUM" : "LOW";
+        var target = (12 + s.momentum * 0.3).toFixed(1);
+        return { name:s.name, conviction, target };
+      });
+
+      var neutral = scored.slice(3, 6).map(function(s) {
+        return { name:s.name, conviction:"LOW", target:"7.0" };
+      });
+
+      var underweight = scored.slice(6, 9).map(function(s) {
+        var conviction = s.isAvoided ? "HIGH" : s.momentum < -5 ? "MEDIUM" : "LOW";
+        var target = Math.max(2, (5 + s.momentum * 0.15)).toFixed(1);
+        return { name:s.name, conviction, target };
+      });
+
+      out.sectorAlloc = { 
+        ...out.sectorAlloc, 
+        season: season.toUpperCase(),
+        bias: season === "Spring" || season === "Summer" ? "OFFENSIVE" : "DEFENSIVE",
+        confidence: prev.macroRegime?.confidence || "72",
+        overweight, 
+        neutral, 
+        underweight 
+      };
+
+      return out;
+    });
 
       // Asset Allocation — adjust based on market conditions
       var vix = parseFloat(prev.vix?.price || "20");
