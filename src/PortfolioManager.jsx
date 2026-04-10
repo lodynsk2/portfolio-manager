@@ -526,7 +526,8 @@ try {
       };
 
       return out;
-    });
+   });
+  
     setRefreshStatus("Sector data applied!");
     // Fetch Fear & Greed data
 try {
