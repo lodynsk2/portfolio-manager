@@ -1449,7 +1449,7 @@ function MacroStage({ d }) {
         </div>
       </Card>
 
-      {/* TOP SECTORS */}
+       {/* TOP SECTORS */}
       <Card>
         <SecTitle icon="📋" title="Top Sectors (6M Returns)" />
         <div style={{ fontSize:11, color:C.textDim, marginBottom:12 }}>Top 5 performing sectors by 6-month total return</div>
@@ -1492,9 +1492,11 @@ function MacroStage({ d }) {
         <div style={{ display:"flex", justifyContent:"space-between", marginTop:10, fontSize:10, color:C.textDim }}>
           <span>Based on S&P 500 sector ETFs (SPDR)</span>
           <span style={{ display:"flex", gap:10 }}><span><Dot c={C.green}/>Positive</span><span><Dot c={C.red}/>Negative</span></span>
-       </div>
+        </div>
       </Card>
 
     </div>
   );
 }
+
+
