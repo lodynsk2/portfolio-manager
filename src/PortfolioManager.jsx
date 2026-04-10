@@ -985,24 +985,6 @@ function MacroStage({ d }) {
             <div style={{ fontSize:9, color:C.textDim, marginBottom:4 }}>CB Balance Sheets (USD $T)</div>
          <div style={{ position:"relative" }}>
   <svg width="100%" height="70" viewBox="0 0 240 70" preserveAspectRatio="none" style={{ display:"block" }}>
-    <defs>
-      <linearGradient id="fedGrad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor={C.blue} stopOpacity="0.9"/>
-        <stop offset="100%" stopColor={C.blue} stopOpacity="0.4"/>
-      </linearGradient>
-      <linearGradient id="ecbGrad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor={C.orange} stopOpacity="0.9"/>
-        <stop offset="100%" stopColor={C.orange} stopOpacity="0.4"/>
-      </linearGradient>
-      <linearGradient id="bojGrad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor={C.red} stopOpacity="0.9"/>
-        <stop offset="100%" stopColor={C.red} stopOpacity="0.4"/>
-      </linearGradient>
-      <linearGradient id="pbocGrad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor={C.cyan} stopOpacity="0.9"/>
-        <stop offset="100%" stopColor={C.cyan} stopOpacity="0.4"/>
-      </linearGradient>
-    </defs>
     {(function() {
       var fedT = parseFloat(d.liquidity?.fedTotal || "6.6");
       var ecbT = parseFloat(d.liquidity?.ecbTotal || "6.2");
@@ -1020,16 +1002,16 @@ function MacroStage({ d }) {
       var y0 = y1 - fedH;
       return (
         <>
-          <polygon points={"0," + y0 + " 240," + (y0-2) + " 240,0 0,0"} fill="url(#fedGrad)">
+          <polygon points={"0," + y0 + " 240," + (y0-2) + " 240,0 0,0"} fill={C.blue} opacity="0.7">
             <title>Fed: ${fedT.toFixed(1)}T</title>
           </polygon>
-          <polygon points={"0," + y1 + " 240," + (y1-2) + " 240," + y0 + " 0," + y0} fill="url(#ecbGrad)">
+          <polygon points={"0," + y1 + " 240," + (y1-2) + " 240," + y0 + " 0," + y0} fill={C.orange} opacity="0.7">
             <title>ECB: ${ecbT.toFixed(1)}T</title>
           </polygon>
-          <polygon points={"0," + y2 + " 240," + (y2-2) + " 240," + y1 + " 0," + y1} fill="url(#bojGrad)">
+          <polygon points={"0," + y2 + " 240," + (y2-2) + " 240," + y1 + " 0," + y1} fill={C.red} opacity="0.7">
             <title>BoJ: ${bojT.toFixed(1)}T</title>
           </polygon>
-          <polygon points={"0,68 240,68 240," + y2 + " 0," + y2} fill="url(#pbocGrad)">
+          <polygon points={"0,68 240,68 240," + y2 + " 0," + y2} fill={C.cyan} opacity="0.7">
             <title>PBoC: ${pbocT.toFixed(1)}T</title>
           </polygon>
         </>
@@ -1404,26 +1386,25 @@ function MacroStage({ d }) {
       </Card>
 
      {/* SECTOR HEATMAP */}
-      <Card>
-        <SecTitle icon="🌡" title="Sector Heatmap" badge="LIVE" bc={C.green} />
-        <TVWidget scriptName="embed-widget-stock-heatmap" height={500} config={{
-          "exchanges": [],
-          "dataSource": "SPX500",
-          "grouping": "sector",
-          "blockSize": "market_cap_basic",
-          "blockColor": "change",
-          "locale": "en",
-          "colorTheme": "dark",
-          "hasTopBar": false,
-          "isDataSetEnabled": false,
-          "isZoomEnabled": true,
-          "hasSymbolTooltip": true,
-          "isMonoSize": false,
-          "width": "100%",
-          "height": 500
-        }} />
-      </Card>
-
+<Card>
+  <SecTitle icon="🌡" title="Sector Heatmap" badge="LIVE" bc={C.green} />
+  <TVWidget scriptName="embed-widget-stock-heatmap" height={500} config={{
+    "exchanges": [],
+    "dataSource": "SPX500",
+    "grouping": "sector",
+    "blockSize": "market_cap_basic",
+    "blockColor": "change",
+    "locale": "en",
+    "colorTheme": "dark",
+    "hasTopBar": false,
+    "isDataSetEnabled": false,
+    "isZoomEnabled": true,
+    "hasSymbolTooltip": true,
+    "isMonoSize": false,
+    "width": "100%",
+    "height": 500
+  }} />
+</Card>
       {/* ASSET ALLOCATION */}
       <Card>
         <SecTitle icon="⚖" title="Asset Allocation" />
@@ -1497,6 +1478,32 @@ function MacroStage({ d }) {
       </Card>
 
     </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
   );
 }
+
 
