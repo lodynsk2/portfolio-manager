@@ -142,7 +142,6 @@ const Badge = ({ label, color }) => (
 );
 const Card = ({ children, style, glow }) => (
   <div style={{ background:C.card, border:"1px solid " + C.border, borderRadius:10, padding:"16px 18px", position:"relative", boxShadow:glow?"0 0 22px " + glow + "18":"none", ...style }}>
-    <div style={{ position:"absolute", top:0, right:0, width:5, height:5, borderRadius:"0 0 0 5px", background:C.green, opacity:0.5 }} />
     {children}
   </div>
 );
@@ -461,7 +460,7 @@ export default function App() {
 
   return (
     <div style={{ display:"flex", height:"100vh", background:C.bg, fontFamily:sans, color:C.text, overflow:"hidden" }}>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}} *{outline:none}`}</style>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}} *{outline:none} *::-webkit-scrollbar{display:none} *{-ms-overflow-style:none;scrollbar-width:none} html,body{overflow:hidden;margin:0;padding:0;background:#08090f}`}</style>
 
       {/* SIDEBAR */}
       <div style={{ width:188, background:C.panel, borderRight:"1px solid " + C.border, display:"flex", flexDirection:"column", padding:"13px 0", flexShrink:0 }}>
