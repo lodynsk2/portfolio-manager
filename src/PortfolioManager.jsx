@@ -604,14 +604,51 @@ function MacroStage({ d }) {
       {/* ROW 2: Forward Rates + DXY + Yield */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
         <Card>
-          <SecTitle icon="↘" title="Forward Rates" />
-          <div style={{ fontSize:20, fontWeight:700, color:d.rates?.status==="EASING"?C.green:d.rates?.status==="TIGHTENING"?C.red:C.orange, marginBottom:12 }}>{d.rates?.status}</div>
-          <Row label="Current Rate" val={d.rates?.current + "%"} />
-          <div style={{ display:"flex", justifyContent:"center", margin:"8px 0" }}>
-            <div style={{ width:36, height:36, borderRadius:"50%", background:(d.rates?.status==="EASING"?C.green:C.red)+"20", border:"1px solid " + (d.rates?.status==="EASING"?C.green:C.red) + "44", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>{d.rates?.status==="EASING"?"↘":"↗"}</div>
+          <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:14 }}>
+            <span style={{ fontSize:14 }}>↘</span>
+            <span style={{ fontFamily:sans, fontSize:11, fontWeight:700, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Forward Rates</span>
           </div>
-          <Row label="Expected Rate" val={d.rates?.expected + "%"} />
-          <Row label="Implied Cuts" val={d.rates?.impliedCuts} color={C.red} />
+          {/* Status */}
+          <div style={{ marginBottom:14 }}>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:4, letterSpacing:1 }}>STATUS</div>
+            <div style={{ fontSize:22, fontWeight:700, color:d.rates?.status==="EASING"?C.green:d.rates?.status==="TIGHTENING"?C.red:C.orange, marginBottom:6 }}>{d.rates?.status}</div>
+            <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.5 }}>
+              {d.rates?.status==="EASING"
+                ? "The Fed is cutting rates. Good for stocks, mortgages, and borrowers. Economy may be slowing."
+                : d.rates?.status==="TIGHTENING"
+                ? "The Fed is raising rates. Expensive to borrow. Bonds more attractive. Fighting inflation."
+                : "The Fed is holding steady. No major changes coming. Market is waiting for clarity."}
+            </p>
+          </div>
+          {/* Current rate */}
+          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12, marginBottom:12 }}>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:4, letterSpacing:1 }}>CURRENT FED FUNDS RATE</div>
+            <div style={{ fontSize:22, fontWeight:700, fontFamily:font, marginBottom:4 }}>{d.rates?.current}%</div>
+            <div style={{ fontSize:11, color:C.textDim }}>What banks charge each other to borrow overnight</div>
+          </div>
+          {/* Direction icon */}
+          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12, marginBottom:12 }}>
+            <div style={{ display:"flex", justifyContent:"center", marginBottom:8 }}>
+              <div style={{ width:44, height:44, borderRadius:"50%", background:(d.rates?.status==="EASING"?C.green:d.rates?.status==="TIGHTENING"?C.red:C.orange)+"20", border:"1px solid " + (d.rates?.status==="EASING"?C.green:d.rates?.status==="TIGHTENING"?C.red:C.orange) + "55", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20 }}>
+                {d.rates?.status==="EASING"?"↙":d.rates?.status==="TIGHTENING"?"↗":"→"}
+              </div>
+            </div>
+            <div style={{ textAlign:"center", fontSize:11, color:C.textDim }}>
+              {d.rates?.status==="EASING"?"Rates heading DOWN":d.rates?.status==="TIGHTENING"?"Rates heading UP":"Rates STEADY"}
+            </div>
+          </div>
+          {/* Expected */}
+          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12 }}>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:4, letterSpacing:1 }}>MARKET EXPECTS BY YEAR END</div>
+            <div style={{ fontSize:20, fontWeight:700, fontFamily:font, marginBottom:6 }}>{d.rates?.expected}%</div>
+            <div style={{ background:C.cardAlt, borderRadius:6, padding:"7px 10px", fontSize:11, color:C.textDim, lineHeight:1.5 }}>
+              {d.rates?.impliedCuts==="-1"
+                ? "Market prices in ~1 rate cut before December"
+                : d.rates?.impliedCuts==="-2"
+                ? "Market prices in ~2 rate cuts"
+                : "No major cuts or hikes expected right now"}
+            </div>
+          </div>
         </Card>
 
         <Card>
@@ -641,22 +678,54 @@ function MacroStage({ d }) {
         </Card>
 
         <Card>
-          <SecTitle icon="〜" title="Yield Curve" />
-          <div style={{ marginBottom:8 }}><Badge label={d.yield?.status||"NORMAL"} color={d.yield?.status==="INVERTED"?C.red:C.green} /></div>
-          <div style={{ fontSize:11, color:C.textDim, marginBottom:3 }}>10Y - 2Y Spread</div>
-          <div style={{ fontSize:24, fontWeight:700, color:d.yield?.status==="INVERTED"?C.red:C.green, fontFamily:font, marginBottom:3 }}>
-            {d.yield?.spread}% <span style={{ fontSize:11, color:C.textMid }}>({d.yield?.status})</span>
+          <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:14 }}>
+            <span style={{ fontSize:14 }}>〜</span>
+            <span style={{ fontFamily:sans, fontSize:11, fontWeight:700, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Yield Curve</span>
           </div>
-          <div style={{ borderTop:"1px solid " + C.border, marginTop:12, paddingTop:10 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
-              <span style={{ fontSize:12, color:C.textMid }}>Recession Risk</span>
-              <Badge label={d.yield?.recessionRisk||"LOW"} color={d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red} />
+          {/* Spread */}
+          <div style={{ marginBottom:14 }}>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:4, letterSpacing:1 }}>10Y - 2Y SPREAD</div>
+            <div style={{ fontSize:26, fontWeight:700, fontFamily:font, color:d.yield?.status==="INVERTED"?C.red:d.yield?.status==="FLAT"?C.orange:C.green, marginBottom:6 }}>{d.yield?.spread}</div>
+            <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.5 }}>
+              {d.yield?.status==="INVERTED"
+                ? "🔴 INVERTED — This is a serious recession warning. Investors expect tough times ahead."
+                : d.yield?.status==="FLAT"
+                ? "🟡 FLAT — Market is uncertain. Changes are coming."
+                : "🟢 NORMAL — Healthy curve. Long-term rates higher than short-term (as they should be)."}
+            </p>
+          </div>
+          {/* What the rates mean */}
+          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12, marginBottom:12 }}>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:8, letterSpacing:1 }}>WHAT THIS MEANS</div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Short-term (2Y)</div>
+                <div style={{ fontSize:11, color:C.textMid }}>What people expect to happen soon</div>
+              </div>
+              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Long-term (10Y)</div>
+                <div style={{ fontSize:11, color:C.textMid }}>What people expect over 10 years</div>
+              </div>
+            </div>
+          </div>
+          {/* Recession risk */}
+          <div style={{ background:(d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red)+"15", border:"1px solid " + (d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red) + "40", borderRadius:6, padding:"10px 12px" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+              <div style={{ fontSize:11, color:C.textMid, fontWeight:600 }}>Recession Risk</div>
+              <span style={{ fontFamily:font, fontSize:13, fontWeight:700, color:d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red }}>{d.yield?.recessionRisk||"LOW"}</span>
             </div>
             <Bar pct={d.yield?.recessionPct||15} color={d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red} height={5} />
-            <div style={{ display:"flex", justifyContent:"space-between", marginTop:4 }}>
-              <span style={{ fontSize:11, color:C.textDim }}>Probability</span>
-              <span style={{ fontSize:13, fontFamily:font }}>{d.yield?.recessionPct||15}%</span>
+            <div style={{ display:"flex", justifyContent:"space-between", marginTop:6, fontSize:11 }}>
+              <span style={{ color:C.textDim }}>Probability</span>
+              <span style={{ fontFamily:font, fontWeight:700 }}>{d.yield?.recessionPct||15}%</span>
             </div>
+            <p style={{ fontSize:11, color:C.textMid, margin:"8px 0 0", lineHeight:1.4 }}>
+              {d.yield?.recessionRisk==="LOW"
+                ? "Economy looks healthy. Normal times ahead."
+                : d.yield?.recessionRisk==="MEDIUM"
+                ? "Be cautious — recession risk is elevated."
+                : "🔴 Serious recession risk. Major slowdown likely."}
+            </p>
           </div>
         </Card>
       </div>
@@ -759,52 +828,190 @@ function MacroStage({ d }) {
         </Card>
 
         <Card>
-          <SecTitle icon="⚠" title="Credit & Bond Stress" badge={"MOVE: " + (d.credit?.moveSignal||"—")} bc={C.orange} />
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, fontSize:12 }}>
-            <div style={{ gridColumn:"1/-1" }}><span style={{ fontSize:9, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Bond Volatility</span></div>
-            <div><div style={{ fontSize:10, color:C.textDim }}>MOVE Index</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.moveIndex}</div></div>
-            <div><div style={{ fontSize:10, color:C.textDim }}>MOVE/VIX Signal</div><div style={{ color:C.orange, fontFamily:font }}>{d.credit?.moveSignal}</div></div>
-            <div style={{ gridColumn:"1/-1", borderTop:"1px solid " + C.border, paddingTop:5, marginTop:2 }}><span style={{ fontSize:9, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Credit Spreads</span></div>
-            <div><div style={{ fontSize:10, color:C.textDim }}>HY DAS (bp)</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.hyDAS}</div></div>
-            <div><div style={{ fontSize:10, color:C.textDim }}>IG-HY Diff (bp)</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.igHyDiff}</div></div>
-            <div style={{ gridColumn:"1/-1", fontSize:10, color:C.orange }}>{d.credit?.tightNote}</div>
-            <div style={{ gridColumn:"1/-1", borderTop:"1px solid " + C.border, paddingTop:5, marginTop:2 }}><span style={{ fontSize:9, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Lending Conditions</span></div>
-            <div><div style={{ fontSize:10, color:C.textDim }}>SLOOS</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.sloosNote}</div></div>
-            <div><div style={{ fontSize:10, color:C.textDim }}>Gold / Copper</div><div style={{ color:C.red, fontFamily:font }}>{d.credit?.goldCopper}</div></div>
-            <div style={{ gridColumn:"1/-1", borderTop:"1px solid " + C.border, paddingTop:5, marginTop:2 }}><span style={{ fontSize:9, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Consumer Stress</span></div>
-            <div><div style={{ fontSize:10, color:C.textDim }}>Sahm Rule</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.sahmRule}</div></div>
-            <div><div style={{ fontSize:10, color:C.textDim }}>CC Delinquency</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.ccDelinquency}%</div></div>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+              <span style={{ fontSize:14 }}>⚠</span>
+              <span style={{ fontFamily:sans, fontSize:11, fontWeight:700, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Credit &amp; Bond Stress</span>
+            </div>
+          </div>
+
+          {/* Bond Volatility */}
+          <div style={{ marginBottom:14 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:C.textMid, marginBottom:8 }}>📊 Bond Volatility (MOVE Index)</div>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:4 }}>
+              <div style={{ fontSize:22, fontWeight:700, fontFamily:font, color:parseFloat(d.credit?.moveIndex)>120?C.red:parseFloat(d.credit?.moveIndex)>90?C.orange:C.green }}>{d.credit?.moveIndex}</div>
+              <Badge label={d.credit?.moveSignal||"—"} color={d.credit?.moveSignal==="Elevated"||d.credit?.moveSignal==="High"?C.orange:d.credit?.moveSignal==="Extreme"?C.red:C.green} />
+            </div>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:8 }}>Normal range: 80-120</div>
+            <p style={{ fontSize:11, color:C.textMid, margin:"0 0 8px", lineHeight:1.5 }}>
+              Bond traders are nervous about future interest rates. Treasury prices are bouncing around more than usual.
+            </p>
+            <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:6, padding:"7px 10px" }}>
+              <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>MOVE/VIX Signal</div>
+              <div style={{ fontSize:12, fontWeight:700, color:d.credit?.moveSignal==="Elevated"?C.orange:d.credit?.moveSignal==="Extreme"?C.red:C.green, marginBottom:4 }}>{d.credit?.moveSignal}</div>
+              <div style={{ fontSize:11, color:C.textDim }}>
+                {d.credit?.moveSignal==="Elevated"||d.credit?.moveSignal==="High"
+                  ? "Bonds are more jumpy than stocks. Stress is in fixed income."
+                  : d.credit?.moveSignal==="Extreme"
+                  ? "Bond market under severe stress — watch for contagion to stocks."
+                  : "Bond market calm relative to stocks. No unusual stress."}
+              </div>
+            </div>
+          </div>
+
+          {/* Credit Spreads */}
+          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12, marginBottom:14 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:C.textMid, marginBottom:8 }}>💰 Credit Spreads (Risk Premium)</div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
+              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>HY DAS (Junk Bonds)</div>
+                <div style={{ fontSize:16, fontWeight:700, fontFamily:font, color:parseInt(d.credit?.hyDAS)>500?C.red:parseInt(d.credit?.hyDAS)<350?C.orange:C.green, marginBottom:3 }}>{d.credit?.hyDAS}bp</div>
+                <div style={{ fontSize:10, color:C.textDim }}>{parseInt(d.credit?.hyDAS)<350?"Tight — investors not scared":parseInt(d.credit?.hyDAS)>500?"Wide — stress signal":"Normal range"}</div>
+              </div>
+              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>IG-HY Diff</div>
+                <div style={{ fontSize:16, fontWeight:700, fontFamily:font, color:C.text, marginBottom:3 }}>{d.credit?.igHyDiff}bp</div>
+                <div style={{ fontSize:10, color:C.textDim }}>Narrow — risky bonds cheap</div>
+              </div>
+            </div>
+            <div style={{ background:parseInt(d.credit?.hyDAS)<400?C.green+"12":C.red+"12", border:"1px solid " + (parseInt(d.credit?.hyDAS)<400?C.green:C.red) + "30", borderRadius:6, padding:"8px 10px", fontSize:11, color:C.textMid, lineHeight:1.5 }}>
+              <span style={{ color:parseInt(d.credit?.hyDAS)<400?C.green:C.red, fontWeight:700 }}>Plain English: </span>
+              {parseInt(d.credit?.hyDAS)<400
+                ? "Investors are willing to lend money to shaky companies. Good for borrowers but risky — if fear kicks in, these spreads blow out fast."
+                : "Investors are demanding higher rates to lend to risky companies. Credit stress is building."}
+            </div>
+          </div>
+
+          {/* Lending Conditions */}
+          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12, marginBottom:14 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:C.textMid, marginBottom:8 }}>🏦 Lending Conditions (Real Economy)</div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
+              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Bank Lending (SLOOS)</div>
+                <div style={{ fontSize:12, fontWeight:700, color:d.credit?.sloosNote==="Net Tightening"?C.red:C.green, marginBottom:3 }}>{d.credit?.sloosNote}</div>
+                <div style={{ fontSize:10, color:C.textDim }}>{d.credit?.sloosNote==="Net Tightening"?"Banks saying 'no' more":"Banks lending freely"}</div>
+              </div>
+              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Gold / Copper Ratio</div>
+                <div style={{ fontSize:12, fontWeight:700, fontFamily:font, color:parseFloat(d.credit?.goldCopper)>800?C.red:C.green, marginBottom:3 }}>{d.credit?.goldCopper}</div>
+                <div style={{ fontSize:10, color:C.textDim }}>{parseFloat(d.credit?.goldCopper)>800?"⚠ Deflation fears":"Normal — growth expected"}</div>
+              </div>
+            </div>
+            <div style={{ background:C.red+"10", border:"1px solid " + C.red + "25", borderRadius:6, padding:"8px 10px", fontSize:11, color:C.textMid, lineHeight:1.5 }}>
+              <span style={{ color:C.red, fontWeight:700 }}>Plain English: </span>
+              Banks are being picky about who they lend to. High gold/copper means investors are buying safe havens, fearing deflation/recession. Credit stress is flowing to Main Street.
+            </div>
+          </div>
+
+          {/* Consumer Stress */}
+          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:C.textMid, marginBottom:8 }}>👤 Consumer Stress (Household Debt)</div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Sahm Rule</div>
+                <div style={{ fontSize:16, fontWeight:700, fontFamily:font, color:parseFloat(d.credit?.sahmRule)>0.5?C.red:C.green, marginBottom:3 }}>{d.credit?.sahmRule}</div>
+                <div style={{ fontSize:10, color:parseFloat(d.credit?.sahmRule)>0.5?C.red:C.green }}>{parseFloat(d.credit?.sahmRule)>0.5?"⚠ Recession signal":"● Safe (below 0.5)"}</div>
+              </div>
+              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Credit Card Delinquency</div>
+                <div style={{ fontSize:16, fontWeight:700, fontFamily:font, color:parseFloat(d.credit?.ccDelinquency)>3.5?C.red:parseFloat(d.credit?.ccDelinquency)>2.5?C.orange:C.green, marginBottom:3 }}>{d.credit?.ccDelinquency}%</div>
+                <div style={{ fontSize:10, color:C.textDim }}>Slight stress (normal: 2-3%)</div>
+              </div>
+            </div>
           </div>
         </Card>
 
         <Card>
-          <SecTitle icon="📊" title="Market Breadth" badge={d.breadth?.sentiment} bc={d.breadth?.sentiment==="BEARISH"?C.red:C.green} />
-          <div style={{ fontSize:30, fontWeight:700, fontFamily:font, marginBottom:2 }}>{d.breadth?.pct50}%</div>
-          <div style={{ fontSize:11, color:C.textDim, marginBottom:10 }}>above 50-day MA</div>
-          <div style={{ marginBottom:8 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:3 }}>
-              <span style={{ fontSize:11, color:C.textMid }}>50-day MA</span>
-              <span style={{ fontSize:11, fontFamily:font }}>{d.breadth?.pct50}%</span>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+              <span style={{ fontSize:14 }}>📊</span>
+              <span style={{ fontFamily:sans, fontSize:11, fontWeight:700, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Market Breadth</span>
             </div>
-            <Bar pct={d.breadth?.pct50} color={C.orange} height={4} />
+            <Badge label={d.breadth?.sentiment||"—"} color={d.breadth?.sentiment==="BEARISH"?C.red:C.green} />
           </div>
-          <div style={{ marginBottom:10 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:3 }}>
-              <span style={{ fontSize:11, color:C.textMid }}>200-day MA</span>
-              <span style={{ fontSize:11, fontFamily:font }}>{d.breadth?.pct200}%</span>
+
+          {/* Short term */}
+          <div style={{ marginBottom:14 }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                <span style={{ fontSize:11 }}>📉</span>
+                <span style={{ fontSize:12, fontWeight:600, color:C.textMid }}>Short term (50-day)</span>
+              </div>
+              <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                <div style={{ width:8, height:8, borderRadius:"50%", background:parseFloat(d.breadth?.pct50)<45?C.red:parseFloat(d.breadth?.pct50)>65?C.green:C.orange }} />
+                <span style={{ fontSize:11, color:parseFloat(d.breadth?.pct50)<45?C.red:parseFloat(d.breadth?.pct50)>65?C.green:C.orange, fontWeight:700 }}>
+                  {parseFloat(d.breadth?.pct50)<45?"Weak":parseFloat(d.breadth?.pct50)>65?"Strong":"Mixed"}
+                </span>
+                <span style={{ fontSize:10, color:C.textDim }}>{parseFloat(d.breadth?.pct50)<45?"mostly down":parseFloat(d.breadth?.pct50)>65?"mostly up":"mixed"}</span>
+              </div>
             </div>
-            <Bar pct={d.breadth?.pct200} color={C.green} height={4} />
+            <div style={{ fontSize:28, fontWeight:700, fontFamily:font, color:parseFloat(d.breadth?.pct50)<45?C.red:parseFloat(d.breadth?.pct50)>65?C.green:C.orange, marginBottom:6 }}>{d.breadth?.pct50}%</div>
+            <Bar pct={d.breadth?.pct50} color={parseFloat(d.breadth?.pct50)<45?C.red:parseFloat(d.breadth?.pct50)>65?C.green:C.orange} height={5} />
+            <div style={{ fontSize:11, color:C.textDim, marginTop:6, lineHeight:1.4 }}>
+              Out of 500 stocks, {d.breadth?.pct50}% are performing better than their recent 50-day trend.
+            </div>
           </div>
-          <div style={{ display:"flex", gap:10, fontSize:11, color:C.textDim, marginBottom:8 }}>
-            <span>A/D 5d → {d.breadth?.ad5d}</span>
-            <span>A/D 20d → <span style={{ color:C.red }}>{d.breadth?.ad20d}</span></span>
+
+          {/* Long term */}
+          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12, marginBottom:14 }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                <span style={{ fontSize:11 }}>📈</span>
+                <span style={{ fontSize:12, fontWeight:600, color:C.textMid }}>Long term (200-day)</span>
+              </div>
+              <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                <div style={{ width:8, height:8, borderRadius:"50%", background:parseFloat(d.breadth?.pct200)<45?C.red:parseFloat(d.breadth?.pct200)>65?C.green:C.orange }} />
+                <span style={{ fontSize:11, color:parseFloat(d.breadth?.pct200)<45?C.red:parseFloat(d.breadth?.pct200)>65?C.green:C.orange, fontWeight:700 }}>
+                  {parseFloat(d.breadth?.pct200)<45?"Weak":parseFloat(d.breadth?.pct200)>65?"Strong":"Shaky"}
+                </span>
+                <span style={{ fontSize:10, color:C.textDim }}>mixed</span>
+              </div>
+            </div>
+            <div style={{ fontSize:28, fontWeight:700, fontFamily:font, color:parseFloat(d.breadth?.pct200)<45?C.red:parseFloat(d.breadth?.pct200)>65?C.green:C.orange, marginBottom:6 }}>{d.breadth?.pct200}%</div>
+            <Bar pct={d.breadth?.pct200} color={parseFloat(d.breadth?.pct200)<45?C.red:parseFloat(d.breadth?.pct200)>65?C.green:C.orange} height={5} />
+            <div style={{ fontSize:11, color:C.textDim, marginTop:6, lineHeight:1.4 }}>
+              Mixed — some stocks in uptrends, some in downtrends. Not healthy, not broken.
+            </div>
           </div>
-          <div style={{ background:C.cardAlt, borderRadius:4, padding:"4px 6px", marginBottom:8 }}>
-            <svg width="100%" height="28" viewBox="0 0 200 28" preserveAspectRatio="none">
-              <polyline points="0,14 25,16 50,15 75,17 100,16 125,18 150,17 175,19 200,18" fill="none" stroke={C.red} strokeWidth="1.5" opacity="0.8" />
-            </svg>
+
+          {/* Momentum */}
+          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12, marginBottom:12 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}>
+              <span style={{ fontSize:11 }}>📊</span>
+              <span style={{ fontSize:12, fontWeight:600, color:C.textMid }}>Momentum (gaining vs losing stocks)</span>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:5 }}>Last 5 days</div>
+                <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                  <span style={{ fontSize:13 }}>{d.breadth?.ad5d==="Rising"?"📈":"📉"}</span>
+                  <span style={{ fontSize:12, fontWeight:700, color:d.breadth?.ad5d==="Rising"?C.green:C.red }}>{d.breadth?.ad5d==="Rising"?"Buying":"Selling"}</span>
+                </div>
+              </div>
+              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:5 }}>Last 20 days</div>
+                <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                  <span style={{ fontSize:13 }}>{d.breadth?.ad20d==="Rising"?"📈":"📉"}</span>
+                  <span style={{ fontSize:12, fontWeight:700, color:d.breadth?.ad20d==="Rising"?C.green:C.red }}>{d.breadth?.ad20d==="Rising"?"Buying":"Selling"}</span>
+                </div>
+              </div>
+            </div>
           </div>
-          <div style={{ background:(d.breadth?.sentiment==="BEARISH"?C.red:C.green)+"18", border:"1px solid " + (d.breadth?.sentiment==="BEARISH"?C.red:C.green) + "28", borderRadius:4, padding:"5px 9px", fontSize:11, color:d.breadth?.sentiment==="BEARISH"?C.red:C.green }}>{d.breadth?.note}</div>
+
+          {/* Overall signal */}
+          <div style={{ background:(d.breadth?.sentiment==="BEARISH"?C.red:C.green)+"12", border:"1px solid " + (d.breadth?.sentiment==="BEARISH"?C.red:C.green) + "35", borderRadius:6, padding:"9px 12px" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:5 }}>
+              <span style={{ fontSize:13 }}>⚠</span>
+              <span style={{ fontSize:12, fontWeight:700, color:d.breadth?.sentiment==="BEARISH"?C.red:C.green }}>
+                {d.breadth?.sentiment==="BEARISH"?"Weak leadership":"Strong leadership"}
+              </span>
+            </div>
+            <div style={{ fontSize:11, color:C.textMid, lineHeight:1.5 }}>
+              {d.breadth?.sentiment==="BEARISH"
+                ? "Only a few big stocks are pulling the market up. Most individual stocks are struggling. This is fragile — watch for a reversal."
+                : "Most stocks are participating in the rally. Broad strength is a healthy sign for the bull market to continue."}
+            </div>
+          </div>
         </Card>
       </div>
 
