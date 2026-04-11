@@ -800,14 +800,16 @@ function MacroStage({ d }) {
             <Badge label={d.inflation?.trend||"Stable"} color={d.inflation?.trend==="Falling"?C.green:d.inflation?.trend==="Rising"?C.red:C.yellow} />
           </div>
           <div style={{ fontSize:10, color:C.textDim, marginBottom:8, letterSpacing:1 }}>US CPI YEAR-OVER-YEAR — LIVE VIA TRADINGVIEW</div>
-          <TVWidget scriptName="embed-widget-single-quote" height={160} config={{
-            "symbol": "FRED:CPIAUCSL",
+          <TVWidget scriptName="embed-widget-mini-symbol-overview" height={220} config={{
+            "symbol": "ECONOMICS:USIRYY",
             "width": "100%",
-            "height": 160,
+            "height": 220,
             "locale": "en",
+            "dateRange": "12M",
             "colorTheme": "dark",
             "isTransparent": true,
-            "autosize": true
+            "autosize": true,
+            "largeChartUrl": ""
           }} />
           <div style={{ borderTop:"1px solid " + C.border, paddingTop:10, marginTop:8 }}>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
