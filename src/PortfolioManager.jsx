@@ -353,7 +353,22 @@ export default function App() {
           if (fredJson.FEDFUNDS) { var ff=parseFloat(fredJson.FEDFUNDS); out.rates={status:ff>5?"TIGHTENING":ff<3?"EASING":"NEUTRAL",current:ff.toFixed(2),expected:(ff-0.25).toFixed(2),impliedCuts:"-1"}; }
           if (fredJson.NFCI) { var nfci=parseFloat(fredJson.NFCI); out.fci={...out.fci,nfci:fredJson.NFCI,status:nfci<-0.3?"Loose":nfci>0.3?"Tight":"Neutral"}; }
           if (fredJson.SAHMREALTIME) { out.credit={...out.credit,sahmRule:parseFloat(fredJson.SAHMREALTIME).toFixed(2)}; }
-          if (fredJson.T10YIE) { var inf2=parseFloat(fredJson.T10YIE); out.inflation={...out.inflation,truflation:fredJson.T10YIE,trend:inf2<2?"Falling":inf2>3?"Rising":"Stable"}; }
+          if (fredJson.CPIAUCSL) {
+            var cpiLive = parseFloat(fredJson.CPIAUCSL);
+            var trufLive = fredJson.T10YIE ? parseFloat(fredJson.T10YIE) : parseFloat(out.inflation.truflation||"0");
+            var sprLive = (trufLive && cpiLive) ? (trufLive - cpiLive).toFixed(2) : "—";
+            var trendLive = cpiLive < 2.5 ? "Falling" : cpiLive > 3.5 ? "Rising" : "Stable";
+            out.inflation = { ...out.inflation,
+              cpi: cpiLive.toFixed(1),
+              trend: trendLive,
+              truflation: fredJson.T10YIE || out.inflation.truflation,
+              spread: sprLive,
+              note: trufLive < cpiLive ? "Lead indicators point to falling inflation over the next 90 days" : "Inflation indicators stable or rising"
+            };
+          } else if (fredJson.T10YIE) {
+            var inf2=parseFloat(fredJson.T10YIE);
+            out.inflation={...out.inflation,truflation:fredJson.T10YIE,trend:inf2<2?"Falling":inf2>3?"Rising":"Stable"};
+          }
           if (fredJson.WALCL) {
             var fed2=parseFloat(fredJson.WALCL)/1000000;
             var ecb=parseFloat(fredJson.ECBASSETSW)/1000000;
@@ -775,55 +790,142 @@ function MacroStage({ d }) {
         </Card>
 
         <Card>
-          <SecTitle icon="🌡" title="Inflation" badge={d.inflation?.trend} bc={d.inflation?.trend==="Falling"?C.green:d.inflation?.trend==="Rising"?C.red:C.yellow} />
-          <div style={{ fontSize:29, fontWeight:700, fontFamily:font, marginBottom:2 }}>{d.inflation?.cpi}%</div>
-          <div style={{ fontSize:11, color:C.textDim, marginBottom:10 }}>CPI YoY (official rate)</div>
-          <div style={{ display:"flex", justifyContent:"space-between", marginBottom:5 }}>
-            <span style={{ fontSize:12, color:C.textMid }}>Truflation (real-time)</span>
-            <span style={{ fontSize:12, fontFamily:font }}>{d.inflation?.truflation}%</span>
-          </div>
-          <div style={{ background:(parseFloat(d.inflation?.spread)<0?C.green:C.red)+"18", border:"1px solid " + (parseFloat(d.inflation?.spread)<0?C.green:C.red) + "28", borderRadius:4, padding:"4px 8px", marginBottom:9, textAlign:"center" }}>
-            <span style={{ fontSize:11, color:parseFloat(d.inflation?.spread)<0?C.green:C.red }}>Spread: {parseFloat(d.inflation?.spread)<0?"▼":"▲"} {d.inflation?.spread}%</span>
-          </div>
-          <p style={{ fontSize:11, color:C.orange, margin:"0 0 10px", lineHeight:1.5 }}>{d.inflation?.note}</p>
-          <div>
-            <div style={{ height:6, background:"linear-gradient(90deg," + C.blue + "," + C.green + "," + C.yellow + "," + C.orange + "," + C.red + ")", borderRadius:3, position:"relative", marginBottom:3 }}>
-              <div style={{ position:"absolute", width:9, height:9, background:C.text, border:"2px solid " + C.card, top:-2, left:Math.min(90,Math.max(5,(parseFloat(d.inflation?.cpi||2.4)/6)*100)) + "%", transform:"translateX(-50%)", borderRadius:"50%" }} />
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+              <span style={{ fontSize:14 }}>🌡</span>
+              <span style={{ fontFamily:sans, fontSize:11, fontWeight:700, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Inflation</span>
             </div>
-            <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim }}><span>Deflation</span><span>2% target</span><span>High</span></div>
+            <Badge label={d.inflation?.trend||"Stable"} color={d.inflation?.trend==="Falling"?C.green:d.inflation?.trend==="Rising"?C.red:C.yellow} />
           </div>
-          <div style={{ fontSize:10, color:C.textDim, marginTop:8 }}>Truflation leads CPI by ~90 days</div>
+
+          {/* Official CPI */}
+          <div style={{ marginBottom:14 }}>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:4, letterSpacing:1 }}>OFFICIAL CPI (Year over Year)</div>
+            <div style={{ fontSize:32, fontWeight:700, fontFamily:font, color:parseFloat(d.inflation?.cpi)>3.5?C.red:parseFloat(d.inflation?.cpi)<2?C.green:C.yellow, marginBottom:4 }}>{d.inflation?.cpi}%</div>
+            <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.5 }}>
+              {parseFloat(d.inflation?.cpi)>4
+                ? "🔴 High inflation — your money buys less over time. Fed likely keeping rates high."
+                : parseFloat(d.inflation?.cpi)>3
+                ? "🟡 Above target — Fed wants this lower. Rates may stay elevated."
+                : parseFloat(d.inflation?.cpi)>2
+                ? "🟢 Near the 2% target. Healthy range for the economy."
+                : "🔵 Below target — risk of deflation. Fed may cut rates."}
+            </p>
+          </div>
+
+          {/* Inflation gauge */}
+          <div style={{ marginBottom:14 }}>
+            <div style={{ height:8, background:"linear-gradient(90deg," + C.blue + "," + C.green + "," + C.yellow + "," + C.orange + "," + C.red + ")", borderRadius:4, position:"relative", marginBottom:5 }}>
+              <div style={{ position:"absolute", width:12, height:12, background:C.text, border:"2px solid " + C.card, top:-2, left:Math.min(92,Math.max(4,(parseFloat(d.inflation?.cpi||2.4)/6)*100)) + "%", transform:"translateX(-50%)", borderRadius:"50%" }} />
+            </div>
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:C.textDim }}>
+              <span>0% Deflation</span><span>2% Target</span><span>6%+ High</span>
+            </div>
+          </div>
+
+          {/* Real-time vs official */}
+          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12, marginBottom:12 }}>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:8, letterSpacing:1 }}>REAL-TIME INDICATOR vs OFFICIAL</div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
+              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Official CPI</div>
+                <div style={{ fontSize:18, fontWeight:700, fontFamily:font }}>{d.inflation?.cpi}%</div>
+                <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>Reported monthly</div>
+              </div>
+              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>10Y Inflation Exp.</div>
+                <div style={{ fontSize:18, fontWeight:700, fontFamily:font, color:C.cyan }}>{d.inflation?.truflation}%</div>
+                <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>Market forecast</div>
+              </div>
+            </div>
+            <div style={{ background:(parseFloat(d.inflation?.spread)<0?C.green:C.orange)+"15", border:"1px solid " + (parseFloat(d.inflation?.spread)<0?C.green:C.orange) + "35", borderRadius:6, padding:"8px 10px", fontSize:11, color:C.textMid, lineHeight:1.5 }}>
+              <span style={{ fontWeight:700, color:parseFloat(d.inflation?.spread)<0?C.green:C.orange }}>
+                {parseFloat(d.inflation?.spread)<0?"▼ Falling signal: ":"▲ Rising signal: "}
+              </span>
+              {d.inflation?.note}
+            </div>
+          </div>
+
+          <div style={{ fontSize:10, color:C.textDim, fontStyle:"italic" }}>
+            10Y expectations lead official CPI by ~90 days
+          </div>
         </Card>
       </div>
 
       {/* ROW 4: Liquidity + Credit + Breadth */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
         <Card>
-          <SecTitle icon="💧" title="Global Liquidity" badge={d.liquidity?.trend} bc={d.liquidity?.trend==="Contractionary"?C.red:d.liquidity?.trend==="Expansionary"?C.green:C.yellow} />
-          <div style={{ fontSize:26, fontWeight:700, fontFamily:font, marginBottom:2 }}>${d.liquidity?.total}T</div>
-          <div style={{ fontSize:11, color:C.textDim, marginBottom:8 }}>Score: {d.liquidity?.score}/100</div>
-          <div style={{ display:"flex", gap:12, marginBottom:10 }}>
-            <div><div style={{ fontSize:10, color:C.textDim }}>13w RoC</div><div style={{ fontSize:13, color:C.red, fontFamily:font }}>▼ {d.liquidity?.roc13w}%</div></div>
-            <div><div style={{ fontSize:10, color:C.textDim }}>52w</div><div style={{ fontSize:13, color:C.red, fontFamily:font }}>{d.liquidity?.roc52w}%</div></div>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+              <span style={{ fontSize:14 }}>💧</span>
+              <span style={{ fontFamily:sans, fontSize:11, fontWeight:700, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Global Liquidity</span>
+            </div>
+            <Badge label={d.liquidity?.trend||"—"} color={d.liquidity?.trend==="Contractionary"?C.red:d.liquidity?.trend==="Expansionary"?C.green:C.yellow} />
           </div>
-          <div style={{ background:C.cardAlt, borderRadius:4, padding:"6px 6px 0", marginBottom:8 }}>
-            <div style={{ fontSize:9, color:C.textDim, marginBottom:4 }}>CB Balance Sheets (USD $T)</div>
-            <svg width="100%" height="70" viewBox="0 0 240 70" preserveAspectRatio="none" style={{ display:"block" }}>
-              <polygon points="0,35 40,30 80,28 120,26 160,24 200,22 240,20 240,70 0,70" fill={C.blue} opacity="0.5" />
-              <polygon points="0,20 40,18 80,16 120,15 160,14 200,13 240,12 240,35 0,35" fill={C.orange} opacity="0.5" />
-              <polygon points="0,12 40,11 80,10 120,9 160,9 200,8 240,8 240,20 0,20" fill={C.red} opacity="0.45" />
-              <polygon points="0,8 40,7 80,6 120,6 160,5 200,5 240,5 240,12 0,12" fill={C.cyan} opacity="0.4" />
-            </svg>
-            <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim, marginTop:2 }}>
-              <span>2021</span><span>2022</span><span>2023</span><span>2024</span><span>2026</span>
+
+          {/* Total */}
+          <div style={{ marginBottom:14 }}>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:4, letterSpacing:1 }}>TOTAL CENTRAL BANK MONEY</div>
+            <div style={{ fontSize:32, fontWeight:700, fontFamily:font, marginBottom:4 }}>${d.liquidity?.total}T</div>
+            <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.5 }}>
+              {d.liquidity?.trend==="Expansionary"
+                ? "🟢 Central banks are pumping money in. Good for stocks, crypto, and risk assets."
+                : d.liquidity?.trend==="Contractionary"
+                ? "🔴 Central banks are draining money out. Bad for risk assets — think defense."
+                : "🟡 Liquidity is flat. No major tailwind or headwind right now."}
+            </p>
+          </div>
+
+          {/* Liquidity score bar */}
+          <div style={{ marginBottom:14 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:5 }}>
+              <span style={{ fontSize:10, color:C.textDim, letterSpacing:1 }}>LIQUIDITY SCORE</span>
+              <span style={{ fontSize:13, fontFamily:font, fontWeight:700, color:parseInt(d.liquidity?.score)>60?C.green:parseInt(d.liquidity?.score)<40?C.red:C.yellow }}>{d.liquidity?.score}/100</span>
+            </div>
+            <div style={{ height:8, background:C.border, borderRadius:4, marginBottom:4 }}>
+              <div style={{ width:(d.liquidity?.score||0) + "%", height:"100%", background:parseInt(d.liquidity?.score)>60?C.green:parseInt(d.liquidity?.score)<40?C.red:C.yellow, borderRadius:4 }} />
+            </div>
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim }}>
+              <span>Tight (bad)</span><span>Neutral</span><span>Loose (good)</span>
             </div>
           </div>
-          <div style={{ display:"flex", gap:8, fontSize:9, flexWrap:"wrap" }}>
-            {["Fed (net)","ECB","BoJ","PBoC","BoE"].map((l,i) => <span key={l} style={{ color:[C.blue,C.orange,C.red,C.cyan,C.purple][i] }}>● {l}</span>)}
+
+          {/* Rate of change */}
+          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12, marginBottom:14 }}>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:8, letterSpacing:1 }}>RATE OF CHANGE</div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Last 13 weeks</div>
+                <div style={{ fontSize:16, fontWeight:700, fontFamily:font, color:parseFloat(d.liquidity?.roc13w)>0?C.green:C.red }}>{d.liquidity?.roc13w}%</div>
+                <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>{parseFloat(d.liquidity?.roc13w)>0?"Growing ↑":"Shrinking ↓"}</div>
+              </div>
+              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Last 52 weeks</div>
+                <div style={{ fontSize:16, fontWeight:700, fontFamily:font, color:parseFloat(d.liquidity?.roc52w)>0?C.green:C.red }}>{d.liquidity?.roc52w}%</div>
+                <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>{parseFloat(d.liquidity?.roc52w)>0?"Growing ↑":"Shrinking ↓"}</div>
+              </div>
+            </div>
           </div>
-          <div style={{ marginTop:10 }}>
-            <div style={{ height:4, background:"linear-gradient(90deg," + C.red + "," + C.yellow + "," + C.green + ")", borderRadius:2 }} />
-            <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim, marginTop:2 }}><span>Tight</span><span>Neutral</span><span>Loose</span></div>
+
+          {/* CB breakdown */}
+          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12 }}>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:8, letterSpacing:1 }}>WHO'S ADDING / REMOVING MONEY</div>
+            <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px 4px", marginBottom:8 }}>
+              <svg width="100%" height="50" viewBox="0 0 240 50" preserveAspectRatio="none" style={{ display:"block", marginBottom:4 }}>
+                <polygon points="0,25 40,22 80,20 120,18 160,16 200,14 240,12 240,50 0,50" fill={C.blue} opacity="0.6" />
+                <polygon points="0,14 40,13 80,12 120,11 160,10 200,9 240,9 240,25 0,25" fill={C.orange} opacity="0.6" />
+                <polygon points="0,9 40,8 80,7 120,7 160,6 200,6 240,5 240,14 0,14" fill={C.red} opacity="0.55" />
+                <polygon points="0,5 40,5 80,4 120,4 160,4 200,3 240,3 240,9 0,9" fill={C.cyan} opacity="0.5" />
+              </svg>
+              <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim }}>
+                <span>2021</span><span>2022</span><span>2023</span><span>2024</span><span>2026</span>
+              </div>
+            </div>
+            <div style={{ display:"flex", gap:10, fontSize:10, flexWrap:"wrap" }}>
+              {[["Fed",C.blue],["ECB",C.orange],["BoJ",C.red],["PBoC",C.cyan]].map(function([l,c]) {
+                return <span key={l} style={{ color:c }}>● {l}</span>;
+              })}
+            </div>
           </div>
         </Card>
 
