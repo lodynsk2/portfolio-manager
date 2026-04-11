@@ -460,7 +460,7 @@ export default function App() {
 
   return (
     <div style={{ display:"flex", height:"100vh", background:C.bg, fontFamily:sans, color:C.text, overflow:"hidden" }}>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}} *{outline:none} *::-webkit-scrollbar{display:none} *{-ms-overflow-style:none;scrollbar-width:none} html,body{overflow:hidden;margin:0;padding:0;background:#08090f}`}</style>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}} *{outline:none} *::-webkit-scrollbar{width:6px} *::-webkit-scrollbar-track{background:#08090f} *::-webkit-scrollbar-thumb{background:#1c1e30;border-radius:3px} html,body{overflow:hidden;margin:0;padding:0;background:#08090f}`}</style>
 
       {/* SIDEBAR */}
       <div style={{ width:188, background:C.panel, borderRight:"1px solid " + C.border, display:"flex", flexDirection:"column", padding:"13px 0", flexShrink:0 }}>
