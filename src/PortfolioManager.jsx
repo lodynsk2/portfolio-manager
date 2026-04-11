@@ -353,17 +353,19 @@ export default function App() {
           if (fredJson.FEDFUNDS) { var ff=parseFloat(fredJson.FEDFUNDS); out.rates={status:ff>5?"TIGHTENING":ff<3?"EASING":"NEUTRAL",current:ff.toFixed(2),expected:(ff-0.25).toFixed(2),impliedCuts:"-1"}; }
           if (fredJson.NFCI) { var nfci=parseFloat(fredJson.NFCI); out.fci={...out.fci,nfci:fredJson.NFCI,status:nfci<-0.3?"Loose":nfci>0.3?"Tight":"Neutral"}; }
           if (fredJson.SAHMREALTIME) { out.credit={...out.credit,sahmRule:parseFloat(fredJson.SAHMREALTIME).toFixed(2)}; }
-          if (fredJson.CPIAUCSL) {
-            var cpiLive = parseFloat(fredJson.CPIAUCSL);
+          if (fredJson.CPIAUCSL && fredJson.CPI_PREV) {
+            var cpiIdx = parseFloat(fredJson.CPIAUCSL);
+            var cpiIdxPrev = parseFloat(fredJson.CPI_PREV);
+            var cpiYoY = ((cpiIdx - cpiIdxPrev) / cpiIdxPrev * 100);
             var trufLive = fredJson.T10YIE ? parseFloat(fredJson.T10YIE) : parseFloat(out.inflation.truflation||"0");
-            var sprLive = (trufLive && cpiLive) ? (trufLive - cpiLive).toFixed(2) : "—";
-            var trendLive = cpiLive < 2.5 ? "Falling" : cpiLive > 3.5 ? "Rising" : "Stable";
+            var sprLive = (trufLive && cpiYoY) ? (trufLive - cpiYoY).toFixed(2) : "—";
+            var trendLive = cpiYoY < 2.5 ? "Falling" : cpiYoY > 3.5 ? "Rising" : "Stable";
             out.inflation = { ...out.inflation,
-              cpi: cpiLive.toFixed(1),
+              cpi: cpiYoY.toFixed(1),
               trend: trendLive,
               truflation: fredJson.T10YIE || out.inflation.truflation,
               spread: sprLive,
-              note: trufLive < cpiLive ? "Lead indicators point to falling inflation over the next 90 days" : "Inflation indicators stable or rising"
+              note: trufLive < cpiYoY ? "Lead indicators point to falling inflation over the next 90 days" : "Inflation indicators stable or rising"
             };
           } else if (fredJson.T10YIE) {
             var inf2=parseFloat(fredJson.T10YIE);
@@ -790,64 +792,41 @@ function MacroStage({ d }) {
         </Card>
 
         <Card>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
             <div style={{ display:"flex", alignItems:"center", gap:7 }}>
               <span style={{ fontSize:14 }}>🌡</span>
-              <span style={{ fontFamily:sans, fontSize:11, fontWeight:700, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Inflation</span>
+              <span style={{ fontFamily:sans, fontSize:11, fontWeight:700, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Inflation (CPI)</span>
             </div>
             <Badge label={d.inflation?.trend||"Stable"} color={d.inflation?.trend==="Falling"?C.green:d.inflation?.trend==="Rising"?C.red:C.yellow} />
           </div>
-
-          {/* Official CPI */}
-          <div style={{ marginBottom:14 }}>
-            <div style={{ fontSize:10, color:C.textDim, marginBottom:4, letterSpacing:1 }}>OFFICIAL CPI (Year over Year)</div>
-            <div style={{ fontSize:32, fontWeight:700, fontFamily:font, color:parseFloat(d.inflation?.cpi)>3.5?C.red:parseFloat(d.inflation?.cpi)<2?C.green:C.yellow, marginBottom:4 }}>{d.inflation?.cpi}%</div>
-            <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.5 }}>
-              {parseFloat(d.inflation?.cpi)>4
-                ? "🔴 High inflation — your money buys less over time. Fed likely keeping rates high."
-                : parseFloat(d.inflation?.cpi)>3
-                ? "🟡 Above target — Fed wants this lower. Rates may stay elevated."
-                : parseFloat(d.inflation?.cpi)>2
-                ? "🟢 Near the 2% target. Healthy range for the economy."
-                : "🔵 Below target — risk of deflation. Fed may cut rates."}
-            </p>
-          </div>
-
-          {/* Inflation gauge */}
-          <div style={{ marginBottom:14 }}>
-            <div style={{ height:8, background:"linear-gradient(90deg," + C.blue + "," + C.green + "," + C.yellow + "," + C.orange + "," + C.red + ")", borderRadius:4, position:"relative", marginBottom:5 }}>
-              <div style={{ position:"absolute", width:12, height:12, background:C.text, border:"2px solid " + C.card, top:-2, left:Math.min(92,Math.max(4,(parseFloat(d.inflation?.cpi||2.4)/6)*100)) + "%", transform:"translateX(-50%)", borderRadius:"50%" }} />
-            </div>
-            <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:C.textDim }}>
-              <span>0% Deflation</span><span>2% Target</span><span>6%+ High</span>
-            </div>
-          </div>
-
-          {/* Real-time vs official */}
-          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12, marginBottom:12 }}>
-            <div style={{ fontSize:10, color:C.textDim, marginBottom:8, letterSpacing:1 }}>REAL-TIME INDICATOR vs OFFICIAL</div>
+          <div style={{ fontSize:10, color:C.textDim, marginBottom:8, letterSpacing:1 }}>US CPI YEAR-OVER-YEAR — LIVE VIA TRADINGVIEW</div>
+          <TVWidget scriptName="embed-widget-mini-symbol-overview" height={220} config={{
+            "symbol": "ECONOMICS:USINFLATION",
+            "width": "100%",
+            "height": 220,
+            "locale": "en",
+            "dateRange": "12M",
+            "colorTheme": "dark",
+            "isTransparent": true,
+            "autosize": true,
+            "largeChartUrl": ""
+          }} />
+          <div style={{ borderTop:"1px solid " + C.border, paddingTop:10, marginTop:8 }}>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
-              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
-                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Official CPI</div>
-                <div style={{ fontSize:18, fontWeight:700, fontFamily:font }}>{d.inflation?.cpi}%</div>
-                <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>Reported monthly</div>
-              </div>
               <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
                 <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>10Y Inflation Exp.</div>
                 <div style={{ fontSize:18, fontWeight:700, fontFamily:font, color:C.cyan }}>{d.inflation?.truflation}%</div>
-                <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>Market forecast</div>
+                <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>Market forecast (FRED)</div>
+              </div>
+              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Fed Target</div>
+                <div style={{ fontSize:18, fontWeight:700, fontFamily:font, color:C.green }}>2.0%</div>
+                <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>Official target rate</div>
               </div>
             </div>
-            <div style={{ background:(parseFloat(d.inflation?.spread)<0?C.green:C.orange)+"15", border:"1px solid " + (parseFloat(d.inflation?.spread)<0?C.green:C.orange) + "35", borderRadius:6, padding:"8px 10px", fontSize:11, color:C.textMid, lineHeight:1.5 }}>
-              <span style={{ fontWeight:700, color:parseFloat(d.inflation?.spread)<0?C.green:C.orange }}>
-                {parseFloat(d.inflation?.spread)<0?"▼ Falling signal: ":"▲ Rising signal: "}
-              </span>
-              {d.inflation?.note}
+            <div style={{ fontSize:11, color:C.textDim, fontStyle:"italic" }}>
+              10Y expectations lead official CPI by ~90 days
             </div>
-          </div>
-
-          <div style={{ fontSize:10, color:C.textDim, fontStyle:"italic" }}>
-            10Y expectations lead official CPI by ~90 days
           </div>
         </Card>
       </div>
