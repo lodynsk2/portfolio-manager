@@ -1566,7 +1566,6 @@ function MacroStage({ d }) {
           <span style={{ display:"flex", gap:10 }}><span><Dot c={C.green}/>Positive</span><span><Dot c={C.red}/>Negative</span></span>
         </div>
       </Card>
-
     </div>
   );
 }
