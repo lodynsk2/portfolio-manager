@@ -1,9 +1,12 @@
 import { useState, useCallback, useEffect } from "react";
 
+/* ─── CHANGE THIS to your Vercel deployment URL ─────────────────── */
 var PROXY_URL = "https://portfolio-proxy-ja56.vercel.app/api/market";
 var FRED_URL = "https://portfolio-proxy-ja56.vercel.app/api/fred";
 var SECTORS_URL = "https://portfolio-proxy-ja56.vercel.app/api/sectors";
 var FG_URL = "https://portfolio-proxy-ja56.vercel.app/api/feargreed";
+
+/* ──────────────────────────────────────────────────────────────────── */
 
 const C = {
   bg:"#08090f",panel:"#0d0e1a",card:"#111220",cardAlt:"#13141f",
@@ -13,7 +16,6 @@ const C = {
 };
 const font = "'DM Mono','Fira Code',monospace";
 const sans = "'DM Sans','Segoe UI',system-ui,sans-serif";
-
 const MIT_SEASONS = {
   Spring: {
     phase: "Disinflationary Boom", cycle: "Early Cycle",
@@ -74,6 +76,7 @@ const SEED = {
   breadth:{ pct50:"38.2", pct200:"54.6", ad5d:"Falling", ad20d:"Falling", sentiment:"BEARISH", note:"Narrow participation — majority of stocks below 50-day MA" },
   fci:{ value:"-2.10", nfci:"-0.38", status:"Loose", fedFunds:"+0.7", t10y:"+1.1", hySpread:"0.8", sp500load:"-2.0", usd:"+0.6" },
   options:{ dexPCR:"1.42", omegaPCR:"1.18", status:"BEARISH", conviction:"42" },
+  macroIndic:{ usM2:"—", usM2Trend:"—", ismPMI:"—", ismStatus:"—", globalM2:"—" },
   sectorRotation: SECTOR_PAIRS.map(function(p) {
     var data = {
       "Cyclical vs Defensive":{w1:"r",w1m:"r",w3m:"r",w6m:"r",bull:false,prob:"72",winner:p.sub2,diffPct:-4.2,note:"Defensive leading, risk-off trend intact"},
@@ -112,26 +115,38 @@ function parseFGLabel(score) {
   return "Extreme Greed";
 }
 
+
 function applyLiveData(d, prev) {
   var out = { ...prev };
+  // S&P 500
   if (d.sp500) {
     var chg = d.sp500Chg||"—";
     out.sp500 = { ...out.sp500, price:d.sp500, change:chg, sentiment:String(chg).startsWith("-")?"BEARISH":"BULLISH" };
     if (d.dma50) out.sp500.dma50 = d.dma50;
     if (d.dma200) out.sp500.dma200 = d.dma200;
   }
+  // VIX
   var vv = parseFloat(d.vix);
   if (vv) out.vix = { price:d.vix, change:d.vixChg||"—", changePct:d.vixChg||"—", level:vv>35?"EXTREME":vv>25?"HIGH":vv>15?"MODERATE":"LOW", note:vv>35?"Extreme stress":vv>25?"Elevated concern":vv>15?"Moderate concern":"Low vol regime" };
+  // DXY
   var dv = parseFloat(d.dxy);
   if (dv) out.dxy = { price:d.dxy, change:d.dxyChg||"—", strength:dv<98?"WEAK":dv>103?"STRONG":"NEUTRAL", note:dv<98?"Tailwind for risk assets":dv>103?"Headwind for risk assets":"Neutral for markets", position:Math.round(Math.max(5,Math.min(95,((dv-90)/20)*100))), sparkline:[] };
+  // Yields
   var t10=parseFloat(d.t10y), t2=parseFloat(d.t2y);
   if (t10&&t2) { var sp=(t10-t2).toFixed(2); var inv=parseFloat(sp)<0; out.yield={spread:(parseFloat(sp)>=0?"+":"")+sp,status:inv?"INVERTED":Math.abs(parseFloat(sp))<0.1?"FLAT":"NORMAL",recessionRisk:inv?"MEDIUM":"LOW",recessionPct:inv?35:15}; }
+  // Rates
   var fr=parseFloat(d.fed); if(fr) out.rates={status:fr>5?"TIGHTENING":fr<3?"EASING":"NEUTRAL",current:String(d.fed),expected:(fr-0.25).toFixed(2),impliedCuts:"-1"};
+  // Inflation
   if(d.cpi) { var trufV=parseFloat(d.truf)||0; var cpiV=parseFloat(d.cpi)||0; var spr=trufV&&cpiV?(trufV-cpiV).toFixed(2):"—"; out.inflation={cpi:d.cpi,trend:cpiV<2.5?"Falling":cpiV>3.5?"Rising":"Stable",truflation:d.truf||out.inflation.truflation,spread:spr,note:trufV<cpiV?"Lead indicators point to falling inflation":"Inflation indicators stable"}; }
+  // Fear & Greed
   if(d.fg!=null) out.fg={score:d.fg,label:d.fgLabel||parseFGLabel(d.fg),vsPrev:null,cryptoScore:d.cryptoFG!=null?d.cryptoFG:out.fg.cryptoScore,cryptoLabel:d.cryptoLabel||parseFGLabel(d.cryptoFG)};
+  // Credit
   if(d.move) out.credit={...out.credit,moveIndex:d.move,hyDAS:d.hyOAS||out.credit.hyDAS,tightNote:parseInt(d.hyOAS)<350?"Tight — Complacency Risk":parseInt(d.hyOAS)>500?"Wide — Stress":"Normal"};
+  // Breadth
   var b50=parseFloat(d.b50); if(b50) out.breadth={pct50:String(d.b50),pct200:String(d.b200||out.breadth.pct200),ad5d:"Flat",ad20d:b50<45?"Falling":"Rising",sentiment:b50<45?"BEARISH":"BULLISH",note:b50<45?"Narrow participation — majority of stocks below 50-day MA":"Broad participation — healthy market internals"};
+  // Options
   var pcrV=parseFloat(d.pcr); if(pcrV) out.options={dexPCR:d.pcr,omegaPCR:(pcrV*0.85).toFixed(3),status:pcrV>1.3?"BEARISH":pcrV<0.7?"BULLISH":"NEUTRAL",conviction:Math.round(Math.abs((pcrV-1.0))*100).toString()};
+  // NFCI
   if(d.nfci) out.fci={...out.fci,nfci:d.nfci,status:parseFloat(d.nfci)<-0.3?"Loose":parseFloat(d.nfci)>0.3?"Tight":"Neutral"};
   return out;
 }
@@ -142,6 +157,7 @@ const Badge = ({ label, color }) => (
 );
 const Card = ({ children, style, glow }) => (
   <div style={{ background:C.card, border:"1px solid " + C.border, borderRadius:10, padding:"16px 18px", position:"relative", boxShadow:glow?"0 0 22px " + glow + "18":"none", ...style }}>
+    <div style={{ position:"absolute", top:0, right:0, width:5, height:5, borderRadius:"0 0 0 5px", background:C.green, opacity:0.5 }} />
     {children}
   </div>
 );
@@ -167,6 +183,25 @@ const Dot = ({ c }) => <span style={{ display:"inline-block", width:8, height:8,
 const Skel = ({ w="100%", h=14, mb=0 }) => (
   <div style={{ width:w, height:h, marginBottom:mb, background:C.border, borderRadius:4, opacity:0.5, animation:"pulse 1.5s ease-in-out infinite" }} />
 );
+const Spinner = ({ size=12 }) => (
+  <span style={{ display:"inline-block", width:size, height:size, border:"2px solid " + C.cyan + "33", borderTop:"2px solid " + C.cyan, borderRadius:"50%", animation:"spin 0.8s linear infinite", flexShrink:0 }} />
+);
+
+function Sparkline({ data, color, height=40, width="100%" }) {
+  if (!data || data.length < 2) return <div style={{ height, background:C.border, borderRadius:4, opacity:0.3 }} />;
+  const min = Math.min(...data), max = Math.max(...data);
+  const range = max - min || 1;
+  const pts = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * 260;
+    const y = height - ((v - min) / range) * (height - 4) - 2;
+    return x + "," + y;
+  }).join(" ");
+  return (
+    <svg width={width} height={height} viewBox={"0 0 260 " + height} preserveAspectRatio="none" style={{ display:"block" }}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" />
+    </svg>
+  );
+}
 
 function SemiGauge({ label, pcr, sub }) {
   const val = parseFloat(pcr) || 1.0;
@@ -195,25 +230,6 @@ function SemiGauge({ label, pcr, sub }) {
   );
 }
 
-function TVWidget({ config, scriptName, height }) {
-  var id = "tv-" + scriptName + "-" + Math.random().toString(36).slice(2);
-  useEffect(function() {
-    var container = document.getElementById(id);
-    if (!container) return;
-    var s = document.createElement("script");
-    s.type = "text/javascript";
-    s.src = "https://s3.tradingview.com/external-embedding/" + scriptName + ".js";
-    s.async = true;
-    s.innerHTML = JSON.stringify(config);
-    container.appendChild(s);
-  }, []);
-  return (
-    <div className="tradingview-widget-container" style={{ height: height, width: "100%" }}>
-      <div id={id} className="tradingview-widget-container__widget" style={{ height: "100%", width: "100%" }} />
-    </div>
-  );
-}
-
 /* ─── MAIN APP ───────────────────────────────────────────────────── */
 export default function App() {
   const [data, setData] = useState(SEED);
@@ -221,6 +237,7 @@ export default function App() {
   const [p1, setP1] = useState(false);
   const [ts, setTs] = useState("Mar 27, 2026");
   const [err, setErr] = useState(null);
+
   const [refreshStatus, setRefreshStatus] = useState("");
 
   const doRefresh = useCallback(async () => {
@@ -228,6 +245,7 @@ export default function App() {
     try {
       var parsed = null;
 
+      // Attempt 1: Vercel proxy (works outside sandbox)
       try {
         setRefreshStatus("Trying Vercel proxy...");
         var proxyRes = await fetch(PROXY_URL);
@@ -251,6 +269,7 @@ export default function App() {
         setRefreshStatus("Proxy blocked, trying Claude API...");
       }
 
+      // Attempt 2: Claude API with web_search (works in sandbox)
       if (!parsed) {
         var d = new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
         var response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -287,165 +306,284 @@ export default function App() {
         }
       }
 
+      // Apply data
       setRefreshStatus("Applying " + Object.keys(parsed).length + " data points...");
       setData(function(prev) { return applyLiveData(parsed, prev); });
       setTs(new Date().toLocaleString("en-US",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",timeZoneName:"short"}));
       setRefreshStatus("Updated!");
       setTimeout(function(){ setRefreshStatus(""); }, 4000);
+      // Fetch FRED data
+try {
+  setRefreshStatus("Fetching FRED data...");
+  var fredRes = await fetch(FRED_URL);
+  var fredJson = await fredRes.json();
+  setData(function(prev) {
+    var out = { ...prev };
+    // Auto-detect Macro Season from live data
+if (fredJson.GDPC1 && fredJson.GDPC1_PREV && fredJson.CPIAUCSL && fredJson.CPI_PREV) {
+  var gdpCurrent = parseFloat(fredJson.GDPC1);
+  var gdpPrev = parseFloat(fredJson.GDPC1_PREV);
+  var cpiCurrent = parseFloat(fredJson.CPIAUCSL);
+  var cpiPrev = parseFloat(fredJson.CPI_PREV);
+  var fedCurrent = parseFloat(fredJson.FEDFUNDS);
+  var fedPrev = parseFloat(fredJson.FEDFUNDS_PREV);
+  var yieldCurve = parseFloat(fredJson.T10Y2Y);
+  var hySpreadVal = parseFloat(fredJson.BAMLH0A0HYM2);
+  var sahmVal = parseFloat(fredJson.SAHMREALTIME);
 
-      try {
-        setRefreshStatus("Fetching FRED data...");
-        var fredRes = await fetch(FRED_URL);
-        var fredJson = await fredRes.json();
-        setData(function(prev) {
-          var out = { ...prev };
-          if (fredJson.GDPC1 && fredJson.GDPC1_PREV && fredJson.CPIAUCSL && fredJson.CPI_PREV) {
-            var gdpCurrent = parseFloat(fredJson.GDPC1);
-            var gdpPrev = parseFloat(fredJson.GDPC1_PREV);
-            var cpiCurrent = parseFloat(fredJson.CPIAUCSL);
-            var cpiPrev = parseFloat(fredJson.CPI_PREV);
-            var fedCurrent = parseFloat(fredJson.FEDFUNDS);
-            var fedPrev = parseFloat(fredJson.FEDFUNDS_PREV);
-            var yieldCurve = parseFloat(fredJson.T10Y2Y);
-            var hySpreadVal = parseFloat(fredJson.BAMLH0A0HYM2);
-            var sahmVal = parseFloat(fredJson.SAHMREALTIME);
-            var growthRising = gdpCurrent > gdpPrev;
-            var inflationRising = cpiCurrent > cpiPrev;
-            var fedTightening = fedCurrent >= fedPrev;
-            var creditStress = hySpreadVal > 4.0;
-            var recessionSignal = sahmVal > 0.5;
-            var detectedSeason, detectedPhase, detectedConfidence;
-            if (recessionSignal || (creditStress && !growthRising)) {
-              detectedSeason = "Winter"; detectedPhase = "Deflationary Bust"; detectedConfidence = Math.round(60 + sahmVal * 20);
-            } else if (growthRising && !inflationRising) {
-              detectedSeason = "Spring"; detectedPhase = "Disinflationary Boom"; detectedConfidence = Math.round(65 + (gdpCurrent - gdpPrev) / gdpPrev * 1000);
-            } else if (growthRising && inflationRising) {
-              detectedSeason = "Summer"; detectedPhase = "Inflationary Boom"; detectedConfidence = Math.round(65 + (cpiCurrent - cpiPrev) / cpiPrev * 500);
-            } else if (!growthRising && inflationRising) {
-              detectedSeason = "Autumn"; detectedPhase = "Stagflation"; detectedConfidence = Math.round(65 + hySpreadVal * 3);
-            } else {
-              detectedSeason = "Winter"; detectedPhase = "Deflationary Bust"; detectedConfidence = 60;
-            }
-            detectedConfidence = Math.min(95, Math.max(50, detectedConfidence));
-            if (detectedSeason === "Autumn" && fedTightening) detectedConfidence = Math.min(95, detectedConfidence + 5);
-            if (detectedSeason === "Summer" && yieldCurve > 0.3) detectedConfidence = Math.min(95, detectedConfidence + 5);
-            if (detectedSeason === "Winter" && yieldCurve < 0) detectedConfidence = Math.min(95, detectedConfidence + 5);
-            out.macroRegime = { ...out.macroRegime,
-              season: detectedSeason, phase: detectedPhase, confidence: detectedConfidence,
-              riskOn: detectedSeason === "Spring" || detectedSeason === "Summer",
-              confirmed: true,
-              mediumTerm: detectedSeason === "Spring" || detectedSeason === "Summer" ? "Risk On" : "Risk Off",
-              shortTerm: detectedSeason === "Autumn" ? "Defensive positioning — slowing growth, rising inflation" :
-                         detectedSeason === "Winter" ? "Capital preservation — recession risk elevated" :
-                         detectedSeason === "Summer" ? "Risk on — inflationary boom, peak liquidity" :
-                         "Early cycle — disinflationary boom, central banks easing",
-              description: "Auto-detected: GDP " + (growthRising ? "▲" : "▼") + " " + gdpCurrent.toFixed(0) +
-                " | CPI " + (inflationRising ? "▲" : "▼") + " " + cpiCurrent.toFixed(1) +
-                " | Fed Funds " + fedCurrent.toFixed(2) + "%" +
-                " | Yield Curve " + (yieldCurve >= 0 ? "+" : "") + yieldCurve.toFixed(2) +
-                " | HY Spread " + hySpreadVal.toFixed(2) + "%" +
-                " | Sahm Rule " + sahmVal.toFixed(2)
-            };
-          }
-          if (fredJson.T10Y2Y) { var sp2=(parseFloat(fredJson.T10Y2Y)); out.yield={spread:(sp2>=0?"+":"")+sp2.toFixed(2),status:sp2<0?"INVERTED":Math.abs(sp2)<0.1?"FLAT":"NORMAL",recessionRisk:sp2<0?"MEDIUM":"LOW",recessionPct:sp2<0?35:15}; }
-          if (fredJson.BAMLH0A0HYM2) { var hy2=parseFloat(fredJson.BAMLH0A0HYM2)*100; out.credit={...out.credit,hyDAS:Math.round(hy2).toString(),tightNote:hy2<350?"Tight — Complacency Risk":hy2>500?"Wide — Stress Signal":"Normal Range"}; }
-          if (fredJson.FEDFUNDS) { var ff=parseFloat(fredJson.FEDFUNDS); out.rates={status:ff>5?"TIGHTENING":ff<3?"EASING":"NEUTRAL",current:ff.toFixed(2),expected:(ff-0.25).toFixed(2),impliedCuts:"-1"}; }
-          if (fredJson.NFCI) { var nfci=parseFloat(fredJson.NFCI); out.fci={...out.fci,nfci:fredJson.NFCI,status:nfci<-0.3?"Loose":nfci>0.3?"Tight":"Neutral"}; }
-          if (fredJson.SAHMREALTIME) { out.credit={...out.credit,sahmRule:parseFloat(fredJson.SAHMREALTIME).toFixed(2)}; }
-          if (fredJson.CPIAUCSL && fredJson.CPI_PREV) {
-            var cpiIdx = parseFloat(fredJson.CPIAUCSL);
-            var cpiIdxPrev = parseFloat(fredJson.CPI_PREV);
-            var cpiYoY = ((cpiIdx - cpiIdxPrev) / cpiIdxPrev * 100);
-            var trufLive = fredJson.T10YIE ? parseFloat(fredJson.T10YIE) : parseFloat(out.inflation.truflation||"0");
-            var sprLive = (trufLive && cpiYoY) ? (trufLive - cpiYoY).toFixed(2) : "—";
-            var trendLive = cpiYoY < 2.5 ? "Falling" : cpiYoY > 3.5 ? "Rising" : "Stable";
-            out.inflation = { ...out.inflation,
-              cpi: cpiYoY.toFixed(1),
-              trend: trendLive,
-              truflation: fredJson.T10YIE || out.inflation.truflation,
-              spread: sprLive,
-              note: trufLive < cpiYoY ? "Lead indicators point to falling inflation over the next 90 days" : "Inflation indicators stable or rising"
-            };
-          } else if (fredJson.T10YIE) {
-            var inf2=parseFloat(fredJson.T10YIE);
-            out.inflation={...out.inflation,truflation:fredJson.T10YIE,trend:inf2<2?"Falling":inf2>3?"Rising":"Stable"};
-          }
-          if (fredJson.WALCL) {
-            var fed2=parseFloat(fredJson.WALCL)/1000000;
-            var ecb=parseFloat(fredJson.ECBASSETSW)/1000000;
-            var boj=parseFloat(fredJson.JPNASSETS)/1000000;
-            var total2=(fed2+ecb+(boj*0.0067)).toFixed(1);
-            out.liquidity={...out.liquidity,total:total2,score:Math.round(Math.min(100,Math.max(0,(parseFloat(total2)/25)*100))).toString(),trend:parseFloat(total2)>17?"Expansionary":"Contractionary"};
-          }
-          return out;
-        });
-        setRefreshStatus("FRED data applied!");
+  // Determine growth and inflation direction
+  var growthRising = gdpCurrent > gdpPrev;
+  var inflationRising = cpiCurrent > cpiPrev;
+  var fedTightening = fedCurrent >= fedPrev;
+  var creditStress = hySpreadVal > 4.0;
+  var recessionSignal = sahmVal > 0.5;
 
-        try {
-          setRefreshStatus("Fetching sector data...");
-          var secRes = await fetch(SECTORS_URL);
-          var secJson = await secRes.json();
-          if (secJson.sectors && secJson.sectors.length > 0) {
-            setData(function(prev) {
-              var out = { ...prev };
-              var sectors = secJson.sectors;
-              var season = prev.macroRegime?.season || "Autumn";
-              out.topSectors = sectors.slice(0, 5).map(function(s) {
-                return { name:s.name, etf:s.etf, r6m:s.r6m, r3m:s.r3m, pos:s.pos };
-              });
-              var seasonalBias = {
-                "Spring": ["Technology","Industrials","Consumer Discretionary","Financials","Small Cap"],
-                "Summer": ["Energy","Materials","Industrials","Financials","Real Assets"],
-                "Autumn": ["Utilities","Healthcare","Consumer Staples","Gold","Cash"],
-                "Winter": ["Long Duration Bonds","Gold","Utilities","Healthcare","Cash"]
-              };
-              var preferred = seasonalBias[season] || seasonalBias["Autumn"];
-              var avoided = season === "Spring" || season === "Summer" ? ["Utilities","Consumer Staples","Bonds"] : ["Technology","Consumer Cyclical","High Beta"];
-              var scored = sectors.map(function(s) {
-                var momentum = parseFloat(s.r6m) || 0;
-                var isPreferred = preferred.some(function(p) { return s.name.includes(p); });
-                var isAvoided = avoided.some(function(a) { return s.name.includes(a); });
-                return { ...s, score: momentum + (isPreferred?5:0) - (isAvoided?5:0), momentum, isPreferred };
-              });
-              scored.sort(function(a, b) { return b.score - a.score; });
-              var overweight = scored.slice(0,3).map(function(s) { return { name:s.name, conviction:s.isPreferred?"HIGH":s.momentum>5?"MEDIUM":"LOW", target:(12+s.momentum*0.3).toFixed(1) }; });
-              var neutral = scored.slice(3,6).map(function(s) { return { name:s.name, conviction:"LOW", target:"7.0" }; });
-              var underweight = scored.slice(6,9).map(function(s) { return { name:s.name, conviction:s.isAvoided?"HIGH":s.momentum<-5?"MEDIUM":"LOW", target:Math.max(2,(5+s.momentum*0.15)).toFixed(1) }; });
-              out.sectorAlloc = { ...out.sectorAlloc, season:season.toUpperCase(), bias:season==="Spring"||season==="Summer"?"OFFENSIVE":"DEFENSIVE", confidence:prev.macroRegime?.confidence||"72", overweight, neutral, underweight };
-              var vix = parseFloat(prev.vix?.price||"20");
-              var hySpread = parseFloat(prev.credit?.hyDAS||"300");
-              var bullSectors = sectors.filter(function(s) { return parseFloat(s.r6m)>0; }).length;
-              var bearish = vix>25||hySpread>400||bullSectors<5;
-              var veryBearish = vix>35||hySpread>500||bullSectors<3;
-              out.allocation = {
-                stocks:    { n:"60", a:veryBearish?"35":bearish?"45":"55" },
-                bonds:     { n:"10", a:veryBearish?"20":bearish?"15":"10" },
-                cash:      { n:"5",  a:veryBearish?"20":bearish?"15":"8"  },
-                gold:      { n:"5",  a:veryBearish?"15":bearish?"12":"7"  },
-                crypto:    { n:"10", a:veryBearish?"3":bearish?"5":"10"   },
-                realAssets:{ n:"10", a:veryBearish?"7":bearish?"8":"10"   },
-              };
-              return out;
-            });
-            setRefreshStatus("Sector data applied!");
+  // MIT Season Detection
+  var detectedSeason;
+  var detectedPhase;
+  var detectedConfidence;
 
-            try {
-              setRefreshStatus("Fetching Fear & Greed...");
-              var fgRes = await fetch(FG_URL);
-              var fgJson = await fgRes.json();
-              setData(function(prev) {
-                var out = { ...prev };
-                if (fgJson.cnnScore != null || fgJson.cryptoScore != null) {
-                  out.fg = { score:fgJson.cnnScore!=null?fgJson.cnnScore:prev.fg.score, label:fgJson.cnnLabel||prev.fg.label, vsPrev:fgJson.cnnScore!=null&&prev.fg.score!=null?fgJson.cnnScore-prev.fg.score:null, cryptoScore:fgJson.cryptoScore!=null?fgJson.cryptoScore:prev.fg.cryptoScore, cryptoLabel:fgJson.cryptoLabel||prev.fg.cryptoLabel };
-                }
-                return out;
-              });
-              setRefreshStatus("Fear & Greed updated!");
-            } catch(fgErr) { console.warn("F&G fetch failed:", fgErr.message); }
-          }
-        } catch(secErr) { console.warn("Sector fetch failed:", secErr.message); }
-      } catch(fredErr) { console.warn("FRED fetch failed:", fredErr.message); }
+  if (recessionSignal || (creditStress && !growthRising)) {
+    // Override to Winter if recession signals are present
+    detectedSeason = "Winter";
+    detectedPhase = "Deflationary Bust";
+    detectedConfidence = Math.round(60 + sahmVal * 20);
+  } else if (growthRising && !inflationRising) {
+    detectedSeason = "Spring";
+    detectedPhase = "Disinflationary Boom";
+    detectedConfidence = Math.round(65 + (gdpCurrent - gdpPrev) / gdpPrev * 1000);
+  } else if (growthRising && inflationRising) {
+    detectedSeason = "Summer";
+    detectedPhase = "Inflationary Boom";
+    detectedConfidence = Math.round(65 + (cpiCurrent - cpiPrev) / cpiPrev * 500);
+  } else if (!growthRising && inflationRising) {
+    detectedSeason = "Autumn";
+    detectedPhase = "Stagflation";
+    detectedConfidence = Math.round(65 + hySpreadVal * 3);
+  } else {
+    detectedSeason = "Winter";
+    detectedPhase = "Deflationary Bust";
+    detectedConfidence = 60;
+  }
 
+  // Cap confidence at 95
+  detectedConfidence = Math.min(95, Math.max(50, detectedConfidence));
+
+  // Additional signals to boost confidence
+  if (detectedSeason === "Autumn" && fedTightening) detectedConfidence = Math.min(95, detectedConfidence + 5);
+  if (detectedSeason === "Summer" && yieldCurve > 0.3) detectedConfidence = Math.min(95, detectedConfidence + 5);
+  if (detectedSeason === "Winter" && yieldCurve < 0) detectedConfidence = Math.min(95, detectedConfidence + 5);
+
+  out.macroRegime = { ...out.macroRegime,
+    season: detectedSeason,
+    phase: detectedPhase,
+    confidence: detectedConfidence,
+    riskOn: detectedSeason === "Spring" || detectedSeason === "Summer",
+    confirmed: true,
+    mediumTerm: detectedSeason === "Spring" || detectedSeason === "Summer" ? "Risk On" : "Risk Off",
+    shortTerm: detectedSeason === "Autumn" ? "Defensive positioning — slowing growth, rising inflation" :
+               detectedSeason === "Winter" ? "Capital preservation — recession risk elevated" :
+               detectedSeason === "Summer" ? "Risk on — inflationary boom, peak liquidity" :
+               "Early cycle — disinflationary boom, central banks easing",
+    description: "Auto-detected: GDP " + (growthRising ? "▲" : "▼") + " " + gdpCurrent.toFixed(0) +
+      " | CPI " + (inflationRising ? "▲" : "▼") + " " + cpiCurrent.toFixed(1) +
+      " | Fed Funds " + fedCurrent.toFixed(2) + "%" +
+      " | Yield Curve " + (yieldCurve >= 0 ? "+" : "") + yieldCurve.toFixed(2) +
+      " | HY Spread " + hySpreadVal.toFixed(2) + "%" +
+      " | Sahm Rule " + sahmVal.toFixed(2)
+  };
+}
+    if (fredJson.T10Y2Y) {
+      var sp = parseFloat(fredJson.T10Y2Y);
+      out.yield = { spread:(sp>=0?"+":"")+sp.toFixed(2), status:sp<0?"INVERTED":Math.abs(sp)<0.1?"FLAT":"NORMAL", recessionRisk:sp<0?"MEDIUM":"LOW", recessionPct:sp<0?35:15 };
+    }
+    if (fredJson.BAMLH0A0HYM2) {
+      var hy = parseFloat(fredJson.BAMLH0A0HYM2) * 100;
+      out.credit = { ...out.credit, hyDAS:Math.round(hy).toString(), tightNote:hy<350?"Tight — Complacency Risk":hy>500?"Wide — Stress Signal":"Normal Range" };
+    }
+    if (fredJson.FEDFUNDS) {
+      var ff = parseFloat(fredJson.FEDFUNDS);
+      out.rates = { status:ff>5?"TIGHTENING":ff<3?"EASING":"NEUTRAL", current:ff.toFixed(2), expected:(ff-0.25).toFixed(2), impliedCuts:"-1" };
+    }
+    if (fredJson.NFCI) {
+      var nfci = parseFloat(fredJson.NFCI);
+      out.fci = { ...out.fci, nfci:fredJson.NFCI, status:nfci<-0.3?"Loose":nfci>0.3?"Tight":"Neutral" };
+    }
+    if (fredJson.SAHMREALTIME) {
+      out.credit = { ...out.credit, sahmRule:parseFloat(fredJson.SAHMREALTIME).toFixed(2) };
+    }
+    if (fredJson.T10YIE) {
+      var inf = parseFloat(fredJson.T10YIE);
+      out.inflation = { ...out.inflation, truflation:fredJson.T10YIE, trend:inf<2?"Falling":inf>3?"Rising":"Stable" };
+    }
+    // Macro Indicators: M2 & ISM
+    if (fredJson.M2SL || fredJson.M2REAL) {
+      var m2Val = parseFloat(fredJson.M2SL || fredJson.M2REAL);
+      var m2Prev = parseFloat(fredJson.M2SL_PREV || fredJson.M2REAL_PREV);
+      out.macroIndic = { ...out.macroIndic,
+        usM2: m2Val.toFixed(2),
+        usM2Trend: m2Val > m2Prev ? "Rising" : "Falling",
+        usM2Change: ((m2Val - m2Prev) / m2Prev * 100).toFixed(1)
+      };
+    }
+    if (fredJson.MMNRNJ) {
+      var ismVal = parseFloat(fredJson.MMNRNJ);
+      out.macroIndic = { ...out.macroIndic,
+        ismPMI: ismVal.toFixed(1),
+        ismStatus: ismVal > 50 ? "Expanding" : ismVal < 50 ? "Contracting" : "Neutral"
+      };
+    }
+    if (fredJson.GLOBALM2 || fredJson.EMRATIO) {
+      var globalM2 = parseFloat(fredJson.GLOBALM2 || fredJson.EMRATIO);
+      out.macroIndic = { ...out.macroIndic,
+        globalM2: globalM2.toFixed(2),
+        globalM2Trend: globalM2 > 0 ? "Rising" : "Falling"
+      };
+    }
+  // Global Liquidity
+if (fredJson.WALCL) {
+  var fed = parseFloat(fredJson.WALCL) / 1000000;
+  var ecb = parseFloat(fredJson.ECBASSETSW) / 1000000;
+  var boj = parseFloat(fredJson.JPNASSETS) / 1000000;
+  var total = (fed + ecb + (boj * 0.0067)).toFixed(1);
+  out.liquidity = { ...out.liquidity,
+    total: total,
+    score: Math.round(Math.min(100, Math.max(0, (parseFloat(total) / 25) * 100))).toString(),
+    trend: parseFloat(total) > 17 ? "Expansionary" : "Contractionary",
+    fedTotal: fed.toFixed(1),
+    ecbTotal: ecb.toFixed(1),
+    bojTotal: (boj * 0.0067).toFixed(1),
+    pbocTotal: "6.0"
+  };
+}
+return out;
+});
+  setRefreshStatus("FRED data applied!");;
+  // Fetch Sector data
+try {
+  setRefreshStatus("Fetching sector data...");
+  var secRes = await fetch(SECTORS_URL);
+  var secJson = await secRes.json();
+  if (secJson.sectors && secJson.sectors.length > 0) {
+    setData(function(prev) {
+      var out = { ...prev };
+      var sectors = secJson.sectors;
+      var season = prev.macroRegime?.season || "Autumn";
+
+      // Top Sectors — top 5 by 6M return
+      out.topSectors = sectors.slice(0, 5).map(function(s) {
+        return { name:s.name, etf:s.etf, r6m:s.r6m, r3m:s.r3m, pos:s.pos };
+      });
+
+      // ─── MIT SEASON PREFERENCE MAPPING ───
+      var seasonalBias = {
+        "Spring": ["Technology", "Industrials", "Consumer Discretionary", "Financials", "Small Cap"],
+        "Summer": ["Energy", "Materials", "Industrials", "Financials", "Real Assets"],
+        "Autumn": ["Utilities", "Healthcare", "Consumer Staples", "Gold", "Cash"],
+        "Winter": ["Long Duration Bonds", "Gold", "Utilities", "Healthcare", "Cash"]
+      };
+
+      var preferred = seasonalBias[season] || seasonalBias["Autumn"];
+      var avoided = season === "Spring" || season === "Summer" 
+        ? ["Utilities", "Consumer Staples", "Bonds"]
+        : ["Technology", "Consumer Cyclical", "High Beta"];
+
+      // Score each sector: momentum + seasonal preference
+      var scored = sectors.map(function(s) {
+        var momentum = parseFloat(s.r6m) || 0;
+        var isPreferred = preferred.some(p => s.name.includes(p));
+        var isAvoided = avoided.some(a => s.name.includes(a));
+        
+        var score = momentum;
+        if (isPreferred) score += 5;  // Boost preferred sectors
+        if (isAvoided) score -= 5;    // Penalize avoided sectors
+        
+        return { ...s, score, momentum, isPreferred };
+      });
+
+      // Sort by composite score
+      scored.sort(function(a, b) { return b.score - a.score; });
+
+      // Allocate: top 3 overweight, next 3 neutral, bottom 3 underweight
+      var overweight = scored.slice(0, 3).map(function(s) {
+        var conviction = s.isPreferred ? "HIGH" : s.momentum > 5 ? "MEDIUM" : "LOW";
+        var target = (12 + s.momentum * 0.3).toFixed(1);
+        return { name:s.name, conviction, target };
+      });
+
+      var neutral = scored.slice(3, 6).map(function(s) {
+        return { name:s.name, conviction:"LOW", target:"7.0" };
+      });
+
+      var underweight = scored.slice(6, 9).map(function(s) {
+        var conviction = s.isAvoided ? "HIGH" : s.momentum < -5 ? "MEDIUM" : "LOW";
+        var target = Math.max(2, (5 + s.momentum * 0.15)).toFixed(1);
+        return { name:s.name, conviction, target };
+      });
+
+      out.sectorAlloc = { 
+        ...out.sectorAlloc, 
+        season: season.toUpperCase(),
+        bias: season === "Spring" || season === "Summer" ? "OFFENSIVE" : "DEFENSIVE",
+        confidence: prev.macroRegime?.confidence || "72",
+        overweight, 
+        neutral, 
+        underweight 
+      };
+
+      // Asset Allocation — adjust based on market conditions
+      var vix = parseFloat(prev.vix?.price || "20");
+      var hySpread = parseFloat(prev.credit?.hyDAS || "300");
+      var bullSectors = sectors.filter(function(s) { return parseFloat(s.r6m) > 0; }).length;
+      var bearish = vix > 25 || hySpread > 400 || bullSectors < 5;
+      var veryBearish = vix > 35 || hySpread > 500 || bullSectors < 3;
+
+      out.allocation = {
+        stocks:    { n:"60", a: veryBearish?"35": bearish?"45":"55" },
+        bonds:     { n:"10", a: veryBearish?"20": bearish?"15":"10" },
+        cash:      { n:"5",  a: veryBearish?"20": bearish?"15":"8"  },
+        gold:      { n:"5",  a: veryBearish?"15": bearish?"12":"7"  },
+        crypto:    { n:"10", a: veryBearish?"3":  bearish?"5":"10"  },
+        realAssets:{ n:"10", a: veryBearish?"7":  bearish?"8":"10"  },
+      };
+
+      return out;
+   });
+  
+    setRefreshStatus("Sector data applied!");
+    // Fetch Fear & Greed data
+try {
+  setRefreshStatus("Fetching Fear & Greed...");
+  var fgRes = await fetch(FG_URL);
+  var fgJson = await fgRes.json();
+  setData(function(prev) {
+    var out = { ...prev };
+    if (fgJson.cnnScore != null || fgJson.cryptoScore != null) {
+      var cnnScore = fgJson.cnnScore != null ? fgJson.cnnScore : prev.fg.score;
+      var cryptoScore = fgJson.cryptoScore != null ? fgJson.cryptoScore : prev.fg.cryptoScore;
+      var prevScore = fgJson.cnnScore != null && prev.fg.score != null
+        ? fgJson.cnnScore - prev.fg.score : null;
+      out.fg = {
+        score: cnnScore,
+        label: fgJson.cnnLabel || prev.fg.label,
+        vsPrev: prevScore,
+        cryptoScore: cryptoScore,
+        cryptoLabel: fgJson.cryptoLabel || prev.fg.cryptoLabel
+      };
+    }
+    return out;
+  });
+  setRefreshStatus("Fear & Greed updated!");
+} catch(fgErr) {
+  console.warn("F&G fetch failed:", fgErr.message);
+}
+  }
+} catch(secErr) {
+  console.warn("Sector fetch failed:", secErr.message);
+}
+} catch(fredErr) {
+  console.warn("FRED fetch failed:", fredErr.message);
+}
     } catch(e) {
       setErr("Refresh error: " + e.message);
       setRefreshStatus("");
@@ -453,14 +591,16 @@ export default function App() {
     setP1(false);
   }, []);
 
-  useEffect(function() { doRefresh(); }, []);
+  useEffect(function() {
+    doRefresh();
+  }, []);
 
   const stages = [{n:1,label:"Macro Analysis"},{n:2,label:"Portfolio Analy..."},{n:3,label:"Asset Screener"},{n:4,label:"Portfolio Builder"},{n:5,label:"Execution"}];
   const d = data;
 
   return (
     <div style={{ display:"flex", height:"100vh", background:C.bg, fontFamily:sans, color:C.text, overflow:"hidden" }}>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}} *{outline:none} *::-webkit-scrollbar{width:6px} *::-webkit-scrollbar-track{background:#08090f} *::-webkit-scrollbar-thumb{background:#1c1e30;border-radius:3px} html,body{overflow:hidden;margin:0;padding:0;background:#08090f}`}</style>
+     <style>{`*{outline:none}button{outline:none}input{outline:none}textarea{outline:none}select{outline:none}*:focus{outline:none}@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}`}</style> 
 
       {/* SIDEBAR */}
       <div style={{ width:188, background:C.panel, borderRight:"1px solid " + C.border, display:"flex", flexDirection:"column", padding:"13px 0", flexShrink:0 }}>
@@ -523,6 +663,37 @@ export default function App() {
 }
 
 /* ─── MACRO STAGE ────────────────────────────────────────────────── */
+function TV({ src, height, id }) {
+  useEffect(function() {
+    var s = document.createElement("script");
+    s.src = src;
+    s.async = true;
+    var c = document.getElementById(id);
+    if (c) c.appendChild(s);
+  }, []);
+  return <div id={id} style={{ height: height, width: "100%", overflow: "hidden" }} />;
+}
+
+function TVWidget({ config, scriptName, height }) {
+  var id = "tv-" + scriptName + "-" + Math.random().toString(36).slice(2);
+  useEffect(function() {
+    var container = document.getElementById(id);
+    if (!container) return;
+    var s = document.createElement("script");
+    s.type = "text/javascript";
+    s.src = "https://s3.tradingview.com/external-embedding/" + scriptName + ".js";
+    s.async = true;
+    s.innerHTML = JSON.stringify(config);
+    container.appendChild(s);
+  }, []);
+  return (
+    <div className="tradingview-widget-container" style={{ height: height, width: "100%" }}>
+      <div id={id} className="tradingview-widget-container__widget" style={{ height: "100%", width: "100%" }} />
+    </div>
+  );
+}
+
+
 function MacroStage({ d }) {
   const sc = SC[d.macroRegime?.season] || C.gold;
 
@@ -550,56 +721,63 @@ function MacroStage({ d }) {
               </div>
               <div style={{ marginBottom:3 }}><span style={{ fontSize:12, color:C.textDim }}>Medium term: </span><span style={{ fontSize:12, color:C.green }}>{d.macroRegime?.mediumTerm}</span></div>
               <div style={{ marginBottom:8 }}><span style={{ fontSize:12, color:C.textDim }}>Short term: </span><span style={{ fontSize:12, color:C.orange }}>{d.macroRegime?.shortTerm}</span></div>
-              <p style={{ fontSize:11, color:C.textMid, lineHeight:1.6, margin:"0 0 10px" }}>
-                {MIT_SEASONS[d.macroRegime?.season]?.description || d.macroRegime?.description}
-              </p>
-              <div style={{ display:"flex", gap:8, marginBottom:8, flexWrap:"wrap" }}>
-                <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"3px 8px", fontSize:11 }}>
-                  <span style={{ color:C.textDim }}>Growth: </span>
-                  <span style={{ color:MIT_SEASONS[d.macroRegime?.season]?.growth==="Rising"?C.green:C.red, fontWeight:700 }}>{MIT_SEASONS[d.macroRegime?.season]?.growth} ▲</span>
-                </div>
-                <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"3px 8px", fontSize:11 }}>
-                  <span style={{ color:C.textDim }}>Inflation: </span>
-                  <span style={{ color:MIT_SEASONS[d.macroRegime?.season]?.inflation==="Rising"?C.red:C.green, fontWeight:700 }}>{MIT_SEASONS[d.macroRegime?.season]?.inflation} {MIT_SEASONS[d.macroRegime?.season]?.inflation==="Rising"?"▲":"▼"}</span>
-                </div>
-                <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"3px 8px", fontSize:11 }}>
-                  <span style={{ color:C.textDim }}>Bias: </span>
-                  <span style={{ color:sc, fontWeight:700 }}>{MIT_SEASONS[d.macroRegime?.season]?.bias}</span>
-                </div>
-                <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"3px 8px", fontSize:11 }}>
-                  <span style={{ color:C.textDim }}>Cycle: </span>
-                  <span style={{ color:C.text, fontWeight:700 }}>{MIT_SEASONS[d.macroRegime?.season]?.cycle}</span>
-                </div>
-              </div>
-              <div style={{ background:C.cardAlt, border:"1px solid " + sc + "33", borderRadius:6, padding:"7px 10px", marginBottom:8 }}>
-                <div style={{ fontSize:10, color:C.textDim, marginBottom:4, letterSpacing:1 }}>🔑 KEY THEME</div>
-                <div style={{ fontSize:11, color:sc }}>{MIT_SEASONS[d.macroRegime?.season]?.keyTheme}</div>
-              </div>
-              <div style={{ display:"flex", gap:10 }}>
-                <div style={{ flex:1, background:C.cardAlt, border:"1px solid " + C.green + "33", borderRadius:6, padding:"7px 10px" }}>
-                  <div style={{ fontSize:10, color:C.green, marginBottom:4, letterSpacing:1 }}>↑ OVERWEIGHT</div>
-                  {(MIT_SEASONS[d.macroRegime?.season]?.overweight||[]).map(function(s) {
-                    return <div key={s} style={{ fontSize:11, color:C.textMid, marginBottom:2 }}>• {s}</div>;
-                  })}
-                </div>
-                <div style={{ flex:1, background:C.cardAlt, border:"1px solid " + C.red + "33", borderRadius:6, padding:"7px 10px" }}>
-                  <div style={{ fontSize:10, color:C.red, marginBottom:4, letterSpacing:1 }}>↓ UNDERWEIGHT</div>
-                  {(MIT_SEASONS[d.macroRegime?.season]?.underweight||[]).map(function(s) {
-                    return <div key={s} style={{ fontSize:11, color:C.textMid, marginBottom:2 }}>• {s}</div>;
-                  })}
-                </div>
-              </div>
+            <p style={{ fontSize:11, color:C.textMid, lineHeight:1.6, margin:"0 0 10px" }}>
+  {MIT_SEASONS[d.macroRegime?.season]?.description || d.macroRegime?.description}
+</p>
+<div style={{ display:"flex", gap:8, marginBottom:8, flexWrap:"wrap" }}>
+  <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"3px 8px", fontSize:11 }}>
+    <span style={{ color:C.textDim }}>Growth: </span>
+    <span style={{ color:MIT_SEASONS[d.macroRegime?.season]?.growth==="Rising"?C.green:C.red, fontWeight:700 }}>{MIT_SEASONS[d.macroRegime?.season]?.growth} ▲</span>
+  </div>
+  <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"3px 8px", fontSize:11 }}>
+    <span style={{ color:C.textDim }}>Inflation: </span>
+    <span style={{ color:MIT_SEASONS[d.macroRegime?.season]?.inflation==="Rising"?C.red:C.green, fontWeight:700 }}>{MIT_SEASONS[d.macroRegime?.season]?.inflation} {MIT_SEASONS[d.macroRegime?.season]?.inflation==="Rising"?"▲":"▼"}</span>
+  </div>
+  <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"3px 8px", fontSize:11 }}>
+    <span style={{ color:C.textDim }}>Bias: </span>
+    <span style={{ color:sc, fontWeight:700 }}>{MIT_SEASONS[d.macroRegime?.season]?.bias}</span>
+  </div>
+  <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"3px 8px", fontSize:11 }}>
+    <span style={{ color:C.textDim }}>Cycle: </span>
+    <span style={{ color:C.text, fontWeight:700 }}>{MIT_SEASONS[d.macroRegime?.season]?.cycle}</span>
+  </div>
+</div>
+<div style={{ background:C.cardAlt, border:"1px solid " + sc + "33", borderRadius:6, padding:"7px 10px", marginBottom:8 }}>
+  <div style={{ fontSize:10, color:C.textDim, marginBottom:4, letterSpacing:1 }}>🔑 KEY THEME</div>
+  <div style={{ fontSize:11, color:sc }}>{MIT_SEASONS[d.macroRegime?.season]?.keyTheme}</div>
+</div>
+<div style={{ display:"flex", gap:10 }}>
+  <div style={{ flex:1, background:C.cardAlt, border:"1px solid " + C.green + "33", borderRadius:6, padding:"7px 10px" }}>
+    <div style={{ fontSize:10, color:C.green, marginBottom:4, letterSpacing:1 }}>↑ OVERWEIGHT</div>
+    {(MIT_SEASONS[d.macroRegime?.season]?.overweight||[]).map(function(s) {
+      return <div key={s} style={{ fontSize:11, color:C.textMid, marginBottom:2 }}>• {s}</div>;
+    })}
+  </div>
+  <div style={{ flex:1, background:C.cardAlt, border:"1px solid " + C.red + "33", borderRadius:6, padding:"7px 10px" }}>
+    <div style={{ fontSize:10, color:C.red, marginBottom:4, letterSpacing:1 }}>↓ UNDERWEIGHT</div>
+    {(MIT_SEASONS[d.macroRegime?.season]?.underweight||[]).map(function(s) {
+      return <div key={s} style={{ fontSize:11, color:C.textMid, marginBottom:2 }}>• {s}</div>;
+    })}
+  </div>
+</div>
+<div style={{ marginTop:8, fontSize:10, color:C.textDim, fontFamily:font }}>
+  {d.macroRegime?.description}
+</div>
             </div>
           </div>
         </Card>
 
         <Card>
           <SecTitle icon="📈" title="S&P 500" />
-          <div>
-            <div style={{ fontSize:29, fontWeight:700, fontFamily:font, marginBottom:3 }}>{d.sp500?.price}</div>
-            <div style={{ fontSize:13, color:String(d.sp500?.change||"").startsWith("-")?C.red:C.green, marginBottom:10, fontFamily:font }}>{d.sp500?.change}%</div>
-            <div style={{ marginBottom:8 }}><Badge label={d.sp500?.sentiment} color={d.sp500?.sentiment==="BEARISH"?C.red:d.sp500?.sentiment==="BULLISH"?C.green:C.textMid} /></div>
-          </div>
+          {false ? (
+            <div><Skel w="70%" h={30} mb={7} /><Skel w="40%" h={13} mb={10} /><Skel w="50%" h={20} mb={8} /></div>
+          ) : (
+            <div>
+              <div style={{ fontSize:29, fontWeight:700, fontFamily:font, marginBottom:3 }}>{d.sp500?.price}</div>
+              <div style={{ fontSize:13, color:String(d.sp500?.change||"").startsWith("-")?C.red:C.green, marginBottom:10, fontFamily:font }}>{d.sp500?.change}%</div>
+              <div style={{ marginBottom:8 }}><Badge label={d.sp500?.sentiment} color={d.sp500?.sentiment==="BEARISH"?C.red:d.sp500?.sentiment==="BULLISH"?C.green:C.textMid} /></div>
+            </div>
+          )}
           <Row label="50 DMA" val={d.sp500?.dma50} color={C.red} />
           <Row label="200 DMA" val={d.sp500?.dma200} color={C.red} />
           <div style={{ borderTop:"1px solid " + C.border, marginTop:8, paddingTop:8 }}>
@@ -615,64 +793,60 @@ function MacroStage({ d }) {
             </div>
           </div>
         </Card>
-      </div>
-
-      {/* ROW 2: Forward Rates + DXY + Yield */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
-        <Card>
-          <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:14 }}>
-            <span style={{ fontSize:14 }}>↘</span>
-            <span style={{ fontFamily:sans, fontSize:11, fontWeight:700, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Forward Rates</span>
+       <Card>
+          <SecTitle icon="↘" title="Forward Rates" />
+          {false ? <Skel w="80px" h={20} mb={12} /> : (
+            <div>
+              <div style={{ fontSize:12, color:C.textDim, marginBottom:4 }}>Status</div>
+              <div style={{ fontSize:22, fontWeight:700, color:d.rates?.status==="EASING"?C.green:d.rates?.status==="TIGHTENING"?C.red:C.orange, marginBottom:12 }}>{d.rates?.status}</div>
+              <p style={{ fontSize:11, color:C.textMid, margin:"0 0 12px", lineHeight:1.4 }}>
+                {d.rates?.status==="EASING" 
+                  ? "The Fed is cutting rates. Good for stocks, mortgages, and borrowers. Economy might be slowing." 
+                  : d.rates?.status==="TIGHTENING" 
+                  ? "The Fed is raising rates. Expensive to borrow, bonds more attractive. Fighting inflation."
+                  : "The Fed is holding steady. No major changes coming. Market waiting for clarity."}
+              </p>
+            </div>
+          )}
+          
+          <div style={{ marginBottom:12, paddingBottom:12, borderTop:"1px solid " + C.border, borderBottom:"1px solid " + C.border, paddingTop:12 }}>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:4 }}>Current Fed Funds Rate</div>
+            <div style={{ fontSize:20, fontWeight:700, fontFamily:font, marginBottom:2 }}>{d.rates?.current}%</div>
+            <p style={{ fontSize:10, color:C.textDim, margin:0 }}>What banks charge each other to borrow overnight</p>
           </div>
-          {/* Status */}
-          <div style={{ marginBottom:14 }}>
-            <div style={{ fontSize:10, color:C.textDim, marginBottom:4, letterSpacing:1 }}>STATUS</div>
-            <div style={{ fontSize:22, fontWeight:700, color:d.rates?.status==="EASING"?C.green:d.rates?.status==="TIGHTENING"?C.red:C.orange, marginBottom:6 }}>{d.rates?.status}</div>
-            <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.5 }}>
-              {d.rates?.status==="EASING"
-                ? "The Fed is cutting rates. Good for stocks, mortgages, and borrowers. Economy may be slowing."
-                : d.rates?.status==="TIGHTENING"
-                ? "The Fed is raising rates. Expensive to borrow. Bonds more attractive. Fighting inflation."
-                : "The Fed is holding steady. No major changes coming. Market is waiting for clarity."}
+
+          <div style={{ marginBottom:12, paddingBottom:12, borderBottom:"1px solid " + C.border }}>
+            <div style={{ display:"flex", justifyContent:"center", margin:"8px 0" }}>
+              <div style={{ width:44, height:44, borderRadius:"50%", background:(d.rates?.status==="EASING"?C.green:C.red)+"20", border:"1px solid transparent", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20 }}>{d.rates?.status==="EASING"?"↘":"↗"}</div>
+            </div>
+            <p style={{ fontSize:10, color:C.textDim, textAlign:"center", margin:0 }}>
+              {d.rates?.status==="EASING" ? "Rates heading DOWN" : d.rates?.status==="TIGHTENING" ? "Rates heading UP" : "Rates STEADY"}
             </p>
           </div>
-          {/* Current rate */}
-          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12, marginBottom:12 }}>
-            <div style={{ fontSize:10, color:C.textDim, marginBottom:4, letterSpacing:1 }}>CURRENT FED FUNDS RATE</div>
-            <div style={{ fontSize:22, fontWeight:700, fontFamily:font, marginBottom:4 }}>{d.rates?.current}%</div>
-            <div style={{ fontSize:11, color:C.textDim }}>What banks charge each other to borrow overnight</div>
-          </div>
-          {/* Direction icon */}
-          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12, marginBottom:12 }}>
-            <div style={{ display:"flex", justifyContent:"center", marginBottom:8 }}>
-              <div style={{ width:44, height:44, borderRadius:"50%", background:(d.rates?.status==="EASING"?C.green:d.rates?.status==="TIGHTENING"?C.red:C.orange)+"20", border:"1px solid " + (d.rates?.status==="EASING"?C.green:d.rates?.status==="TIGHTENING"?C.red:C.orange) + "55", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20 }}>
-                {d.rates?.status==="EASING"?"↙":d.rates?.status==="TIGHTENING"?"↗":"→"}
-              </div>
-            </div>
-            <div style={{ textAlign:"center", fontSize:11, color:C.textDim }}>
-              {d.rates?.status==="EASING"?"Rates heading DOWN":d.rates?.status==="TIGHTENING"?"Rates heading UP":"Rates STEADY"}
-            </div>
-          </div>
-          {/* Expected */}
-          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12 }}>
-            <div style={{ fontSize:10, color:C.textDim, marginBottom:4, letterSpacing:1 }}>MARKET EXPECTS BY YEAR END</div>
+
+          <div>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:4 }}>Market expects by year end</div>
             <div style={{ fontSize:20, fontWeight:700, fontFamily:font, marginBottom:6 }}>{d.rates?.expected}%</div>
-            <div style={{ background:C.cardAlt, borderRadius:6, padding:"7px 10px", fontSize:11, color:C.textDim, lineHeight:1.5 }}>
-              {d.rates?.impliedCuts==="-1"
-                ? "Market prices in ~1 rate cut before December"
-                : d.rates?.impliedCuts==="-2"
-                ? "Market prices in ~2 rate cuts"
-                : "No major cuts or hikes expected right now"}
+            <div style={{ fontSize:10, color:C.textDim, background:C.cardAlt, padding:"6px 8px", borderRadius:4 }}>
+              {d.rates?.impliedCuts === "-1" 
+                ? "Market prices in about 1 rate cut before December" 
+                : d.rates?.impliedCuts === "-2" 
+                ? "Market prices in about 2 rate cuts" 
+                : "No major cuts or hikes expected"}
             </div>
           </div>
         </Card>
 
         <Card>
           <SecTitle icon="$" title="US Dollar (DXY)" />
-          <div>
-            <div style={{ fontSize:25, fontWeight:700, fontFamily:font, marginBottom:3 }}>{d.dxy?.price}</div>
-            <div style={{ fontSize:11, color:C.textMid, marginBottom:8, fontFamily:font }}>— {d.dxy?.change}%</div>
-          </div>
+          {false ? (
+            <div><Skel w="65%" h={25} mb={5} /><Skel w="40%" h={11} mb={10} /></div>
+          ) : (
+            <div>
+              <div style={{ fontSize:25, fontWeight:700, fontFamily:font, marginBottom:3 }}>{d.dxy?.price}</div>
+              <div style={{ fontSize:11, color:C.textMid, marginBottom:8, fontFamily:font }}>— {d.dxy?.change}%</div>
+            </div>
+          )}
           <div style={{ marginBottom:10, height:40, background:C.cardAlt, borderRadius:4, overflow:"hidden" }}>
             <div style={{ height:40, display:"flex", alignItems:"center", justifyContent:"center" }}>
               <svg width="100%" height="30" viewBox="0 0 260 30" preserveAspectRatio="none">
@@ -689,58 +863,59 @@ function MacroStage({ d }) {
           </div>
           <div style={{ display:"flex", gap:7, alignItems:"center" }}>
             <Badge label={d.dxy?.strength||"NEUTRAL"} color={d.dxy?.strength==="WEAK"?C.red:d.dxy?.strength==="STRONG"?C.green:C.yellow} />
-            <span style={{ fontSize:11, color:C.textMid }}>{d.dxy?.note}</span>
+            <span style={{ fontSize:11, color:C.textMid }}>{false?"...":d.dxy?.note}</span>
           </div>
         </Card>
 
-        <Card>
-          <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:14 }}>
-            <span style={{ fontSize:14 }}>〜</span>
-            <span style={{ fontFamily:sans, fontSize:11, fontWeight:700, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Yield Curve</span>
-          </div>
-          {/* Spread */}
-          <div style={{ marginBottom:14 }}>
-            <div style={{ fontSize:10, color:C.textDim, marginBottom:4, letterSpacing:1 }}>10Y - 2Y SPREAD</div>
-            <div style={{ fontSize:26, fontWeight:700, fontFamily:font, color:d.yield?.status==="INVERTED"?C.red:d.yield?.status==="FLAT"?C.orange:C.green, marginBottom:6 }}>{d.yield?.spread}</div>
-            <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.5 }}>
+    <Card>
+          <SecTitle icon="〜" title="Yield Curve" />
+          
+          <div style={{ marginBottom:12, paddingBottom:12, borderBottom:"1px solid " + C.border }}>
+            <div style={{ fontSize:11, color:C.textDim, marginBottom:6 }}>10-Year vs 2-Year Spread</div>
+            <div style={{ fontSize:26, fontWeight:700, fontFamily:font, color:d.yield?.status==="INVERTED"?C.red:C.green, marginBottom:4 }}>
+              {d.yield?.spread}
+            </div>
+            <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.4 }}>
               {d.yield?.status==="INVERTED"
-                ? "🔴 INVERTED — This is a serious recession warning. Investors expect tough times ahead."
+                ? "🔴 INVERTED - This is a serious recession warning. Investors expect tough times ahead."
                 : d.yield?.status==="FLAT"
-                ? "🟡 FLAT — Market is uncertain. Changes are coming."
-                : "🟢 NORMAL — Healthy curve. Long-term rates higher than short-term (as they should be)."}
+                ? "🟡 FLAT - Market is uncertain. Changes coming."
+                : "🟢 NORMAL - Healthy curve. Long-term rates higher than short-term (as they should be)."}
             </p>
           </div>
-          {/* What the rates mean */}
-          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12, marginBottom:12 }}>
-            <div style={{ fontSize:10, color:C.textDim, marginBottom:8, letterSpacing:1 }}>WHAT THIS MEANS</div>
+
+          <div style={{ marginBottom:12, paddingBottom:12, borderBottom:"1px solid " + C.border }}>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:6 }}>What this means</div>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
-              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
-                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Short-term (2Y)</div>
-                <div style={{ fontSize:11, color:C.textMid }}>What people expect to happen soon</div>
+              <div>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:4 }}>Short-term (2Y)</div>
+                <p style={{ fontSize:11, color:C.textMid, margin:0 }}>What people think will happen soon</p>
               </div>
-              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
-                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Long-term (10Y)</div>
-                <div style={{ fontSize:11, color:C.textMid }}>What people expect over 10 years</div>
+              <div>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:4 }}>Long-term (10Y)</div>
+                <p style={{ fontSize:11, color:C.textMid, margin:0 }}>What people expect over 10 years</p>
               </div>
             </div>
           </div>
-          {/* Recession risk */}
+
           <div style={{ background:(d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red)+"15", border:"1px solid " + (d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red) + "40", borderRadius:6, padding:"10px 12px" }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-              <div style={{ fontSize:11, color:C.textMid, fontWeight:600 }}>Recession Risk</div>
-              <span style={{ fontFamily:font, fontSize:13, fontWeight:700, color:d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red }}>{d.yield?.recessionRisk||"LOW"}</span>
+              <div style={{ fontSize:11, fontWeight:700, color:C.textDim }}>Recession Risk</div>
+              <span style={{ background:(d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red)+"25", color:(d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red), padding:"2px 8px", borderRadius:4, fontSize:11, fontWeight:700 }}>
+                {d.yield?.recessionRisk || "LOW"}
+              </span>
             </div>
-            <Bar pct={d.yield?.recessionPct||15} color={d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red} height={5} />
-            <div style={{ display:"flex", justifyContent:"space-between", marginTop:6, fontSize:11 }}>
+            <Bar pct={d.yield?.recessionPct || 15} color={d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red} height={5} />
+            <div style={{ display:"flex", justifyContent:"space-between", marginTop:6, fontSize:10 }}>
               <span style={{ color:C.textDim }}>Probability</span>
-              <span style={{ fontFamily:font, fontWeight:700 }}>{d.yield?.recessionPct||15}%</span>
+              <span style={{ fontFamily:font, fontWeight:700, color:C.text }}>{d.yield?.recessionPct || 15}%</span>
             </div>
-            <p style={{ fontSize:11, color:C.textMid, margin:"8px 0 0", lineHeight:1.4 }}>
-              {d.yield?.recessionRisk==="LOW"
+            <p style={{ fontSize:10, color:C.textMid, margin:"8px 0 0", lineHeight:1.4 }}>
+              {d.yield?.recessionRisk==="LOW" 
                 ? "Economy looks healthy. Normal times ahead."
                 : d.yield?.recessionRisk==="MEDIUM"
-                ? "Be cautious — recession risk is elevated."
-                : "🔴 Serious recession risk. Major slowdown likely."}
+                ? "Be cautious. Recession risk is elevated."
+                : "🔴 Serious recession risk. Major economic slowdown likely."}
             </p>
           </div>
         </Card>
@@ -751,12 +926,16 @@ function MacroStage({ d }) {
         <Card>
           <SecTitle icon="🎯" title="Fear & Greed Index" />
           <div style={{ textAlign:"center", marginBottom:4 }}>
-            <div style={{ fontSize:46, fontWeight:700, fontFamily:font, color:d.fg?.score==null?C.textDim:d.fg?.score<25?C.red:d.fg?.score<45?C.orange:d.fg?.score<55?C.textMid:d.fg?.score<75?C.green:C.cyan }}>
-              {d.fg?.score != null ? d.fg.score : "—"}
-            </div>
-            <div style={{ fontSize:14, fontWeight:700, color:d.fg?.score==null?C.textDim:d.fg?.score<25?C.red:d.fg?.score<45?C.orange:C.green }}>
-              {d.fg?.label || "—"}
-            </div>
+            {false ? <div><Skel w="80px" h={46} mb={7} /><Skel w="120px" h={15} mb={0} /></div> : (
+              <div>
+                <div style={{ fontSize:46, fontWeight:700, fontFamily:font, color:d.fg?.score==null?C.textDim:d.fg?.score<25?C.red:d.fg?.score<45?C.orange:d.fg?.score<55?C.textMid:d.fg?.score<75?C.green:C.cyan }}>
+                  {d.fg?.score != null ? d.fg.score : "—"}
+                </div>
+                <div style={{ fontSize:14, fontWeight:700, color:d.fg?.score==null?C.textDim:d.fg?.score<25?C.red:d.fg?.score<45?C.orange:C.green }}>
+                  {d.fg?.label || "—"}
+                </div>
+              </div>
+            )}
           </div>
           <div style={{ height:6, background:"linear-gradient(90deg," + C.red + "," + C.orange + ",#888," + C.green + "," + C.cyan + ")", borderRadius:3, marginBottom:3, position:"relative" }}>
             <div style={{ position:"absolute", width:7, height:11, background:C.text, top:-3, left:(d.fg?.score != null ? d.fg.score : 50) + "%", transform:"translateX(-50%)", borderRadius:2 }} />
@@ -779,350 +958,344 @@ function MacroStage({ d }) {
 
         <Card>
           <SecTitle icon="📉" title="VIX (Volatility)" />
-          <div>
-            <div style={{ fontSize:32, fontWeight:700, fontFamily:font, marginBottom:3 }}>{d.vix?.price}</div>
-            <div style={{ fontSize:12, color:String(d.vix?.change||"").startsWith("-")?C.green:C.red, fontFamily:font, marginBottom:12 }}>{d.vix?.change} ({d.vix?.changePct}%)</div>
-          </div>
+          {false ? (
+            <div><Skel w="58%" h={32} mb={5} /><Skel w="38%" h={13} mb={12} /></div>
+          ) : (
+            <div>
+              <div style={{ fontSize:32, fontWeight:700, fontFamily:font, marginBottom:3 }}>{d.vix?.price}</div>
+              <div style={{ fontSize:12, color:String(d.vix?.change||"").startsWith("-")?C.green:C.red, fontFamily:font, marginBottom:12 }}>{d.vix?.change} ({d.vix?.changePct}%)</div>
+            </div>
+          )}
           <div style={{ background:(d.vix?.level==="HIGH"||d.vix?.level==="EXTREME"?C.orange:d.vix?.level==="LOW"?C.green:C.yellow)+"18", border:"1px solid " + (d.vix?.level==="HIGH"||d.vix?.level==="EXTREME"?C.orange:d.vix?.level==="LOW"?C.green:C.yellow) + "38", borderRadius:6, padding:"8px 11px", marginBottom:10 }}>
             <span style={{ color:d.vix?.level==="HIGH"||d.vix?.level==="EXTREME"?C.orange:d.vix?.level==="LOW"?C.green:C.yellow, fontWeight:700, fontSize:13 }}>{d.vix?.level}</span>
             <span style={{ color:C.textMid, fontSize:11, marginLeft:10 }}>{d.vix?.note}</span>
           </div>
+ 
           <div style={{ fontSize:11, color:C.textDim }}>Fear gauge: &lt;15 low · 15-25 moderate · 25-35 high · &gt;35 extreme</div>
         </Card>
 
         <Card>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-              <span style={{ fontSize:14 }}>🌡</span>
-              <span style={{ fontFamily:sans, fontSize:11, fontWeight:700, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Inflation (CPI)</span>
-            </div>
-            <Badge label={d.inflation?.trend||"Stable"} color={d.inflation?.trend==="Falling"?C.green:d.inflation?.trend==="Rising"?C.red:C.yellow} />
+          <SecTitle icon="🌡" title="Inflation" badge={d.inflation?.trend} bc={d.inflation?.trend==="Falling"?C.green:d.inflation?.trend==="Rising"?C.red:C.yellow} />
+          {false ? <Skel w="55%" h={29} mb={4} /> : <div style={{ fontSize:29, fontWeight:700, fontFamily:font, marginBottom:2 }}>{d.inflation?.cpi}%</div>}
+          <div style={{ fontSize:11, color:C.textDim, marginBottom:10 }}>CPI YoY (official rate)</div>
+          <div style={{ display:"flex", justifyContent:"space-between", marginBottom:5 }}>
+            <span style={{ fontSize:12, color:C.textMid }}>Truflation (real-time)</span>
+            <span style={{ fontSize:12, fontFamily:font }}>{d.inflation?.truflation}%</span>
           </div>
-
-          {/* Big CPI number */}
-          <div style={{ marginBottom:14 }}>
-            <div style={{ fontSize:10, color:C.textDim, marginBottom:4, letterSpacing:1 }}>US CPI — YEAR OVER YEAR</div>
-            <div style={{ fontSize:48, fontWeight:700, fontFamily:font, color:parseFloat(d.inflation?.cpi)>4?C.red:parseFloat(d.inflation?.cpi)>3?C.orange:parseFloat(d.inflation?.cpi)>2?C.yellow:C.green, marginBottom:6, lineHeight:1 }}>{d.inflation?.cpi}%</div>
-            <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.5 }}>
-              {parseFloat(d.inflation?.cpi)>4
-                ? "🔴 High inflation — your money buys less over time. Fed likely keeping rates high."
-                : parseFloat(d.inflation?.cpi)>3
-                ? "🟡 Above target — Fed wants this lower. Rates may stay elevated."
-                : parseFloat(d.inflation?.cpi)>2
-                ? "🟢 Near the 2% target. Healthy range for the economy."
-                : "🔵 Below target — risk of deflation. Fed may cut rates."}
-            </p>
+          <div style={{ background:(parseFloat(d.inflation?.spread)<0?C.green:C.red)+"18", border:"1px solid " + (parseFloat(d.inflation?.spread)<0?C.green:C.red) + "28", borderRadius:4, padding:"4px 8px", marginBottom:9, textAlign:"center" }}>
+            <span style={{ fontSize:11, color:parseFloat(d.inflation?.spread)<0?C.green:C.red }}>Spread: {parseFloat(d.inflation?.spread)<0?"▼":"▲"} {d.inflation?.spread}%</span>
           </div>
-
-          {/* Gauge */}
-          <div style={{ marginBottom:14 }}>
-            <div style={{ height:8, background:"linear-gradient(90deg," + C.blue + "," + C.green + "," + C.yellow + "," + C.orange + "," + C.red + ")", borderRadius:4, position:"relative", marginBottom:5 }}>
-              <div style={{ position:"absolute", width:12, height:12, background:C.text, border:"2px solid " + C.card, top:-2, left:Math.min(92,Math.max(4,(parseFloat(d.inflation?.cpi||2.4)/6)*100)) + "%", transform:"translateX(-50%)", borderRadius:"50%" }} />
+          <p style={{ fontSize:11, color:C.orange, margin:"0 0 10px", lineHeight:1.5 }}>{d.inflation?.note}</p>
+          <div>
+            <div style={{ height:6, background:"linear-gradient(90deg," + C.blue + "," + C.green + "," + C.yellow + "," + C.orange + "," + C.red + ")", borderRadius:3, position:"relative", marginBottom:3 }}>
+              <div style={{ position:"absolute", width:9, height:9, background:C.text, border:"2px solid " + C.card, top:-2, left:Math.min(90,Math.max(5,(parseFloat(d.inflation?.cpi||2.4)/6)*100)) + "%", transform:"translateX(-50%)", borderRadius:"50%" }} />
             </div>
-            <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:C.textDim }}>
-              <span>0% Deflation</span><span>2% Target ✓</span><span>6%+ High</span>
-            </div>
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim }}><span>Deflation</span><span>2% target</span><span>High</span></div>
           </div>
-
-          {/* Two boxes */}
-          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12 }}>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
-              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
-                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>10Y Inflation Exp.</div>
-                <div style={{ fontSize:18, fontWeight:700, fontFamily:font, color:C.cyan }}>{d.inflation?.truflation}%</div>
-                <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>Market forecast (FRED)</div>
-              </div>
-              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
-                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Fed Target</div>
-                <div style={{ fontSize:18, fontWeight:700, fontFamily:font, color:C.green }}>2.0%</div>
-                <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>Official target rate</div>
-              </div>
-            </div>
-            <div style={{ fontSize:11, color:C.textDim, fontStyle:"italic" }}>
-              10Y expectations lead official CPI by ~90 days
-            </div>
-          </div>
+          <div style={{ fontSize:10, color:C.textDim, marginTop:8 }}>Truflation leads CPI by ~90 days</div>
         </Card>
       </div>
 
       {/* ROW 4: Liquidity + Credit + Breadth */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
         <Card>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-              <span style={{ fontSize:14 }}>💧</span>
-              <span style={{ fontFamily:sans, fontSize:11, fontWeight:700, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Global Liquidity</span>
+          <SecTitle icon="💧" title="Global Liquidity" badge={d.liquidity?.trend} bc={d.liquidity?.trend==="Contractionary"?C.red:d.liquidity?.trend==="Expansionary"?C.green:C.yellow} />
+          <div style={{ fontSize:26, fontWeight:700, fontFamily:font, marginBottom:2 }}>${d.liquidity?.total}T</div>
+          <div style={{ fontSize:11, color:C.textDim, marginBottom:8 }}>Score: {d.liquidity?.score}/100</div>
+          <div style={{ display:"flex", gap:12, marginBottom:10 }}>
+            <div><div style={{ fontSize:10, color:C.textDim }}>13w RoC</div><div style={{ fontSize:13, color:C.red, fontFamily:font }}>▼ {d.liquidity?.roc13w}%</div></div>
+            <div><div style={{ fontSize:10, color:C.textDim }}>52w</div><div style={{ fontSize:13, color:C.red, fontFamily:font }}>{d.liquidity?.roc52w}%</div></div>
+          </div>
+          <div style={{ background:C.cardAlt, borderRadius:4, padding:"6px 6px 0", marginBottom:8 }}>
+            <div style={{ fontSize:9, color:C.textDim, marginBottom:4 }}>CB Balance Sheets (USD $T)</div>
+         <div style={{ position:"relative" }}>
+  <svg width="100%" height="70" viewBox="0 0 240 70" preserveAspectRatio="none" style={{ display:"block" }}>
+    {(function() {
+      var fedT = parseFloat(d.liquidity?.fedTotal || "6.6");
+      var ecbT = parseFloat(d.liquidity?.ecbTotal || "6.2");
+      var bojT = parseFloat(d.liquidity?.bojTotal || "4.6");
+      var pbocT = parseFloat(d.liquidity?.pbocTotal || "6.0");
+      var total = fedT + ecbT + bojT + pbocT;
+      var fedH = Math.round((fedT / total) * 65);
+      var ecbH = Math.round((ecbT / total) * 65);
+      var bojH = Math.round((bojT / total) * 65);
+      var pbocH = Math.round((pbocT / total) * 65);
+      var y4 = 68;
+      var y3 = y4 - pbocH;
+      var y2 = y3 - bojH;
+      var y1 = y2 - ecbH;
+      var y0 = y1 - fedH;
+      return (
+        <>
+          <polygon points={"0," + y0 + " 240," + (y0-2) + " 240,0 0,0"} fill={C.blue} opacity="0.7">
+            <title>Fed: ${fedT.toFixed(1)}T</title>
+          </polygon>
+          <polygon points={"0," + y1 + " 240," + (y1-2) + " 240," + y0 + " 0," + y0} fill={C.orange} opacity="0.7">
+            <title>ECB: ${ecbT.toFixed(1)}T</title>
+          </polygon>
+          <polygon points={"0," + y2 + " 240," + (y2-2) + " 240," + y1 + " 0," + y1} fill={C.red} opacity="0.7">
+            <title>BoJ: ${bojT.toFixed(1)}T</title>
+          </polygon>
+          <polygon points={"0,68 240,68 240," + y2 + " 0," + y2} fill={C.cyan} opacity="0.7">
+            <title>PBoC: ${pbocT.toFixed(1)}T</title>
+          </polygon>
+        </>
+      );
+    })()}
+  </svg>
+  <div style={{ position:"absolute", top:0, left:0, right:0, bottom:0, display:"flex", flexDirection:"column" }}>
+    {(function() {
+      var fedT = parseFloat(d.liquidity?.fedTotal || "6.6");
+      var ecbT = parseFloat(d.liquidity?.ecbTotal || "6.2");
+      var bojT = parseFloat(d.liquidity?.bojTotal || "4.6");
+      var pbocT = parseFloat(d.liquidity?.pbocTotal || "6.0");
+      var total = fedT + ecbT + bojT + pbocT;
+      var banks = [
+        { label:"Fed", val:fedT, color:C.blue },
+        { label:"ECB", val:ecbT, color:C.orange },
+        { label:"BoJ", val:bojT, color:C.red },
+        { label:"PBoC", val:pbocT, color:C.cyan },
+      ];
+      return banks.map(function(b) {
+        var h = Math.round((b.val / total) * 70);
+        return (
+          <div key={b.label} style={{ height:h, width:"100%", cursor:"crosshair", display:"flex", alignItems:"center", justifyContent:"center", opacity:0 , transition:"opacity 0.2s" }}
+            onMouseEnter={function(e){ e.currentTarget.style.opacity="1"; }}
+            onMouseLeave={function(e){ e.currentTarget.style.opacity="0"; }}
+          >
+            <div style={{ background:"rgba(0,0,0,0.85)", border:"1px solid " + b.color, borderRadius:4, padding:"2px 8px", fontSize:11, color:b.color, fontFamily:font, fontWeight:700, pointerEvents:"none" }}>
+              {b.label}: ${b.val.toFixed(1)}T
             </div>
-            <Badge label={d.liquidity?.trend||"—"} color={d.liquidity?.trend==="Contractionary"?C.red:d.liquidity?.trend==="Expansionary"?C.green:C.yellow} />
+          </div>
+        );
+      });
+    })()}
+  </div>
+</div>
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim, marginTop:2 }}>
+              <span>2021</span><span>2022</span><span>2023</span><span>2024</span><span>2026</span>
+            </div>
+          </div>
+          <div style={{ display:"flex", gap:8, fontSize:9, flexWrap:"wrap" }}>
+            {["Fed (net)","ECB","BoJ","PBoC","BoE"].map((l,i) => <span key={l} style={{ color:[C.blue,C.orange,C.red,C.cyan,C.purple][i] }}>● {l}</span>)}
+          </div>
+          <div style={{ marginTop:10 }}>
+            <div style={{ height:4, background:"linear-gradient(90deg," + C.red + "," + C.yellow + "," + C.green + ")", borderRadius:2 }} />
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim, marginTop:2 }}><span>Tight</span><span>Neutral</span><span>Loose</span></div>
+          </div>
+        </Card>
+
+        {/* MACRO INDICATORS */}
+        <Card>
+          <SecTitle icon="📊" title="Macro Indicators" badge="LIVE" bc={C.cyan} />
+          
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12, marginBottom:12 }}>
+            {/* Global M2 */}
+            <div style={{ background:C.cardAlt, borderRadius:6, padding:10 }}>
+              <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>Global M2</div>
+              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color:d.macroIndic?.globalM2Trend==="Rising"?C.green:C.red, marginBottom:6 }}>
+                {d.macroIndic?.globalM2Trend==="Rising" ? "▲" : "▼"} {d.macroIndic?.globalM2 || "—"}
+              </div>
+              <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.4 }}>
+                {d.macroIndic?.globalM2Trend==="Rising" 
+                  ? "Global money supply expanding. Supports asset prices."
+                  : d.macroIndic?.globalM2Trend==="Falling"
+                  ? "Global money contracting. Pressure on valuations."
+                  : "Fetching global M2 data..."}
+              </p>
+            </div>
+
+            {/* US M2 */}
+            <div style={{ background:C.cardAlt, borderRadius:6, padding:10 }}>
+              <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>US M2 Money Supply</div>
+              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color:d.macroIndic?.usM2Trend==="Rising"?C.green:C.red, marginBottom:6 }}>
+                {d.macroIndic?.usM2Trend==="Rising" ? "▲" : "▼"} {d.macroIndic?.usM2 || "—"}
+              </div>
+              <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.4 }}>
+                {d.macroIndic?.usM2Trend==="Rising"
+                  ? "More dollars in circulation. Bullish for risk assets."
+                  : d.macroIndic?.usM2Trend==="Falling"
+                  ? "Money supply contracting. Headwind for equities."
+                  : "Monitor M2 growth rate for inflation signals"}
+              </p>
+            </div>
+
+            {/* ISM Manufacturing */}
+            <div style={{ background:C.cardAlt, borderRadius:6, padding:10 }}>
+              <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>ISM Manufacturing PMI</div>
+              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color:d.macroIndic?.ismStatus==="Expanding"?C.green:d.macroIndic?.ismStatus==="Contracting"?C.red:C.orange, marginBottom:6 }}>
+                {d.macroIndic?.ismPMI || "—"} {d.macroIndic?.ismStatus==="Expanding" ? "▲" : d.macroIndic?.ismStatus==="Contracting" ? "▼" : ""}
+              </div>
+              <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.4 }}>
+                {d.macroIndic?.ismStatus==="Expanding"
+                  ? "Manufacturing growing. Economic strength signal."
+                  : d.macroIndic?.ismStatus==="Contracting"
+                  ? "Manufacturing shrinking. Economic weakness ahead."
+                  : ">50 = growth, <50 = contraction"}
+              </p>
+            </div>
           </div>
 
-          {/* Total */}
-          <div style={{ marginBottom:14 }}>
-            <div style={{ fontSize:10, color:C.textDim, marginBottom:4, letterSpacing:1 }}>TOTAL CENTRAL BANK MONEY</div>
-            <div style={{ fontSize:32, fontWeight:700, fontFamily:font, marginBottom:4 }}>${d.liquidity?.total}T</div>
+          {/* Summary */}
+          <div style={{ background:C.cardAlt, borderRadius:6, padding:10, borderTop:"1px solid " + C.border, marginTop:8, paddingTop:10 }}>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:6, fontWeight:700 }}>📋 Summary</div>
             <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.5 }}>
-              {d.liquidity?.trend==="Expansionary"
-                ? "🟢 Central banks are pumping money in. Good for stocks, crypto, and risk assets."
-                : d.liquidity?.trend==="Contractionary"
-                ? "🔴 Central banks are draining money out. Bad for risk assets — think defense."
-                : "🟡 Liquidity is flat. No major tailwind or headwind right now."}
+              {d.macroIndic?.ismStatus==="Expanding" && d.macroIndic?.usM2Trend==="Rising"
+                ? "✓ Tailwinds: Manufacturing expanding, M2 rising. Risk-on backdrop."
+                : d.macroIndic?.ismStatus==="Contracting" || d.macroIndic?.usM2Trend==="Falling"
+                ? "⚠ Headwinds: Manufacturing weak or M2 contracting. Economic caution warranted."
+                : "Live macro data pending. Monitor both growth (ISM) and liquidity (M2)."}
             </p>
-          </div>
-
-          {/* Liquidity score bar */}
-          <div style={{ marginBottom:14 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:5 }}>
-              <span style={{ fontSize:10, color:C.textDim, letterSpacing:1 }}>LIQUIDITY SCORE</span>
-              <span style={{ fontSize:13, fontFamily:font, fontWeight:700, color:parseInt(d.liquidity?.score)>60?C.green:parseInt(d.liquidity?.score)<40?C.red:C.yellow }}>{d.liquidity?.score}/100</span>
-            </div>
-            <div style={{ height:8, background:C.border, borderRadius:4, marginBottom:4 }}>
-              <div style={{ width:(d.liquidity?.score||0) + "%", height:"100%", background:parseInt(d.liquidity?.score)>60?C.green:parseInt(d.liquidity?.score)<40?C.red:C.yellow, borderRadius:4 }} />
-            </div>
-            <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim }}>
-              <span>Tight (bad)</span><span>Neutral</span><span>Loose (good)</span>
-            </div>
-          </div>
-
-          {/* Rate of change */}
-          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12, marginBottom:14 }}>
-            <div style={{ fontSize:10, color:C.textDim, marginBottom:8, letterSpacing:1 }}>RATE OF CHANGE</div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
-              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
-                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Last 13 weeks</div>
-                <div style={{ fontSize:16, fontWeight:700, fontFamily:font, color:parseFloat(d.liquidity?.roc13w)>0?C.green:C.red }}>{d.liquidity?.roc13w}%</div>
-                <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>{parseFloat(d.liquidity?.roc13w)>0?"Growing ↑":"Shrinking ↓"}</div>
-              </div>
-              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
-                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Last 52 weeks</div>
-                <div style={{ fontSize:16, fontWeight:700, fontFamily:font, color:parseFloat(d.liquidity?.roc52w)>0?C.green:C.red }}>{d.liquidity?.roc52w}%</div>
-                <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>{parseFloat(d.liquidity?.roc52w)>0?"Growing ↑":"Shrinking ↓"}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* CB breakdown */}
-          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12 }}>
-            <div style={{ fontSize:10, color:C.textDim, marginBottom:8, letterSpacing:1 }}>WHO'S ADDING / REMOVING MONEY</div>
-            <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px 4px", marginBottom:8 }}>
-              <svg width="100%" height="50" viewBox="0 0 240 50" preserveAspectRatio="none" style={{ display:"block", marginBottom:4 }}>
-                <polygon points="0,25 40,22 80,20 120,18 160,16 200,14 240,12 240,50 0,50" fill={C.blue} opacity="0.6" />
-                <polygon points="0,14 40,13 80,12 120,11 160,10 200,9 240,9 240,25 0,25" fill={C.orange} opacity="0.6" />
-                <polygon points="0,9 40,8 80,7 120,7 160,6 200,6 240,5 240,14 0,14" fill={C.red} opacity="0.55" />
-                <polygon points="0,5 40,5 80,4 120,4 160,4 200,3 240,3 240,9 0,9" fill={C.cyan} opacity="0.5" />
-              </svg>
-              <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim }}>
-                <span>2021</span><span>2022</span><span>2023</span><span>2024</span><span>2026</span>
-              </div>
-            </div>
-            <div style={{ display:"flex", gap:10, fontSize:10, flexWrap:"wrap" }}>
-              {[["Fed",C.blue],["ECB",C.orange],["BoJ",C.red],["PBoC",C.cyan]].map(function([l,c]) {
-                return <span key={l} style={{ color:c }}>● {l}</span>;
-              })}
-            </div>
           </div>
         </Card>
 
         <Card>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-              <span style={{ fontSize:14 }}>⚠</span>
-              <span style={{ fontFamily:sans, fontSize:11, fontWeight:700, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Credit &amp; Bond Stress</span>
-            </div>
-          </div>
-
-          {/* Bond Volatility */}
-          <div style={{ marginBottom:14 }}>
-            <div style={{ fontSize:11, fontWeight:700, color:C.textMid, marginBottom:8 }}>📊 Bond Volatility (MOVE Index)</div>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:4 }}>
-              <div style={{ fontSize:22, fontWeight:700, fontFamily:font, color:parseFloat(d.credit?.moveIndex)>120?C.red:parseFloat(d.credit?.moveIndex)>90?C.orange:C.green }}>{d.credit?.moveIndex}</div>
-              <Badge label={d.credit?.moveSignal||"—"} color={d.credit?.moveSignal==="Elevated"||d.credit?.moveSignal==="High"?C.orange:d.credit?.moveSignal==="Extreme"?C.red:C.green} />
-            </div>
-            <div style={{ fontSize:10, color:C.textDim, marginBottom:8 }}>Normal range: 80-120</div>
-            <p style={{ fontSize:11, color:C.textMid, margin:"0 0 8px", lineHeight:1.5 }}>
-              Bond traders are nervous about future interest rates. Treasury prices are bouncing around more than usual.
-            </p>
-            <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:6, padding:"7px 10px" }}>
-              <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>MOVE/VIX Signal</div>
-              <div style={{ fontSize:12, fontWeight:700, color:d.credit?.moveSignal==="Elevated"?C.orange:d.credit?.moveSignal==="Extreme"?C.red:C.green, marginBottom:4 }}>{d.credit?.moveSignal}</div>
-              <div style={{ fontSize:11, color:C.textDim }}>
-                {d.credit?.moveSignal==="Elevated"||d.credit?.moveSignal==="High"
-                  ? "Bonds are more jumpy than stocks. Stress is in fixed income."
-                  : d.credit?.moveSignal==="Extreme"
-                  ? "Bond market under severe stress — watch for contagion to stocks."
-                  : "Bond market calm relative to stocks. No unusual stress."}
-              </div>
-            </div>
-          </div>
-
-          {/* Credit Spreads */}
-          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12, marginBottom:14 }}>
-            <div style={{ fontSize:11, fontWeight:700, color:C.textMid, marginBottom:8 }}>💰 Credit Spreads (Risk Premium)</div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
-              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
-                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>HY DAS (Junk Bonds)</div>
-                <div style={{ fontSize:16, fontWeight:700, fontFamily:font, color:parseInt(d.credit?.hyDAS)>500?C.red:parseInt(d.credit?.hyDAS)<350?C.orange:C.green, marginBottom:3 }}>{d.credit?.hyDAS}bp</div>
-                <div style={{ fontSize:10, color:C.textDim }}>{parseInt(d.credit?.hyDAS)<350?"Tight — investors not scared":parseInt(d.credit?.hyDAS)>500?"Wide — stress signal":"Normal range"}</div>
-              </div>
-              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
-                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>IG-HY Diff</div>
-                <div style={{ fontSize:16, fontWeight:700, fontFamily:font, color:C.text, marginBottom:3 }}>{d.credit?.igHyDiff}bp</div>
-                <div style={{ fontSize:10, color:C.textDim }}>Narrow — risky bonds cheap</div>
-              </div>
-            </div>
-            <div style={{ background:parseInt(d.credit?.hyDAS)<400?C.green+"12":C.red+"12", border:"1px solid " + (parseInt(d.credit?.hyDAS)<400?C.green:C.red) + "30", borderRadius:6, padding:"8px 10px", fontSize:11, color:C.textMid, lineHeight:1.5 }}>
-              <span style={{ color:parseInt(d.credit?.hyDAS)<400?C.green:C.red, fontWeight:700 }}>Plain English: </span>
-              {parseInt(d.credit?.hyDAS)<400
-                ? "Investors are willing to lend money to shaky companies. Good for borrowers but risky — if fear kicks in, these spreads blow out fast."
-                : "Investors are demanding higher rates to lend to risky companies. Credit stress is building."}
-            </div>
-          </div>
-
-          {/* Lending Conditions */}
-          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12, marginBottom:14 }}>
-            <div style={{ fontSize:11, fontWeight:700, color:C.textMid, marginBottom:8 }}>🏦 Lending Conditions (Real Economy)</div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
-              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
-                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Bank Lending (SLOOS)</div>
-                <div style={{ fontSize:12, fontWeight:700, color:d.credit?.sloosNote==="Net Tightening"?C.red:C.green, marginBottom:3 }}>{d.credit?.sloosNote}</div>
-                <div style={{ fontSize:10, color:C.textDim }}>{d.credit?.sloosNote==="Net Tightening"?"Banks saying 'no' more":"Banks lending freely"}</div>
-              </div>
-              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
-                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Gold / Copper Ratio</div>
-                <div style={{ fontSize:12, fontWeight:700, fontFamily:font, color:parseFloat(d.credit?.goldCopper)>800?C.red:C.green, marginBottom:3 }}>{d.credit?.goldCopper}</div>
-                <div style={{ fontSize:10, color:C.textDim }}>{parseFloat(d.credit?.goldCopper)>800?"⚠ Deflation fears":"Normal — growth expected"}</div>
-              </div>
-            </div>
-            <div style={{ background:C.red+"10", border:"1px solid " + C.red + "25", borderRadius:6, padding:"8px 10px", fontSize:11, color:C.textMid, lineHeight:1.5 }}>
-              <span style={{ color:C.red, fontWeight:700 }}>Plain English: </span>
-              Banks are being picky about who they lend to. High gold/copper means investors are buying safe havens, fearing deflation/recession. Credit stress is flowing to Main Street.
-            </div>
-          </div>
-
-          {/* Consumer Stress */}
-          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12 }}>
-            <div style={{ fontSize:11, fontWeight:700, color:C.textMid, marginBottom:8 }}>👤 Consumer Stress (Household Debt)</div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
-              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
-                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Sahm Rule</div>
-                <div style={{ fontSize:16, fontWeight:700, fontFamily:font, color:parseFloat(d.credit?.sahmRule)>0.5?C.red:C.green, marginBottom:3 }}>{d.credit?.sahmRule}</div>
-                <div style={{ fontSize:10, color:parseFloat(d.credit?.sahmRule)>0.5?C.red:C.green }}>{parseFloat(d.credit?.sahmRule)>0.5?"⚠ Recession signal":"● Safe (below 0.5)"}</div>
-              </div>
-              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
-                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Credit Card Delinquency</div>
-                <div style={{ fontSize:16, fontWeight:700, fontFamily:font, color:parseFloat(d.credit?.ccDelinquency)>3.5?C.red:parseFloat(d.credit?.ccDelinquency)>2.5?C.orange:C.green, marginBottom:3 }}>{d.credit?.ccDelinquency}%</div>
-                <div style={{ fontSize:10, color:C.textDim }}>Slight stress (normal: 2-3%)</div>
-              </div>
-            </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, fontSize:12 }}>
+            <div style={{ gridColumn:"1/-1" }}><span style={{ fontSize:9, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Bond Volatility</span></div>
+            <div><div style={{ fontSize:10, color:C.textDim }}>MOVE Index</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.moveIndex}</div></div>
+            <div><div style={{ fontSize:10, color:C.textDim }}>MOVE/VIX Signal</div><div style={{ color:C.orange, fontFamily:font }}>{d.credit?.moveSignal}</div></div>
+            <div style={{ gridColumn:"1/-1", borderTop:"1px solid " + C.border, paddingTop:5, marginTop:2 }}><span style={{ fontSize:9, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Credit Spreads</span></div>
+            <div><div style={{ fontSize:10, color:C.textDim }}>HY DAS (bp)</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.hyDAS}</div></div>
+            <div><div style={{ fontSize:10, color:C.textDim }}>IG-HY Diff (bp)</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.igHyDiff}</div></div>
+            <div style={{ gridColumn:"1/-1", fontSize:10, color:C.orange }}>{d.credit?.tightNote}</div>
+            <div style={{ gridColumn:"1/-1", borderTop:"1px solid " + C.border, paddingTop:5, marginTop:2 }}><span style={{ fontSize:9, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Lending Conditions</span></div>
+            <div><div style={{ fontSize:10, color:C.textDim }}>SLOOS</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.sloosNote}</div></div>
+            <div><div style={{ fontSize:10, color:C.textDim }}>Gold / Copper</div><div style={{ color:C.red, fontFamily:font }}>{d.credit?.goldCopper}</div></div>
+            <div style={{ gridColumn:"1/-1", borderTop:"1px solid " + C.border, paddingTop:5, marginTop:2 }}><span style={{ fontSize:9, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Consumer Stress</span></div>
+            <div><div style={{ fontSize:10, color:C.textDim }}>Sahm Rule</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.sahmRule}</div></div>
+            <div><div style={{ fontSize:10, color:C.textDim }}>CC Delinquency</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.ccDelinquency}%</div></div>
           </div>
         </Card>
 
         <Card>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-              <span style={{ fontSize:14 }}>📊</span>
-              <span style={{ fontFamily:sans, fontSize:11, fontWeight:700, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Market Breadth</span>
-            </div>
-            <Badge label={d.breadth?.sentiment||"—"} color={d.breadth?.sentiment==="BEARISH"?C.red:C.green} />
-          </div>
-
-          {/* Short term */}
-          <div style={{ marginBottom:14 }}>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                <span style={{ fontSize:11 }}>📉</span>
-                <span style={{ fontSize:12, fontWeight:600, color:C.textMid }}>Short term (50-day)</span>
+          <SecTitle icon="📊" title="Market Breadth" badge={d.breadth?.sentiment} bc={d.breadth?.sentiment==="BEARISH"?C.red:C.green} />
+          
+          {/* SHORT TERM: 50-day MA */}
+          <div style={{ marginBottom:12 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:5 }}>
+              <div>
+                <div style={{ fontSize:11, color:C.textDim, marginBottom:2 }}>📈 SHORT TERM (50-day)</div>
+                <div style={{ fontSize:24, fontWeight:700, fontFamily:font, color:parseFloat(d.breadth?.pct50) < 40 ? C.red : parseFloat(d.breadth?.pct50) < 60 ? C.orange : C.green }}>{d.breadth?.pct50}%</div>
               </div>
-              <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                <div style={{ width:8, height:8, borderRadius:"50%", background:parseFloat(d.breadth?.pct50)<45?C.red:parseFloat(d.breadth?.pct50)>65?C.green:C.orange }} />
-                <span style={{ fontSize:11, color:parseFloat(d.breadth?.pct50)<45?C.red:parseFloat(d.breadth?.pct50)>65?C.green:C.orange, fontWeight:700 }}>
-                  {parseFloat(d.breadth?.pct50)<45?"Weak":parseFloat(d.breadth?.pct50)>65?"Strong":"Mixed"}
-                </span>
-                <span style={{ fontSize:10, color:C.textDim }}>{parseFloat(d.breadth?.pct50)<45?"mostly down":parseFloat(d.breadth?.pct50)>65?"mostly up":"mixed"}</span>
+              <div style={{ textAlign:"right", fontSize:10, color:C.textMid }}>
+                {parseFloat(d.breadth?.pct50) < 40 
+                  ? "🔴 Weak — mostly down" 
+                  : parseFloat(d.breadth?.pct50) < 60 
+                  ? "🟡 Mixed — some weakness" 
+                  : "🟢 Strong — mostly up"}
               </div>
             </div>
-            <div style={{ fontSize:28, fontWeight:700, fontFamily:font, color:parseFloat(d.breadth?.pct50)<45?C.red:parseFloat(d.breadth?.pct50)>65?C.green:C.orange, marginBottom:6 }}>{d.breadth?.pct50}%</div>
-            <Bar pct={d.breadth?.pct50} color={parseFloat(d.breadth?.pct50)<45?C.red:parseFloat(d.breadth?.pct50)>65?C.green:C.orange} height={5} />
-            <div style={{ fontSize:11, color:C.textDim, marginTop:6, lineHeight:1.4 }}>
-              Out of 500 stocks, {d.breadth?.pct50}% are performing better than their recent 50-day trend.
+            <Bar pct={d.breadth?.pct50} color={parseFloat(d.breadth?.pct50) < 40 ? C.red : parseFloat(d.breadth?.pct50) < 60 ? C.orange : C.green} height={6} />
+            <div style={{ fontSize:10, color:C.textDim, marginTop:4, lineHeight:1.4 }}>
+              Out of 500 stocks, {d.breadth?.pct50} are performing better than their recent 50-day trend
             </div>
           </div>
 
-          {/* Long term */}
-          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12, marginBottom:14 }}>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                <span style={{ fontSize:11 }}>📈</span>
-                <span style={{ fontSize:12, fontWeight:600, color:C.textMid }}>Long term (200-day)</span>
+          {/* LONG TERM: 200-day MA */}
+          <div style={{ marginBottom:12 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:5 }}>
+              <div>
+                <div style={{ fontSize:11, color:C.textDim, marginBottom:2 }}>📅 LONG TERM (200-day)</div>
+                <div style={{ fontSize:24, fontWeight:700, fontFamily:font, color:parseFloat(d.breadth?.pct200) < 40 ? C.red : parseFloat(d.breadth?.pct200) < 70 ? C.orange : C.green }}>{d.breadth?.pct200}%</div>
               </div>
-              <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                <div style={{ width:8, height:8, borderRadius:"50%", background:parseFloat(d.breadth?.pct200)<45?C.red:parseFloat(d.breadth?.pct200)>65?C.green:C.orange }} />
-                <span style={{ fontSize:11, color:parseFloat(d.breadth?.pct200)<45?C.red:parseFloat(d.breadth?.pct200)>65?C.green:C.orange, fontWeight:700 }}>
-                  {parseFloat(d.breadth?.pct200)<45?"Weak":parseFloat(d.breadth?.pct200)>65?"Strong":"Shaky"}
-                </span>
-                <span style={{ fontSize:10, color:C.textDim }}>mixed</span>
+              <div style={{ textAlign:"right", fontSize:10, color:C.textMid }}>
+                {parseFloat(d.breadth?.pct200) < 40 
+                  ? "🔴 Downtrend" 
+                  : parseFloat(d.breadth?.pct200) < 70 
+                  ? "🟡 Shaky" 
+                  : "🟢 Uptrend"}
               </div>
             </div>
-            <div style={{ fontSize:28, fontWeight:700, fontFamily:font, color:parseFloat(d.breadth?.pct200)<45?C.red:parseFloat(d.breadth?.pct200)>65?C.green:C.orange, marginBottom:6 }}>{d.breadth?.pct200}%</div>
-            <Bar pct={d.breadth?.pct200} color={parseFloat(d.breadth?.pct200)<45?C.red:parseFloat(d.breadth?.pct200)>65?C.green:C.orange} height={5} />
-            <div style={{ fontSize:11, color:C.textDim, marginTop:6, lineHeight:1.4 }}>
-              Mixed — some stocks in uptrends, some in downtrends. Not healthy, not broken.
+            <Bar pct={d.breadth?.pct200} color={parseFloat(d.breadth?.pct200) < 40 ? C.red : parseFloat(d.breadth?.pct200) < 70 ? C.orange : C.green} height={6} />
+            <div style={{ fontSize:10, color:C.textDim, marginTop:4, lineHeight:1.4 }}>
+              {parseFloat(d.breadth?.pct200) >= 70 
+                ? "Most stocks are in long-term uptrends — healthy"
+                : parseFloat(d.breadth?.pct200) >= 40
+                ? "Mixed — some stocks in uptrends, some in downtrends"
+                : "Most stocks are in downtrends — weak foundation"}
             </div>
           </div>
 
-          {/* Momentum */}
-          <div style={{ borderTop:"1px solid " + C.border, paddingTop:12, marginBottom:12 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}>
-              <span style={{ fontSize:11 }}>📊</span>
-              <span style={{ fontSize:12, fontWeight:600, color:C.textMid }}>Momentum (gaining vs losing stocks)</span>
-            </div>
+          {/* MOMENTUM: A/D Indicators */}
+          <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px", marginBottom:12 }}>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:6, fontWeight:700 }}>📊 MOMENTUM (Gaining vs Losing Stocks)</div>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
-              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
-                <div style={{ fontSize:10, color:C.textDim, marginBottom:5 }}>Last 5 days</div>
-                <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                  <span style={{ fontSize:13 }}>{d.breadth?.ad5d==="Rising"?"📈":"📉"}</span>
-                  <span style={{ fontSize:12, fontWeight:700, color:d.breadth?.ad5d==="Rising"?C.green:C.red }}>{d.breadth?.ad5d==="Rising"?"Buying":"Selling"}</span>
+              <div>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Last 5 days</div>
+                <div style={{ fontSize:12, fontWeight:700, color:d.breadth?.ad5d==="Falling"?C.red:d.breadth?.ad5d==="Rising"?C.green:C.orange }}>
+                  {d.breadth?.ad5d==="Falling" ? "📉 Selling" : d.breadth?.ad5d==="Rising" ? "📈 Buying" : "➡️ Flat"}
                 </div>
               </div>
-              <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px" }}>
-                <div style={{ fontSize:10, color:C.textDim, marginBottom:5 }}>Last 20 days</div>
-                <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                  <span style={{ fontSize:13 }}>{d.breadth?.ad20d==="Rising"?"📈":"📉"}</span>
-                  <span style={{ fontSize:12, fontWeight:700, color:d.breadth?.ad20d==="Rising"?C.green:C.red }}>{d.breadth?.ad20d==="Rising"?"Buying":"Selling"}</span>
+              <div>
+                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Last 20 days</div>
+                <div style={{ fontSize:12, fontWeight:700, color:d.breadth?.ad20d==="Falling"?C.red:d.breadth?.ad20d==="Rising"?C.green:C.orange }}>
+                  {d.breadth?.ad20d==="Falling" ? "📉 Selling" : d.breadth?.ad20d==="Rising" ? "📈 Buying" : "➡️ Flat"}
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Overall signal */}
-          <div style={{ background:(d.breadth?.sentiment==="BEARISH"?C.red:C.green)+"12", border:"1px solid " + (d.breadth?.sentiment==="BEARISH"?C.red:C.green) + "35", borderRadius:6, padding:"9px 12px" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:5 }}>
-              <span style={{ fontSize:13 }}>⚠</span>
-              <span style={{ fontSize:12, fontWeight:700, color:d.breadth?.sentiment==="BEARISH"?C.red:C.green }}>
-                {d.breadth?.sentiment==="BEARISH"?"Weak leadership":"Strong leadership"}
-              </span>
+          {/* OVERALL SIGNAL */}
+          <div style={{ background:(d.breadth?.sentiment==="BEARISH"?C.red:C.green)+"15", border:"1px solid " + (d.breadth?.sentiment==="BEARISH"?C.red:C.green) + "40", borderRadius:6, padding:"10px 12px" }}>
+            <div style={{ fontSize:12, fontWeight:700, color:d.breadth?.sentiment==="BEARISH"?C.red:C.green, marginBottom:4 }}>
+              {d.breadth?.sentiment==="BEARISH" ? "⚠️ WEAK LEADERSHIP" : "✓ HEALTHY BREADTH"}
             </div>
             <div style={{ fontSize:11, color:C.textMid, lineHeight:1.5 }}>
-              {d.breadth?.sentiment==="BEARISH"
+              {d.breadth?.sentiment==="BEARISH" 
                 ? "Only a few big stocks are pulling the market up. Most individual stocks are struggling. This is fragile — watch for a reversal."
-                : "Most stocks are participating in the rally. Broad strength is a healthy sign for the bull market to continue."}
+                : "Most stocks are performing well alongside the index. Strong, healthy market participation. This is sustainable."}
             </div>
           </div>
         </Card>
-      </div>
 
       {/* OPTIONS SENTIMENT */}
       <Card>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
-          <SecTitle icon="📡" title="Options Sentiment" />
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <span style={{ fontSize:13 }}>📡</span>
+            <span style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase" }}>Options Sentiment</span>
+          </div>
           <Badge label={d.options?.status||"NEUTRAL"} color={d.options?.status==="BULLISH"?C.green:d.options?.status==="BEARISH"?C.red:C.textMid} />
         </div>
-        <div style={{ display:"flex", gap:20, justifyContent:"center", marginBottom:12 }}>
-          <SemiGauge label="DEX PCR" pcr={d.options?.dexPCR||"1.0"} sub="Institutional" />
-          <SemiGauge label="Omega PCR" pcr={d.options?.omegaPCR||"1.0"} sub="Retail" />
+
+        <div style={{ background:C.cardAlt, borderRadius:6, padding:10, marginBottom:14 }}>
+          <div style={{ fontSize:11, color:C.textMid, lineHeight:1.5 }}>
+            <strong style={{ color:C.text }}>What this means:</strong> Options traders bet on stock direction. Smart money (institutions) vs dumb money (retail) — who's buying protection or betting on crashes?
+          </div>
         </div>
-        <div style={{ borderTop:"1px solid " + C.border, paddingTop:10 }}>
-          <Row label="Conviction" val={(d.options?.conviction||0) + "%"} />
-          <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"6px 10px", marginTop:6, fontSize:11, color:C.textDim }}>Options sentiment within normal range</div>
+
+        <div style={{ marginBottom:14, paddingBottom:14, borderTop:"1px solid " + C.border, borderBottom:"1px solid " + C.border, paddingTop:14 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
+            <div>
+              <div style={{ fontSize:12, color:C.textDim, fontWeight:700, marginBottom:6 }}>🏦 DEX PCR (Institutions)</div>
+              <div style={{ fontSize:22, fontWeight:700, fontFamily:font, color:C.red }}>{d.options?.dexPCR}</div>
+              <p style={{ margin:"6px 0 0", fontSize:10, color:C.textDim }}>Puts-to-Calls</p>
+            </div>
+            <Badge label={parseFloat(d.options?.dexPCR) > 1.3 ? "BEARISH" : "NEUTRAL"} color={parseFloat(d.options?.dexPCR) > 1.3 ? C.red : C.orange} />
+          </div>
+          <p style={{ margin:0, fontSize:11, color:C.textMid, lineHeight:1.5 }}>Smart money buying insurance against stocks falling. When > 1.3, fear among pros.</p>
+        </div>
+
+        <div style={{ marginBottom:14, paddingBottom:14, borderBottom:"1px solid " + C.border }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
+            <div>
+              <div style={{ fontSize:12, color:C.textDim, fontWeight:700, marginBottom:6 }}>📱 Omega PCR (Retail)</div>
+              <div style={{ fontSize:22, fontWeight:700, fontFamily:font, color:C.orange }}>{d.options?.omegaPCR}</div>
+              <p style={{ margin:"6px 0 0", fontSize:10, color:C.textDim }}>Puts-to-Calls</p>
+            </div>
+            <Badge label={parseFloat(d.options?.omegaPCR) > 1.3 ? "BEARISH" : "NEUTRAL"} color={parseFloat(d.options?.omegaPCR) > 1.3 ? C.red : C.orange} />
+          </div>
+          <p style={{ margin:0, fontSize:11, color:C.textMid, lineHeight:1.5 }}>Retail traders hedging bets. Less nervous than institutions. When > 1.0, they see risk ahead.</p>
+        </div>
+
+        <div style={{ background:(d.options?.status==="BEARISH"?C.red:C.green)+"15", border:"1px solid " + (d.options?.status==="BEARISH"?C.red:C.green) + "40", borderRadius:6, padding:12 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+            <div style={{ fontSize:12, fontWeight:700, color:d.options?.status==="BEARISH"?C.red:C.green }}>Conviction</div>
+            <div style={{ fontSize:16, fontWeight:700, fontFamily:font, color:d.options?.status==="BEARISH"?C.red:C.green }}>{d.options?.conviction}%</div>
+          </div>
+          <p style={{ margin:0, fontSize:11, color:C.textMid, lineHeight:1.5 }}>
+            {d.options?.status === "BEARISH" ? "Moderately bearish. Hedging but not panicked. Caution flag." : "Balanced. Mixed signals. Neither bullish nor bearish."}
+          </p>
         </div>
       </Card>
 
@@ -1132,7 +1305,7 @@ function MacroStage({ d }) {
           <div>
             <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:4 }}>Financial Conditions Index</div>
             <div style={{ display:"flex", alignItems:"baseline", gap:10 }}>
-              <span style={{ fontSize:32, fontWeight:700, fontFamily:font, color:d.fci?.status==="Loose"?C.green:d.fci?.status==="Tight"?C.red:C.yellow }}>{d.fci?.nfci||"—"}</span>
+              {false ? <Skel w="80px" h={32} mb={0} /> : <span style={{ fontSize:32, fontWeight:700, fontFamily:font, color:d.fci?.status==="Loose"?C.green:d.fci?.status==="Tight"?C.red:C.yellow }}>{d.fci?.nfci||"—"}</span>}
               <span style={{ fontSize:12, color:C.textMid }}>NFCI ({d.fci?.status||"—"})</span>
             </div>
           </div>
@@ -1179,13 +1352,20 @@ function MacroStage({ d }) {
             <span style={{ fontSize:13 }}>🧠</span>
             <span style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase" }}>AI-Enhanced Macro Analysis</span>
           </div>
-          <Badge label="Live · Sonnet" color={C.purple} />
+          <Badge label={false?"Writing...":"Live · Sonnet"} color={C.purple} />
         </div>
-        <div style={{ fontSize:13, lineHeight:1.85, color:C.textMid }}>
-          {(d.aiAnalysis||"Click ⚡ Refresh to load AI analysis.").split("\n\n").map(function(para,i) {
-            return <p key={i} style={{ margin:"0 0 12px" }}>{para}</p>;
-          })}
-        </div>
+        {false ? (
+          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+            <Skel w="100%" h={13} mb={0} /><Skel w="94%" h={13} mb={0} /><Skel w="88%" h={13} mb={8} />
+            <Skel w="100%" h={13} mb={0} /><Skel w="91%" h={13} mb={0} /><Skel w="65%" h={13} mb={0} />
+          </div>
+        ) : (
+          <div style={{ fontSize:13, lineHeight:1.85, color:C.textMid }}>
+            {(d.aiAnalysis||"Click ⚡ Refresh to load AI analysis.").split("\n\n").map(function(para,i) {
+              return <p key={i} style={{ margin:"0 0 12px" }}>{para}</p>;
+            })}
+          </div>
+        )}
         <div style={{ display:"flex", gap:6, marginTop:8 }}>
           {["gmi everything_code","multi framework_model","ray dalio"].map(function(t) {
             return <span key={t} style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"2px 7px", fontSize:11, color:C.textDim }}>{t}</span>;
@@ -1293,27 +1473,26 @@ function MacroStage({ d }) {
         </div>
       </Card>
 
-      {/* SECTOR HEATMAP */}
-      <Card>
-        <SecTitle icon="🌡" title="Sector Heatmap" badge="LIVE" bc={C.green} />
-        <TVWidget scriptName="embed-widget-stock-heatmap" height={500} config={{
-          "exchanges": [],
-          "dataSource": "SPX500",
-          "grouping": "sector",
-          "blockSize": "market_cap_basic",
-          "blockColor": "change",
-          "locale": "en",
-          "colorTheme": "dark",
-          "hasTopBar": false,
-          "isDataSetEnabled": false,
-          "isZoomEnabled": true,
-          "hasSymbolTooltip": true,
-          "isMonoSize": false,
-          "width": "100%",
-          "height": 500
-        }} />
-      </Card>
-
+     {/* SECTOR HEATMAP */}
+<Card>
+  <SecTitle icon="🌡" title="Sector Heatmap" badge="LIVE" bc={C.green} />
+  <TVWidget scriptName="embed-widget-stock-heatmap" height={500} config={{
+    "exchanges": [],
+    "dataSource": "SPX500",
+    "grouping": "sector",
+    "blockSize": "market_cap_basic",
+    "blockColor": "change",
+    "locale": "en",
+    "colorTheme": "dark",
+    "hasTopBar": false,
+    "isDataSetEnabled": false,
+    "isZoomEnabled": true,
+    "hasSymbolTooltip": true,
+    "isMonoSize": false,
+    "width": "100%",
+    "height": 500
+  }} />
+</Card>
       {/* ASSET ALLOCATION */}
       <Card>
         <SecTitle icon="⚖" title="Asset Allocation" />
@@ -1381,47 +1560,38 @@ function MacroStage({ d }) {
           </tbody>
         </table>
         <div style={{ display:"flex", justifyContent:"space-between", marginTop:10, fontSize:10, color:C.textDim }}>
-          <span>Based on S&amp;P 500 sector ETFs (SPDR)</span>
+          <span>Based on S&P 500 sector ETFs (SPDR)</span>
           <span style={{ display:"flex", gap:10 }}><span><Dot c={C.green}/>Positive</span><span><Dot c={C.red}/>Negative</span></span>
         </div>
       </Card>
 
-      {/* SECTOR ALLOCATIONS */}
-      <Card style={{ marginBottom:22 }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
-          <div>
-            <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:3 }}>Sector Allocations</div>
-            <div style={{ fontSize:12, color:C.textMid }}>Confidence: {d.sectorAlloc?.confidence}%</div>
-          </div>
-          <div style={{ display:"flex", gap:8 }}>
-            <div><span style={{ fontSize:10, color:C.textDim, marginRight:4 }}>Season:</span><Badge label={d.sectorAlloc?.season} color={SC[d.macroRegime?.season]||C.gold} /></div>
-            <div><span style={{ fontSize:10, color:C.textDim, marginRight:4 }}>Bias:</span><Badge label={d.sectorAlloc?.bias} color={C.blue} /></div>
-          </div>
-        </div>
-        {[["OVERWEIGHT","overweight",C.green],["NEUTRAL","neutral",C.textDim],["UNDERWEIGHT","underweight",C.red]].map(function([title,key,clr]) {
-          return d.sectorAlloc?.[key]?.length > 0 && (
-            <div key={title} style={{ marginBottom:12 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:6 }}>
-                <span style={{ color:clr, fontSize:13 }}>{title==="OVERWEIGHT"?"↑":title==="UNDERWEIGHT"?"↓":"→"}</span>
-                <span style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:clr, textTransform:"uppercase" }}>{title}</span>
-              </div>
-              {d.sectorAlloc[key].map(function(sec,si) {
-                return (
-                  <div key={si} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 12px", background:C.cardAlt, border:"1px solid " + clr + "20", borderRadius:6, marginBottom:5 }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-                      <span style={{ fontSize:13, fontWeight:600 }}>{sec.name}</span>
-                      <Badge label={sec.conviction} color={sec.conviction==="HIGH"?clr:sec.conviction==="MEDIUM"?C.orange:C.textMid} />
-                      <Badge label="Regime" color={C.blue} />
-                    </div>
-                    <span style={{ fontSize:14, fontWeight:700, fontFamily:font, color:clr }}>{sec.target}%</span>
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })}
-      </Card>
-
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
     </div>
   );
 }
+
+
