@@ -1150,6 +1150,7 @@ function MacroStage({ d }) {
         </Card>
 
         <Card>
+          <SecTitle icon="⚠" title="Credit & Bond Stress" badge={"MOVE: " + (d.credit?.moveSignal||"—")} bc={C.orange} />
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, fontSize:12 }}>
             <div style={{ gridColumn:"1/-1" }}><span style={{ fontSize:9, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Bond Volatility</span></div>
             <div><div style={{ fontSize:10, color:C.textDim }}>MOVE Index</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.moveIndex}</div></div>
@@ -1500,7 +1501,8 @@ function MacroStage({ d }) {
           Neutral vs <span style={{ color:SC[d.macroRegime?.season]||C.gold, fontWeight:700 }}>{d.macroRegime?.season?.toUpperCase()}</span> adjusted
         </div>
         <div style={{ display:"grid", gridTemplateColumns:"138px 1fr 72px 72px 52px", gap:"8px 12px", alignItems:"center" }}>
-          <div style={{ fontSize:10, color:C.textDim }}>ASSET CLASS</div><div />
+          <div style={{ fontSize:10, color:C.textDim }}>ASSET CLASS</div>
+          <div />
           <div style={{ fontSize:10, color:C.textDim, textAlign:"right" }}>NEUTRAL</div>
           <div style={{ fontSize:10, color:C.textDim, textAlign:"right" }}>ADJUSTED</div>
           <div style={{ fontSize:10, color:C.textDim, textAlign:"right" }}>CHANGE</div>
