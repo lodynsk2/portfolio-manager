@@ -1093,7 +1093,7 @@ function MacroStage({ d }) {
             {/* Global M2 */}
             <div style={{ background:C.cardAlt, borderRadius:6, padding:10 }}>
               <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>Global M2</div>
-              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color:d.macroIndic?.globalM2Trend==="Rising"?C.green:C.red, marginBottom:6 }}>
+              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color: d.macroIndic?.globalM2Trend==="Rising" ? C.green : C.red, marginBottom:6 }}>
                 {d.macroIndic?.globalM2Trend==="Rising" ? "▲" : "▼"} {d.macroIndic?.globalM2 || "—"}
               </div>
               <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.4 }}>
@@ -1108,7 +1108,7 @@ function MacroStage({ d }) {
             {/* US M2 */}
             <div style={{ background:C.cardAlt, borderRadius:6, padding:10 }}>
               <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>US M2 Money Supply</div>
-              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color:d.macroIndic?.usM2Trend==="Rising"?C.green:C.red, marginBottom:6 }}>
+              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color: d.macroIndic?.usM2Trend==="Rising" ? C.green : C.red, marginBottom:6 }}>
                 {d.macroIndic?.usM2Trend==="Rising" ? "▲" : "▼"} {d.macroIndic?.usM2 || "—"}
               </div>
               <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.4 }}>
@@ -1123,7 +1123,7 @@ function MacroStage({ d }) {
             {/* ISM Manufacturing */}
             <div style={{ background:C.cardAlt, borderRadius:6, padding:10 }}>
               <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>ISM Manufacturing PMI</div>
-              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color:d.macroIndic?.ismStatus==="Expanding"?C.green:d.macroIndic?.ismStatus==="Contracting"?C.red:C.orange, marginBottom:6 }}>
+              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color: d.macroIndic?.ismStatus==="Expanding" ? C.green : d.macroIndic?.ismStatus==="Contracting" ? C.red : C.orange, marginBottom:6 }}>
                 {d.macroIndic?.ismPMI || "—"} {d.macroIndic?.ismStatus==="Expanding" ? "▲" : d.macroIndic?.ismStatus==="Contracting" ? "▼" : ""}
               </div>
               <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.4 }}>
@@ -1566,6 +1566,7 @@ function MacroStage({ d }) {
           <span style={{ display:"flex", gap:10 }}><span><Dot c={C.green}/>Positive</span><span><Dot c={C.red}/>Negative</span></span>
         </div>
       </Card>
+
     </div>
   );
 }
