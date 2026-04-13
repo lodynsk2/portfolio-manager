@@ -1568,5 +1568,6 @@ function MacroStage({ d }) {
       </Card>
 
     </div>
+  </div>
   );
 }
