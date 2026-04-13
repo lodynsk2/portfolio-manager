@@ -65,6 +65,8 @@ const SECTOR_PAIRS = [
 const SEED = {
   macroRegime:{ season:"Autumn", phase:"Contraction", riskOn:false, confirmed:true, confidence:72, mediumTerm:"Risk Off", shortTerm:"Defensive positioning — extreme fear regime, elevated VIX, below key MAs", description:"Autumn contraction — S&P 500 at 6,408, below both 50-day (6,615) and 200-day (6,768) MAs. VIX at 27.44 (+8.3%), CNN F&G at 18 (Extreme Fear), crypto F&G at 10. Yield curve positive but rates rising. Dollar weak at 99.86." },
   sp500:{ price:"6,408.38", change:"-2.78", sentiment:"BEARISH", dma50:"6,615.20", dma200:"6,768.50", wkSupport:"6,400.00", wkResistance:"6,573.22", moSupport:"6,350.00", moResistance:"6,591.90" },
+  nasdaq:{ price:"21,450.00", change:"-3.12", sentiment:"BEARISH", dma50:"22,100.00", dma200:"21,800.00", wkSupport:"21,200.00", wkResistance:"22,050.00", moSupport:"20,900.00", moResistance:"22,400.00" },
+  bitcoin:{ price:"68,420.00", change:"-4.85", sentiment:"BEARISH", dma50:"72,500.00", dma200:"65,800.00", wkSupport:"66,000.00", wkResistance:"72,000.00", moSupport:"62,000.00", moResistance:"75,000.00" },
   vix:{ price:"27.44", change:"+2.11", changePct:"+8.33", level:"HIGH", note:"Elevated concern" },
   dxy:{ price:"99.86", change:"-0.04", strength:"WEAK", note:"Tailwind for risk assets", position:49, sparkline:[] },
   yield:{ spread:"+0.42", status:"NORMAL", recessionRisk:"LOW", recessionPct:18 },
@@ -76,7 +78,7 @@ const SEED = {
   breadth:{ pct50:"38.2", pct200:"54.6", ad5d:"Falling", ad20d:"Falling", sentiment:"BEARISH", note:"Narrow participation — majority of stocks below 50-day MA" },
   fci:{ value:"-2.10", nfci:"-0.38", status:"Loose", fedFunds:"+0.7", t10y:"+1.1", hySpread:"0.8", sp500load:"-2.0", usd:"+0.6" },
   options:{ dexPCR:"1.42", omegaPCR:"1.18", status:"BEARISH", conviction:"42" },
-  macroIndic:{ usM2:"—", usM2Trend:"—", ismPMI:"—", ismStatus:"—", globalM2:"—" },
+  macroIndic:{ usM2:"$21.8T", usM2Trend:"Rising", usM2Change:"+0.3%", ismPMI:"103.2", ismStatus:"Expanding", ismLabel:"Industrial Production", globalM2:"$17.4T", globalM2Trend:"Falling" },
   sectorRotation: SECTOR_PAIRS.map(function(p) {
     var data = {
       "Cyclical vs Defensive":{w1:"r",w1m:"r",w3m:"r",w6m:"r",bull:false,prob:"72",winner:p.sub2,diffPct:-4.2,note:"Defensive leading, risk-off trend intact"},
@@ -124,6 +126,16 @@ function applyLiveData(d, prev) {
     out.sp500 = { ...out.sp500, price:d.sp500, change:chg, sentiment:String(chg).startsWith("-")?"BEARISH":"BULLISH" };
     if (d.dma50) out.sp500.dma50 = d.dma50;
     if (d.dma200) out.sp500.dma200 = d.dma200;
+  }
+  // Nasdaq
+  if (d.nasdaq) {
+    var ndxChg = d.nasdaqChg||"—";
+    out.nasdaq = { ...out.nasdaq, price:d.nasdaq, change:ndxChg, sentiment:String(ndxChg).startsWith("-")?"BEARISH":"BULLISH" };
+  }
+  // Bitcoin
+  if (d.bitcoin) {
+    var btcChg = d.bitcoinChg||"—";
+    out.bitcoin = { ...out.bitcoin, price:d.bitcoin, change:btcChg, sentiment:String(btcChg).startsWith("-")?"BEARISH":"BULLISH" };
   }
   // VIX
   var vv = parseFloat(d.vix);
@@ -257,6 +269,10 @@ export default function App() {
           quotes.forEach(function(q) { bySymbol[q.symbol] = q; });
           var sp = bySymbol["^GSPC"];
           if (sp) { parsed.sp500 = sp.regularMarketPrice.toFixed(2); parsed.sp500Chg = (sp.regularMarketChangePercent >= 0 ? "+" : "") + sp.regularMarketChangePercent.toFixed(2); }
+          var ndx = bySymbol["^IXIC"];
+          if (ndx) { parsed.nasdaq = ndx.regularMarketPrice.toFixed(2); parsed.nasdaqChg = (ndx.regularMarketChangePercent >= 0 ? "+" : "") + ndx.regularMarketChangePercent.toFixed(2); }
+          var btc = bySymbol["BTC-USD"];
+          if (btc) { parsed.bitcoin = btc.regularMarketPrice.toFixed(2); parsed.bitcoinChg = (btc.regularMarketChangePercent >= 0 ? "+" : "") + btc.regularMarketChangePercent.toFixed(2); }
           var vx = bySymbol["^VIX"];
           if (vx) { parsed.vix = vx.regularMarketPrice.toFixed(2); parsed.vixChg = (vx.regularMarketChangePercent >= 0 ? "+" : "") + vx.regularMarketChangePercent.toFixed(2); }
           var dx = bySymbol["DX-Y.NYB"];
@@ -416,28 +432,55 @@ if (fredJson.GDPC1 && fredJson.GDPC1_PREV && fredJson.CPIAUCSL && fredJson.CPI_P
       var inf = parseFloat(fredJson.T10YIE);
       out.inflation = { ...out.inflation, truflation:fredJson.T10YIE, trend:inf<2?"Falling":inf>3?"Rising":"Stable" };
     }
-    // Macro Indicators: M2 & ISM
-    if (fredJson.M2SL || fredJson.M2REAL) {
-      var m2Val = parseFloat(fredJson.M2SL || fredJson.M2REAL);
-      var m2Prev = parseFloat(fredJson.M2SL_PREV || fredJson.M2REAL_PREV);
+    // Macro Indicators: M2 (US + Global proxy) & Industrial Production (ISM substitute)
+    // US M2 — series M2SL (billions USD, monthly)
+    if (fredJson.M2SL) {
+      var m2Val = parseFloat(fredJson.M2SL);
+      var m2Prev = parseFloat(fredJson.M2SL_PREV);
+      var hasM2Prev = !isNaN(m2Prev) && m2Prev > 0;
+      var m2Trillions = (m2Val / 1000).toFixed(2); // convert $B to $T for display
+      var m2PctChange = hasM2Prev ? ((m2Val - m2Prev) / m2Prev * 100).toFixed(2) : null;
       out.macroIndic = { ...out.macroIndic,
-        usM2: m2Val.toFixed(2),
-        usM2Trend: m2Val > m2Prev ? "Rising" : "Falling",
-        usM2Change: ((m2Val - m2Prev) / m2Prev * 100).toFixed(1)
+        usM2: "$" + m2Trillions + "T",
+        usM2Trend: hasM2Prev ? (m2Val > m2Prev ? "Rising" : "Falling") : "Unknown",
+        usM2Change: m2PctChange != null ? (m2PctChange >= 0 ? "+" : "") + m2PctChange + "%" : null
       };
     }
-    if (fredJson.MMNRNJ) {
-      var ismVal = parseFloat(fredJson.MMNRNJ);
+    // Global M2 proxy — sum of major central bank balance sheets (USD equivalent, $T)
+    // Use WALCL (Fed, $M) + ECBASSETSW (ECB, €M) + JPNASSETS (BoJ, ¥B)
+    if (fredJson.WALCL) {
+      var fedM2 = parseFloat(fredJson.WALCL) / 1000000; // $M → $T
+      var ecbM2 = fredJson.ECBASSETSW ? parseFloat(fredJson.ECBASSETSW) / 1000000 * 1.08 : 0; // €M → $T (approx EUR/USD)
+      var bojM2 = fredJson.JPNASSETS ? parseFloat(fredJson.JPNASSETS) * 0.0067 / 1000 : 0; // ¥B → $T
+      var globalM2Total = fedM2 + ecbM2 + bojM2;
+      // Compute trend from Fed prev if available
+      var fedPrev = parseFloat(fredJson.WALCL_PREV);
+      var hasGlobalPrev = !isNaN(fedPrev) && fedPrev > 0;
       out.macroIndic = { ...out.macroIndic,
-        ismPMI: ismVal.toFixed(1),
-        ismStatus: ismVal > 50 ? "Expanding" : ismVal < 50 ? "Contracting" : "Neutral"
+        globalM2: "$" + globalM2Total.toFixed(1) + "T",
+        globalM2Trend: hasGlobalPrev ? (parseFloat(fredJson.WALCL) > fedPrev ? "Rising" : "Falling") : "Unknown"
       };
     }
-    if (fredJson.GLOBALM2 || fredJson.EMRATIO) {
-      var globalM2 = parseFloat(fredJson.GLOBALM2 || fredJson.EMRATIO);
+    // Industrial Production (ISM PMI substitute — ISM licensed, not on FRED)
+    // INDPRO = index, 2017=100. >100 = above baseline, trend matters more than level.
+    if (fredJson.INDPRO) {
+      var indVal = parseFloat(fredJson.INDPRO);
+      var indPrev = parseFloat(fredJson.INDPRO_PREV);
+      var hasIndPrev = !isNaN(indPrev) && indPrev > 0;
       out.macroIndic = { ...out.macroIndic,
-        globalM2: globalM2.toFixed(2),
-        globalM2Trend: globalM2 > 0 ? "Rising" : "Falling"
+        ismPMI: indVal.toFixed(1),
+        ismStatus: hasIndPrev ? (indVal > indPrev ? "Expanding" : "Contracting") : "Neutral",
+        ismLabel: "Industrial Production"
+      };
+    } else if (fredJson.MANEMP) {
+      // Fallback — manufacturing employment (thousands)
+      var manVal = parseFloat(fredJson.MANEMP);
+      var manPrev = parseFloat(fredJson.MANEMP_PREV);
+      var hasManPrev = !isNaN(manPrev) && manPrev > 0;
+      out.macroIndic = { ...out.macroIndic,
+        ismPMI: (manVal / 1000).toFixed(1) + "M",
+        ismStatus: hasManPrev ? (manVal > manPrev ? "Expanding" : "Contracting") : "Neutral",
+        ismLabel: "Mfg Employment"
       };
     }
   // Global Liquidity
@@ -600,7 +643,7 @@ try {
 
   return (
     <div style={{ display:"flex", height:"100vh", background:C.bg, fontFamily:sans, color:C.text, overflow:"hidden" }}>
-     <style>{`*{outline:none}button{outline:none}input{outline:none}textarea{outline:none}select{outline:none}*:focus{outline:none}@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}`}</style> 
+     <style>{`html,body,#root{margin:0;padding:0;background:${C.bg};min-height:100vh}*{box-sizing:border-box;outline:none}button{outline:none}input{outline:none}textarea{outline:none}select{outline:none}*:focus{outline:none}@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}`}</style> 
 
       {/* SIDEBAR */}
       <div style={{ width:188, background:C.panel, borderRight:"1px solid " + C.border, display:"flex", flexDirection:"column", padding:"13px 0", flexShrink:0 }}>
@@ -700,8 +743,8 @@ function MacroStage({ d }) {
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
 
-      {/* ROW 1: Regime + S&P */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 295px", gap:12 }}>
+      {/* ROW 1: Regime */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr", gap:12 }}>
         <Card glow={sc}>
           <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:10 }}>Macro Regime</div>
           <div style={{ display:"flex", gap:13 }}>
@@ -766,18 +809,17 @@ function MacroStage({ d }) {
             </div>
           </div>
         </Card>
+      </div>
 
+      {/* ROW 1b: Indices — S&P + Nasdaq + Bitcoin */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
         <Card>
           <SecTitle icon="📈" title="S&P 500" />
-          {false ? (
-            <div><Skel w="70%" h={30} mb={7} /><Skel w="40%" h={13} mb={10} /><Skel w="50%" h={20} mb={8} /></div>
-          ) : (
-            <div>
-              <div style={{ fontSize:29, fontWeight:700, fontFamily:font, marginBottom:3 }}>{d.sp500?.price}</div>
-              <div style={{ fontSize:13, color:String(d.sp500?.change||"").startsWith("-")?C.red:C.green, marginBottom:10, fontFamily:font }}>{d.sp500?.change}%</div>
-              <div style={{ marginBottom:8 }}><Badge label={d.sp500?.sentiment} color={d.sp500?.sentiment==="BEARISH"?C.red:d.sp500?.sentiment==="BULLISH"?C.green:C.textMid} /></div>
-            </div>
-          )}
+          <div>
+            <div style={{ fontSize:29, fontWeight:700, fontFamily:font, marginBottom:3 }}>{d.sp500?.price}</div>
+            <div style={{ fontSize:13, color:String(d.sp500?.change||"").startsWith("-")?C.red:C.green, marginBottom:10, fontFamily:font }}>{d.sp500?.change}%</div>
+            <div style={{ marginBottom:8 }}><Badge label={d.sp500?.sentiment} color={d.sp500?.sentiment==="BEARISH"?C.red:d.sp500?.sentiment==="BULLISH"?C.green:C.textMid} /></div>
+          </div>
           <Row label="50 DMA" val={d.sp500?.dma50} color={C.red} />
           <Row label="200 DMA" val={d.sp500?.dma200} color={C.red} />
           <div style={{ borderTop:"1px solid " + C.border, marginTop:8, paddingTop:8 }}>
@@ -793,6 +835,56 @@ function MacroStage({ d }) {
             </div>
           </div>
         </Card>
+
+        <Card>
+          <SecTitle icon="💻" title="Nasdaq" />
+          <div>
+            <div style={{ fontSize:29, fontWeight:700, fontFamily:font, marginBottom:3 }}>{d.nasdaq?.price}</div>
+            <div style={{ fontSize:13, color:String(d.nasdaq?.change||"").startsWith("-")?C.red:C.green, marginBottom:10, fontFamily:font }}>{d.nasdaq?.change}%</div>
+            <div style={{ marginBottom:8 }}><Badge label={d.nasdaq?.sentiment} color={d.nasdaq?.sentiment==="BEARISH"?C.red:d.nasdaq?.sentiment==="BULLISH"?C.green:C.textMid} /></div>
+          </div>
+          <Row label="50 DMA" val={d.nasdaq?.dma50} color={C.red} />
+          <Row label="200 DMA" val={d.nasdaq?.dma200} color={C.red} />
+          <div style={{ borderTop:"1px solid " + C.border, marginTop:8, paddingTop:8 }}>
+            <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:5 }}>SUPPORT / RESISTANCE</div>
+            <div style={{ display:"grid", gridTemplateColumns:"auto 1fr 1fr", gap:"3px 7px", fontSize:11 }}>
+              <span /><span style={{ color:C.textDim, textAlign:"right" }}>Support</span><span style={{ color:C.textDim, textAlign:"right" }}>Resistance</span>
+              <span style={{ color:C.textMid }}>Weekly</span>
+              <span style={{ textAlign:"right", fontFamily:font, color:C.blueLight }}>{d.nasdaq?.wkSupport}</span>
+              <span style={{ textAlign:"right", fontFamily:font, color:C.orange }}>{d.nasdaq?.wkResistance}</span>
+              <span style={{ color:C.textMid }}>Monthly</span>
+              <span style={{ textAlign:"right", fontFamily:font, color:C.blueLight }}>{d.nasdaq?.moSupport}</span>
+              <span style={{ textAlign:"right", fontFamily:font, color:C.orange }}>{d.nasdaq?.moResistance}</span>
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <SecTitle icon="₿" title="Bitcoin" />
+          <div>
+            <div style={{ fontSize:29, fontWeight:700, fontFamily:font, marginBottom:3 }}>{d.bitcoin?.price}</div>
+            <div style={{ fontSize:13, color:String(d.bitcoin?.change||"").startsWith("-")?C.red:C.green, marginBottom:10, fontFamily:font }}>{d.bitcoin?.change}%</div>
+            <div style={{ marginBottom:8 }}><Badge label={d.bitcoin?.sentiment} color={d.bitcoin?.sentiment==="BEARISH"?C.red:d.bitcoin?.sentiment==="BULLISH"?C.green:C.textMid} /></div>
+          </div>
+          <Row label="50 DMA" val={d.bitcoin?.dma50} color={C.red} />
+          <Row label="200 DMA" val={d.bitcoin?.dma200} color={C.red} />
+          <div style={{ borderTop:"1px solid " + C.border, marginTop:8, paddingTop:8 }}>
+            <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:5 }}>SUPPORT / RESISTANCE</div>
+            <div style={{ display:"grid", gridTemplateColumns:"auto 1fr 1fr", gap:"3px 7px", fontSize:11 }}>
+              <span /><span style={{ color:C.textDim, textAlign:"right" }}>Support</span><span style={{ color:C.textDim, textAlign:"right" }}>Resistance</span>
+              <span style={{ color:C.textMid }}>Weekly</span>
+              <span style={{ textAlign:"right", fontFamily:font, color:C.blueLight }}>{d.bitcoin?.wkSupport}</span>
+              <span style={{ textAlign:"right", fontFamily:font, color:C.orange }}>{d.bitcoin?.wkResistance}</span>
+              <span style={{ color:C.textMid }}>Monthly</span>
+              <span style={{ textAlign:"right", fontFamily:font, color:C.blueLight }}>{d.bitcoin?.moSupport}</span>
+              <span style={{ textAlign:"right", fontFamily:font, color:C.orange }}>{d.bitcoin?.moResistance}</span>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* ROW 2: Rates + DXY + Yield */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
        <Card>
           <SecTitle icon="↘" title="Forward Rates" />
           {false ? <Skel w="80px" h={20} mb={12} /> : (
@@ -1092,26 +1184,29 @@ function MacroStage({ d }) {
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12, marginBottom:12 }}>
             {/* Global M2 */}
             <div style={{ background:C.cardAlt, borderRadius:6, padding:10 }}>
-              <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>Global M2</div>
-              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color: d.macroIndic?.globalM2Trend==="Rising" ? C.green : C.red, marginBottom:6 }}>
-                {d.macroIndic?.globalM2Trend==="Rising" ? "▲" : "▼"} {d.macroIndic?.globalM2 || "—"}
+              <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>Global M2 (CB Balance Sheets)</div>
+              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color: d.macroIndic?.globalM2Trend==="Rising" ? C.green : d.macroIndic?.globalM2Trend==="Falling" ? C.red : C.orange, marginBottom:6 }}>
+                {d.macroIndic?.globalM2Trend==="Rising" ? "▲ " : d.macroIndic?.globalM2Trend==="Falling" ? "▼ " : ""}{d.macroIndic?.globalM2 || "—"}
               </div>
               <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.4 }}>
                 {d.macroIndic?.globalM2Trend==="Rising" 
-                  ? "Global money supply expanding. Supports asset prices."
+                  ? "Global liquidity expanding. Supports asset prices."
                   : d.macroIndic?.globalM2Trend==="Falling"
-                  ? "Global money contracting. Pressure on valuations."
-                  : "Fetching global M2 data..."}
+                  ? "Global liquidity contracting. Pressure on valuations."
+                  : "Sum of Fed + ECB + BoJ balance sheets"}
               </p>
             </div>
 
             {/* US M2 */}
             <div style={{ background:C.cardAlt, borderRadius:6, padding:10 }}>
               <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>US M2 Money Supply</div>
-              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color: d.macroIndic?.usM2Trend==="Rising" ? C.green : C.red, marginBottom:6 }}>
-                {d.macroIndic?.usM2Trend==="Rising" ? "▲" : "▼"} {d.macroIndic?.usM2 || "—"}
+              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color: d.macroIndic?.usM2Trend==="Rising" ? C.green : d.macroIndic?.usM2Trend==="Falling" ? C.red : C.orange, marginBottom:2 }}>
+                {d.macroIndic?.usM2Trend==="Rising" ? "▲ " : d.macroIndic?.usM2Trend==="Falling" ? "▼ " : ""}{d.macroIndic?.usM2 || "—"}
               </div>
-              <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.4 }}>
+              {d.macroIndic?.usM2Change && (
+                <div style={{ fontSize:11, color:d.macroIndic?.usM2Trend==="Rising"?C.green:C.red, fontFamily:font, marginBottom:6 }}>{d.macroIndic.usM2Change} MoM</div>
+              )}
+              <p style={{ fontSize:11, color:C.textMid, margin:d.macroIndic?.usM2Change?0:"6px 0 0", lineHeight:1.4 }}>
                 {d.macroIndic?.usM2Trend==="Rising"
                   ? "More dollars in circulation. Bullish for risk assets."
                   : d.macroIndic?.usM2Trend==="Falling"
@@ -1120,18 +1215,18 @@ function MacroStage({ d }) {
               </p>
             </div>
 
-            {/* ISM Manufacturing */}
+            {/* Industrial Production (ISM substitute) */}
             <div style={{ background:C.cardAlt, borderRadius:6, padding:10 }}>
-              <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>ISM Manufacturing PMI</div>
+              <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>{d.macroIndic?.ismLabel || "Industrial Production"}</div>
               <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color: d.macroIndic?.ismStatus==="Expanding" ? C.green : d.macroIndic?.ismStatus==="Contracting" ? C.red : C.orange, marginBottom:6 }}>
-                {d.macroIndic?.ismPMI || "—"} {d.macroIndic?.ismStatus==="Expanding" ? "▲" : d.macroIndic?.ismStatus==="Contracting" ? "▼" : ""}
+                {d.macroIndic?.ismStatus==="Expanding" ? "▲ " : d.macroIndic?.ismStatus==="Contracting" ? "▼ " : ""}{d.macroIndic?.ismPMI || "—"}
               </div>
               <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.4 }}>
                 {d.macroIndic?.ismStatus==="Expanding"
-                  ? "Manufacturing growing. Economic strength signal."
+                  ? "Production rising vs prior month. Economic strength."
                   : d.macroIndic?.ismStatus==="Contracting"
-                  ? "Manufacturing shrinking. Economic weakness ahead."
-                  : ">50 = growth, <50 = contraction"}
+                  ? "Production falling vs prior month. Economic weakness."
+                  : "Rising = economic growth · Falling = contraction"}
               </p>
             </div>
           </div>
