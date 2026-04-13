@@ -72,7 +72,7 @@ const SEED = {
   yield:{ spread:"+0.42", status:"NORMAL", recessionRisk:"LOW", recessionPct:18 },
   fg:{ score:18, label:"Extreme Fear", vsPrev:-4, cryptoScore:10, cryptoLabel:"EXTREME FEAR" },
   rates:{ status:"NEUTRAL", current:"4.33", expected:"4.08", impliedCuts:"-1" },
-  inflation:{ cpi:"2.8", trend:"Stable", truflation:"1.80", spread:"-1.00", note:"Lead indicators point to falling inflation over the next 90 days" },
+  inflation:{ cpi:"3.3", trend:"Rising", truflation:"2.95", spread:"-0.35", note:"March CPI spike driven by energy — core stayed at 2.6%" },
   liquidity:{ total:"17.4", score:"58", roc13w:"-0.40", roc52w:"-1.8", trend:"Contractionary" },
   credit:{ moveIndex:"108.0", moveSignal:"Elevated", hyDAS:"340", igHyDiff:"65", tightNote:"Tight — Complacency Risk", sloosNote:"Net Tightening", goldCopper:"850", sahmRule:"0.30", ccDelinquency:"3.1" },
   breadth:{ pct50:"38.2", pct200:"54.6", ad5d:"Falling", ad20d:"Falling", sentiment:"BEARISH", note:"Narrow participation — majority of stocks below 50-day MA" },
@@ -105,7 +105,11 @@ const SEED = {
     neutral:[{name:"Energy",conviction:"LOW",target:"5.0"},{name:"Industrials",conviction:"LOW",target:"7.0"}],
     underweight:[{name:"Technology",conviction:"HIGH",target:"6.0"},{name:"Consumer Cyclical",conviction:"MEDIUM",target:"5.0"},{name:"Financial Services",conviction:"MEDIUM",target:"8.0"}],
   },
-  aiAnalysis:"The macro environment has shifted decisively risk-off. The S&P 500 at 6,408 sits well below both its 50-day (6,615) and 200-day (6,768) moving averages — a bearish alignment not seen since early 2024. The VIX spike to 27.44 (+8.3%) confirms elevated hedging demand, while the CNN Fear & Greed Index at 18 (Extreme Fear) signals broad capitulation sentiment. Fed funds at 4.33% remain restrictive, though market pricing implies one cut by year-end.\n\nSentiment indicators are uniformly bearish. The crypto Fear & Greed Index plunged to 10 — its lowest since the FTX collapse — while Bitcoin tests $70K support. Market breadth is deteriorating with only 38% of S&P 500 stocks above their 50-day MA. The CBOE put/call ratio at 1.42 reflects heavy hedging activity. Despite this, credit spreads remain relatively tight at 340bp HY OAS, suggesting the stress is concentrated in equities rather than credit markets.\n\nSector rotation strongly favors defensives. Utilities (+11.2% 6M), Healthcare (+8.4%), and Consumer Staples (+6.1%) are leading while Technology and Consumer Discretionary lag. The DXY at 99.86 remains weak, providing some support for EM equities and commodities. Tactical positioning: overweight defensives, gold, and cash; underweight high-beta, growth, and crypto until VIX retreats below 20 and breadth recovers above 50%.",
+  aiViews:{
+    bullish: "The setup for risk assets is stronger than headlines suggest. The S&P 500 trading at elevated levels with breadth recovering implies institutional accumulation. A weak DXY (~99) provides tailwinds for multinationals and emerging markets. With the yield curve positive and credit spreads tight at 340bp HY OAS, credit markets are not pricing in recession risk — a meaningful divergence from equity fear gauges.\n\nFed funds at 4.33% with market pricing in cuts creates a supportive backdrop. The Industrial Production reading at 103+ shows real economic activity is expanding. Historically, VIX spikes into 25-30 range have marked local bottoms, not tops. Rotating into quality growth, small caps, and cyclicals on any weakness is the higher-conviction play.\n\nTactical positioning: overweight equities (70%+), quality tech, industrials, and financials. Use options to hedge tail risk rather than reducing equity exposure wholesale.",
+    neutral: "The macro environment presents genuinely mixed signals. On the bullish side: yield curve positive, credit spreads tight, Fed easing bias. On the bearish side: VIX elevated, breadth narrowing, CPI jumped to 3.3% on energy shock. The truth is probably somewhere in between — markets consolidating through a stagflationary mini-cycle before the next directional move.\n\nThe March CPI surge to 3.3% was energy-driven; core remained tame at 2.6%. If energy stabilizes, inflation prints normalize and the Fed's easing path resumes. If energy pressures persist, stagflation risk rises materially. Bitcoin's weakness and crypto F&G at extreme fear mirror equity uncertainty but credit markets remain calm.\n\nTactical positioning: maintain balanced 60/40-style allocation with tilt toward quality. Barbell equity exposure between defensives (utilities, healthcare) and select growth. Keep 5-10% in cash for optionality. Avoid leverage until directional clarity emerges.",
+    bearish: "The macro environment has shifted decisively risk-off. The S&P 500 sits below both 50-day and 200-day moving averages — a bearish alignment not seen since 2024. CPI jumping to 3.3% combined with restrictive Fed funds at 4.33% creates stagflation risk. Industrial Production may be expanding but the monthly trend has flattened.\n\nSentiment indicators flash warning signs. CNN Fear & Greed in extreme fear territory, crypto F&G at 10, market breadth deteriorating with <40% of stocks above 50-day MA. The VIX spike confirms hedging demand. While credit spreads remain tight, credit always lags equity — complacency in credit is a classic late-cycle warning, not a bullish signal.\n\nTactical positioning: overweight defensives (utilities, staples, healthcare), gold, and cash. Reduce equity exposure to 40-50%. Underweight high-beta tech, consumer discretionary, crypto. Wait for VIX below 20, breadth above 50%, and CPI declining before re-engaging risk."
+  },
 };
 
 function parseFGLabel(score) {
@@ -285,6 +289,39 @@ export default function App() {
         setRefreshStatus("Proxy blocked, trying Claude API...");
       }
 
+      // Supplemental: if proxy gave us S&P but not NDX/BTC, fetch them from Claude API
+      if (parsed && parsed.sp500 && (!parsed.nasdaq || !parsed.bitcoin)) {
+        try {
+          setRefreshStatus("Fetching Nasdaq + Bitcoin from Claude API...");
+          var dSupp = new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
+          var suppRes = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: "claude-sonnet-4-20250514",
+              max_tokens: 500,
+              tools: [{ type: "web_search_20250305", name: "web_search" }],
+              messages: [{ role: "user", content: "Today is " + dSupp + ". Search for current Nasdaq Composite (^IXIC) price and daily % change, and Bitcoin (BTC-USD) price and daily % change. Return ONLY JSON: {\"nasdaq\":\"2xxxx.xx\",\"nasdaqChg\":\"+x.xx\",\"bitcoin\":\"xxxxx.xx\",\"bitcoinChg\":\"+x.xx\"}" }]
+            })
+          });
+          var suppJson = await suppRes.json();
+          var suppText = (suppJson.content || []).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("\n");
+          var suppClean = suppText.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
+          var suppParsed = null;
+          try { suppParsed = JSON.parse(suppClean); } catch(eS) {
+            var depth2 = 0, start2 = -1;
+            for (var j = 0; j < suppClean.length; j++) {
+              if (suppClean[j]==="{"){if(depth2===0)start2=j;depth2++}
+              else if (suppClean[j]==="}"){depth2--;if(depth2===0&&start2>=0){try{suppParsed=JSON.parse(suppClean.slice(start2,j+1))}catch(eS2){}start2=-1}}
+            }
+          }
+          if (suppParsed) {
+            if (suppParsed.nasdaq) { parsed.nasdaq = suppParsed.nasdaq; parsed.nasdaqChg = suppParsed.nasdaqChg; }
+            if (suppParsed.bitcoin) { parsed.bitcoin = suppParsed.bitcoin; parsed.bitcoinChg = suppParsed.bitcoinChg; }
+          }
+        } catch(eSupp) { /* silent fail — keep proxy data */ }
+      }
+
       // Attempt 2: Claude API with web_search (works in sandbox)
       if (!parsed) {
         var d = new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
@@ -295,7 +332,7 @@ export default function App() {
             model: "claude-sonnet-4-20250514",
             max_tokens: 1000,
             tools: [{ type: "web_search_20250305", name: "web_search" }],
-            messages: [{ role: "user", content: "Today is " + d + ". Search for current S&P 500 price, VIX, DXY, 10Y yield. Return ONLY JSON, no other text: {\"sp500\":\"6xxx.xx\",\"sp500Chg\":\"-x.xx\",\"vix\":\"xx.xx\",\"vixChg\":\"+x.xx\",\"dxy\":\"xxx.xx\",\"t10y\":\"x.xx\"}" }]
+            messages: [{ role: "user", content: "Today is " + d + ". Search for current S&P 500, Nasdaq Composite, Bitcoin (BTC-USD), VIX, DXY, 10Y yield prices. Return ONLY JSON, no other text: {\"sp500\":\"6xxx.xx\",\"sp500Chg\":\"-x.xx\",\"nasdaq\":\"2xxxx.xx\",\"nasdaqChg\":\"-x.xx\",\"bitcoin\":\"xxxxx.xx\",\"bitcoinChg\":\"-x.xx\",\"vix\":\"xx.xx\",\"vixChg\":\"+x.xx\",\"dxy\":\"xxx.xx\",\"t10y\":\"x.xx\"}" }]
           })
         });
         setRefreshStatus("API responded HTTP " + response.status + "...");
@@ -627,6 +664,64 @@ try {
 } catch(fredErr) {
   console.warn("FRED fetch failed:", fredErr.message);
 }
+
+// Generate AI analysis with bull/bear/neutral viewpoints
+try {
+  setRefreshStatus("Generating AI analysis...");
+  var snapshot = null;
+  setData(function(prev) { snapshot = prev; return prev; });
+  // Wait one tick for setData to resolve
+  await new Promise(function(r) { setTimeout(r, 50); });
+  var snap = snapshot || SEED;
+  var contextStr =
+    "Current market snapshot:\n" +
+    "- S&P 500: " + (snap.sp500?.price||"?") + " (" + (snap.sp500?.change||"?") + "%)\n" +
+    "- Nasdaq: " + (snap.nasdaq?.price||"?") + " (" + (snap.nasdaq?.change||"?") + "%)\n" +
+    "- Bitcoin: " + (snap.bitcoin?.price||"?") + " (" + (snap.bitcoin?.change||"?") + "%)\n" +
+    "- VIX: " + (snap.vix?.price||"?") + " (" + (snap.vix?.level||"?") + ")\n" +
+    "- DXY: " + (snap.dxy?.price||"?") + " (" + (snap.dxy?.strength||"?") + ")\n" +
+    "- 10Y-2Y Yield Spread: " + (snap.yield?.spread||"?") + " (" + (snap.yield?.status||"?") + ")\n" +
+    "- Fed Funds Rate: " + (snap.rates?.current||"?") + "% (" + (snap.rates?.status||"?") + ")\n" +
+    "- CPI YoY: " + (snap.inflation?.cpi||"?") + "% (trend: " + (snap.inflation?.trend||"?") + ")\n" +
+    "- Fear & Greed: " + (snap.fg?.score||"?") + " (" + (snap.fg?.label||"?") + ")\n" +
+    "- Crypto F&G: " + (snap.fg?.cryptoScore||"?") + "\n" +
+    "- Market Breadth (% above 50DMA): " + (snap.breadth?.pct50||"?") + "%\n" +
+    "- HY Credit Spreads: " + (snap.credit?.hyDAS||"?") + "bp\n" +
+    "- Global Liquidity: " + (snap.macroIndic?.globalM2||"?") + " (" + (snap.macroIndic?.globalM2Trend||"?") + ")\n" +
+    "- Industrial Production: " + (snap.macroIndic?.ismPMI||"?") + " (" + (snap.macroIndic?.ismStatus||"?") + ")\n" +
+    "- MIT Macro Season: " + (snap.macroRegime?.season||"?") + " / " + (snap.macroRegime?.phase||"?") + "\n";
+
+  var aiRes = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1500,
+      messages: [{ role: "user", content:
+        contextStr +
+        "\nGenerate THREE distinct macro viewpoints. Each should be 2-3 concise paragraphs citing SPECIFIC numbers from the snapshot above. Return ONLY valid JSON (no markdown fences):\n" +
+        '{"bullish":"case for risk-on positioning, growth, equities","neutral":"balanced view weighing risks on both sides","bearish":"case for defensive positioning, caution, risk-off"}'
+      }]
+    })
+  });
+  var aiJson = await aiRes.json();
+  var aiText = (aiJson.content || []).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("\n");
+  var aiClean = aiText.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
+  var views = null;
+  try { views = JSON.parse(aiClean); } catch(eAI) {
+    var dAI = 0, sAI = -1;
+    for (var k = 0; k < aiClean.length; k++) {
+      if (aiClean[k]==="{"){if(dAI===0)sAI=k;dAI++}
+      else if (aiClean[k]==="}"){dAI--;if(dAI===0&&sAI>=0){try{views=JSON.parse(aiClean.slice(sAI,k+1))}catch(eAI2){}sAI=-1}}
+    }
+  }
+  if (views && (views.bullish || views.bearish || views.neutral)) {
+    setData(function(prev) { return { ...prev, aiViews: views }; });
+    setRefreshStatus("AI analysis ready!");
+  }
+} catch(aiErr) {
+  console.warn("AI analysis failed:", aiErr.message);
+}
     } catch(e) {
       setErr("Refresh error: " + e.message);
       setRefreshStatus("");
@@ -739,6 +834,7 @@ function TVWidget({ config, scriptName, height }) {
 
 function MacroStage({ d }) {
   const sc = SC[d.macroRegime?.season] || C.gold;
+  const [aiView, setAiView] = useState("neutral");
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
@@ -1448,22 +1544,54 @@ function MacroStage({ d }) {
             <span style={{ fontSize:13 }}>🧠</span>
             <span style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase" }}>AI-Enhanced Macro Analysis</span>
           </div>
-          <Badge label={false?"Writing...":"Live · Sonnet"} color={C.purple} />
+          <Badge label="Live · Sonnet" color={C.purple} />
         </div>
-        {false ? (
-          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-            <Skel w="100%" h={13} mb={0} /><Skel w="94%" h={13} mb={0} /><Skel w="88%" h={13} mb={8} />
-            <Skel w="100%" h={13} mb={0} /><Skel w="91%" h={13} mb={0} /><Skel w="65%" h={13} mb={0} />
-          </div>
-        ) : (
-          <div style={{ fontSize:13, lineHeight:1.85, color:C.textMid }}>
-            {(d.aiAnalysis||"Click ⚡ Refresh to load AI analysis.").split("\n\n").map(function(para,i) {
-              return <p key={i} style={{ margin:"0 0 12px" }}>{para}</p>;
-            })}
-          </div>
-        )}
-        <div style={{ display:"flex", gap:6, marginTop:8 }}>
-          {["gmi everything_code","multi framework_model","ray dalio"].map(function(t) {
+
+        {/* Tab switcher */}
+        <div style={{ display:"flex", gap:6, marginBottom:14, borderBottom:"1px solid " + C.border, paddingBottom:0 }}>
+          {[
+            { key:"bullish", label:"🐂 Bullish", color:C.green },
+            { key:"neutral", label:"⚖ Neutral", color:C.yellow },
+            { key:"bearish", label:"🐻 Bearish", color:C.red },
+          ].map(function(tab) {
+            var active = aiView === tab.key;
+            return (
+              <button key={tab.key} onClick={function(){ setAiView(tab.key); }} style={{
+                background: active ? tab.color + "22" : "transparent",
+                border: "none",
+                borderBottom: active ? "2px solid " + tab.color : "2px solid transparent",
+                color: active ? tab.color : C.textMid,
+                padding: "8px 14px",
+                fontSize: 12,
+                fontWeight: active ? 700 : 500,
+                letterSpacing: 0.5,
+                cursor: "pointer",
+                fontFamily: sans,
+                transition: "all 0.2s",
+                marginBottom: -1,
+              }}>{tab.label}</button>
+            );
+          })}
+        </div>
+
+        {/* Active view content */}
+        <div style={{
+          fontSize:13,
+          lineHeight:1.85,
+          color:C.textMid,
+          background: (aiView==="bullish"?C.green:aiView==="bearish"?C.red:C.yellow) + "08",
+          border: "1px solid " + (aiView==="bullish"?C.green:aiView==="bearish"?C.red:C.yellow) + "22",
+          borderRadius: 6,
+          padding: "12px 14px",
+        }}>
+          {(d.aiViews?.[aiView] || "Click ⚡ Refresh to load AI analysis.").split("\n\n").map(function(para,i) {
+            return <p key={i} style={{ margin:"0 0 12px" }}>{para}</p>;
+          })}
+        </div>
+
+        <div style={{ display:"flex", gap:6, marginTop:12, alignItems:"center", flexWrap:"wrap" }}>
+          <span style={{ fontSize:10, color:C.textDim, letterSpacing:1 }}>FRAMEWORKS:</span>
+          {["mit_macro_seasons","global_liquidity","ray_dalio_cycles"].map(function(t) {
             return <span key={t} style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"2px 7px", fontSize:11, color:C.textDim }}>{t}</span>;
           })}
         </div>
@@ -1565,53 +1693,6 @@ function MacroStage({ d }) {
                 </div>
               </div>
             );
-          })}
-        </div>
-      </Card>
-
-     {/* SECTOR HEATMAP */}
-<Card>
-  <SecTitle icon="🌡" title="Sector Heatmap" badge="LIVE" bc={C.green} />
-  <TVWidget scriptName="embed-widget-stock-heatmap" height={500} config={{
-    "exchanges": [],
-    "dataSource": "SPX500",
-    "grouping": "sector",
-    "blockSize": "market_cap_basic",
-    "blockColor": "change",
-    "locale": "en",
-    "colorTheme": "dark",
-    "hasTopBar": false,
-    "isDataSetEnabled": false,
-    "isZoomEnabled": true,
-    "hasSymbolTooltip": true,
-    "isMonoSize": false,
-    "width": "100%",
-    "height": 500
-  }} />
-</Card>
-      {/* ASSET ALLOCATION */}
-      <Card>
-        <SecTitle icon="⚖" title="Asset Allocation" />
-        <div style={{ fontSize:12, color:C.textDim, marginBottom:12 }}>
-          Neutral vs <span style={{ color:SC[d.macroRegime?.season]||C.gold, fontWeight:700 }}>{d.macroRegime?.season?.toUpperCase()}</span> adjusted
-        </div>
-        <div style={{ display:"grid", gridTemplateColumns:"138px 1fr 72px 72px 52px", gap:"8px 12px", alignItems:"center" }}>
-          <div style={{ fontSize:10, color:C.textDim }}>ASSET CLASS</div>
-          <div />
-          <div style={{ fontSize:10, color:C.textDim, textAlign:"right" }}>NEUTRAL</div>
-          <div style={{ fontSize:10, color:C.textDim, textAlign:"right" }}>ADJUSTED</div>
-          <div style={{ fontSize:10, color:C.textDim, textAlign:"right" }}>CHANGE</div>
-          {Object.entries(d.allocation||{}).map(function([key,val]) {
-            var cols = {stocks:C.blueLight,bonds:C.green,cash:C.textDim,gold:C.gold,crypto:C.purple,realAssets:C.orange};
-            var labs = {stocks:"Stocks",bonds:"Bonds",cash:"Cash",gold:"Gold",crypto:"Crypto",realAssets:"Real Assets"};
-            var diff = +val.a - +val.n;
-            return [
-              <div key={key+"l"} style={{ display:"flex", alignItems:"center", gap:6 }}><Dot c={cols[key]}/><span style={{ fontSize:13 }}>{labs[key]}</span></div>,
-              <div key={key+"b"} style={{ height:4, background:C.border, borderRadius:2 }}><div style={{ width:val.a + "%", height:"100%", background:cols[key], borderRadius:2, opacity:0.7 }}/></div>,
-              <span key={key+"n"} style={{ textAlign:"right", fontFamily:font, fontSize:13 }}>{val.n}%</span>,
-              <span key={key+"a"} style={{ textAlign:"right", fontFamily:font, fontSize:13, fontWeight:700 }}>{val.a}%</span>,
-              <span key={key+"c"} style={{ textAlign:"right", fontFamily:font, fontSize:12, color:diff>0?C.green:diff<0?C.red:C.textMid }}>{diff>0?"+":""}{diff}%</span>,
-            ];
           })}
         </div>
       </Card>
