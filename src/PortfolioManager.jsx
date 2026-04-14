@@ -923,17 +923,23 @@ function MacroStage({ d }) {
         </Card>
       </div>
 
-      {/* ROW 1b: Indices — S&P + Nasdaq + Bitcoin */}
+      {/* ROW 1b: Indices — S&P + Nasdaq + Bitcoin (TradingView live) */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
         <Card>
           <SecTitle icon="📈" title="S&P 500" />
-          <div>
-            <div style={{ fontSize:29, fontWeight:700, fontFamily:font, marginBottom:3 }}>{d.sp500?.price}</div>
-            <div style={{ fontSize:13, color:String(d.sp500?.change||"").startsWith("-")?C.red:C.green, marginBottom:10, fontFamily:font }}>{d.sp500?.change}%</div>
-            <div style={{ marginBottom:8 }}><Badge label={d.sp500?.sentiment} color={d.sp500?.sentiment==="BEARISH"?C.red:d.sp500?.sentiment==="BULLISH"?C.green:C.textMid} /></div>
-          </div>
-          <Row label="50 DMA" val={d.sp500?.dma50} color={C.red} />
-          <Row label="200 DMA" val={d.sp500?.dma200} color={C.red} />
+          <TVWidget scriptName="embed-widget-mini-symbol-overview" height={140} config={{
+            "symbol": "SP:SPX",
+            "width": "100%",
+            "height": 140,
+            "locale": "en",
+            "dateRange": "1D",
+            "colorTheme": "dark",
+            "isTransparent": true,
+            "autosize": false,
+            "largeChartUrl": "",
+            "chartOnly": false,
+            "noTimeScale": true
+          }} />
           <div style={{ borderTop:"1px solid " + C.border, marginTop:8, paddingTop:8 }}>
             <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:5 }}>SUPPORT / RESISTANCE</div>
             <div style={{ display:"grid", gridTemplateColumns:"auto 1fr 1fr", gap:"3px 7px", fontSize:11 }}>
@@ -950,13 +956,19 @@ function MacroStage({ d }) {
 
         <Card>
           <SecTitle icon="💻" title="Nasdaq" />
-          <div>
-            <div style={{ fontSize:29, fontWeight:700, fontFamily:font, marginBottom:3 }}>{d.nasdaq?.price}</div>
-            <div style={{ fontSize:13, color:String(d.nasdaq?.change||"").startsWith("-")?C.red:C.green, marginBottom:10, fontFamily:font }}>{d.nasdaq?.change}%</div>
-            <div style={{ marginBottom:8 }}><Badge label={d.nasdaq?.sentiment} color={d.nasdaq?.sentiment==="BEARISH"?C.red:d.nasdaq?.sentiment==="BULLISH"?C.green:C.textMid} /></div>
-          </div>
-          <Row label="50 DMA" val={d.nasdaq?.dma50} color={C.red} />
-          <Row label="200 DMA" val={d.nasdaq?.dma200} color={C.red} />
+          <TVWidget scriptName="embed-widget-mini-symbol-overview" height={140} config={{
+            "symbol": "NASDAQ:IXIC",
+            "width": "100%",
+            "height": 140,
+            "locale": "en",
+            "dateRange": "1D",
+            "colorTheme": "dark",
+            "isTransparent": true,
+            "autosize": false,
+            "largeChartUrl": "",
+            "chartOnly": false,
+            "noTimeScale": true
+          }} />
           <div style={{ borderTop:"1px solid " + C.border, marginTop:8, paddingTop:8 }}>
             <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:5 }}>SUPPORT / RESISTANCE</div>
             <div style={{ display:"grid", gridTemplateColumns:"auto 1fr 1fr", gap:"3px 7px", fontSize:11 }}>
@@ -973,13 +985,19 @@ function MacroStage({ d }) {
 
         <Card>
           <SecTitle icon="₿" title="Bitcoin" />
-          <div>
-            <div style={{ fontSize:29, fontWeight:700, fontFamily:font, marginBottom:3 }}>{d.bitcoin?.price}</div>
-            <div style={{ fontSize:13, color:String(d.bitcoin?.change||"").startsWith("-")?C.red:C.green, marginBottom:10, fontFamily:font }}>{d.bitcoin?.change}%</div>
-            <div style={{ marginBottom:8 }}><Badge label={d.bitcoin?.sentiment} color={d.bitcoin?.sentiment==="BEARISH"?C.red:d.bitcoin?.sentiment==="BULLISH"?C.green:C.textMid} /></div>
-          </div>
-          <Row label="50 DMA" val={d.bitcoin?.dma50} color={C.red} />
-          <Row label="200 DMA" val={d.bitcoin?.dma200} color={C.red} />
+          <TVWidget scriptName="embed-widget-mini-symbol-overview" height={140} config={{
+            "symbol": "CRYPTO:BTCUSD",
+            "width": "100%",
+            "height": 140,
+            "locale": "en",
+            "dateRange": "1D",
+            "colorTheme": "dark",
+            "isTransparent": true,
+            "autosize": false,
+            "largeChartUrl": "",
+            "chartOnly": false,
+            "noTimeScale": true
+          }} />
           <div style={{ borderTop:"1px solid " + C.border, marginTop:8, paddingTop:8 }}>
             <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:5 }}>SUPPORT / RESISTANCE</div>
             <div style={{ display:"grid", gridTemplateColumns:"auto 1fr 1fr", gap:"3px 7px", fontSize:11 }}>
