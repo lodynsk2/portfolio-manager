@@ -957,7 +957,7 @@ function MacroStage({ d }) {
         <Card>
           <SecTitle icon="💻" title="Nasdaq 100" />
           <TVWidget scriptName="embed-widget-mini-symbol-overview" height={140} config={{
-            "symbol": "TVC:NDX",
+            "symbol": "OANDA:NAS100USD",
             "width": "100%",
             "height": 140,
             "locale": "en",
