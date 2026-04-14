@@ -928,7 +928,7 @@ function MacroStage({ d }) {
         <Card>
           <SecTitle icon="📈" title="S&P 500" />
           <TVWidget scriptName="embed-widget-mini-symbol-overview" height={140} config={{
-            "symbol": "SP:SPX",
+            "symbol": "FOREXCOM:SPXUSD",
             "width": "100%",
             "height": 140,
             "locale": "en",
@@ -955,9 +955,9 @@ function MacroStage({ d }) {
         </Card>
 
         <Card>
-          <SecTitle icon="💻" title="Nasdaq" />
+          <SecTitle icon="💻" title="Nasdaq 100" />
           <TVWidget scriptName="embed-widget-mini-symbol-overview" height={140} config={{
-            "symbol": "NASDAQ:IXIC",
+            "symbol": "TVC:NDX",
             "width": "100%",
             "height": 140,
             "locale": "en",
