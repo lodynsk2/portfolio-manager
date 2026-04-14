@@ -289,37 +289,53 @@ export default function App() {
         setRefreshStatus("Proxy blocked, trying Claude API...");
       }
 
-      // Supplemental: if proxy gave us S&P but not NDX/BTC, fetch them from Claude API
-      if (parsed && parsed.sp500 && (!parsed.nasdaq || !parsed.bitcoin)) {
+      // Supplemental: if we got S&P but missing NDX or BTC, fetch them from Claude API
+      if (parsed && (parsed.sp500 || parsed.vix) && (!parsed.nasdaq || !parsed.bitcoin)) {
         try {
-          setRefreshStatus("Fetching Nasdaq + Bitcoin from Claude API...");
+          setRefreshStatus("Fetching Nasdaq + Bitcoin...");
           var dSupp = new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
           var suppRes = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               model: "claude-sonnet-4-20250514",
-              max_tokens: 500,
+              max_tokens: 800,
               tools: [{ type: "web_search_20250305", name: "web_search" }],
-              messages: [{ role: "user", content: "Today is " + dSupp + ". Search for current Nasdaq Composite (^IXIC) price and daily % change, and Bitcoin (BTC-USD) price and daily % change. Return ONLY JSON: {\"nasdaq\":\"2xxxx.xx\",\"nasdaqChg\":\"+x.xx\",\"bitcoin\":\"xxxxx.xx\",\"bitcoinChg\":\"+x.xx\"}" }]
+              messages: [{ role: "user", content: "Today is " + dSupp + ". Search the web for the CURRENT live price of the Nasdaq Composite Index (^IXIC) and Bitcoin (BTC-USD). I need today's price and today's percent change. Respond with ONLY a JSON object and no other text: {\"nasdaq\":\"PRICE_AS_STRING\",\"nasdaqChg\":\"SIGNED_PCT_CHANGE\",\"bitcoin\":\"PRICE_AS_STRING\",\"bitcoinChg\":\"SIGNED_PCT_CHANGE\"}. Example format: {\"nasdaq\":\"18450.25\",\"nasdaqChg\":\"+0.85\",\"bitcoin\":\"87300.50\",\"bitcoinChg\":\"-1.20\"}" }]
             })
           });
+          setRefreshStatus("NDX/BTC API HTTP " + suppRes.status + "...");
           var suppJson = await suppRes.json();
-          var suppText = (suppJson.content || []).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("\n");
+          // Extract all text blocks (ignore tool_use/tool_result blocks)
+          var suppText = "";
+          if (suppJson.content && Array.isArray(suppJson.content)) {
+            suppJson.content.forEach(function(b) {
+              if (b.type === "text" && b.text) suppText += b.text + "\n";
+            });
+          }
+          setRefreshStatus("NDX/BTC got " + suppText.length + " chars, parsing...");
           var suppClean = suppText.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
           var suppParsed = null;
-          try { suppParsed = JSON.parse(suppClean); } catch(eS) {
-            var depth2 = 0, start2 = -1;
+          try { suppParsed = JSON.parse(suppClean); } catch(eS) {}
+          if (!suppParsed) {
+            // Brace matching to find last complete JSON object
+            var depth2 = 0, start2 = -1, lastFound = null;
             for (var j = 0; j < suppClean.length; j++) {
-              if (suppClean[j]==="{"){if(depth2===0)start2=j;depth2++}
-              else if (suppClean[j]==="}"){depth2--;if(depth2===0&&start2>=0){try{suppParsed=JSON.parse(suppClean.slice(start2,j+1))}catch(eS2){}start2=-1}}
+              if (suppClean[j]==="{") { if (depth2===0) start2=j; depth2++; }
+              else if (suppClean[j]==="}") { depth2--; if (depth2===0 && start2>=0) { try { lastFound = JSON.parse(suppClean.slice(start2,j+1)); } catch(eS2){} start2=-1; } }
             }
+            suppParsed = lastFound;
           }
-          if (suppParsed) {
-            if (suppParsed.nasdaq) { parsed.nasdaq = suppParsed.nasdaq; parsed.nasdaqChg = suppParsed.nasdaqChg; }
-            if (suppParsed.bitcoin) { parsed.bitcoin = suppParsed.bitcoin; parsed.bitcoinChg = suppParsed.bitcoinChg; }
+          if (suppParsed && (suppParsed.nasdaq || suppParsed.bitcoin)) {
+            if (suppParsed.nasdaq) { parsed.nasdaq = String(suppParsed.nasdaq).replace(/,/g,""); parsed.nasdaqChg = suppParsed.nasdaqChg || ""; }
+            if (suppParsed.bitcoin) { parsed.bitcoin = String(suppParsed.bitcoin).replace(/,/g,""); parsed.bitcoinChg = suppParsed.bitcoinChg || ""; }
+            setRefreshStatus("Got NDX=" + parsed.nasdaq + " BTC=" + parsed.bitcoin);
+          } else {
+            setRefreshStatus("NDX/BTC: no JSON in response");
           }
-        } catch(eSupp) { /* silent fail — keep proxy data */ }
+        } catch(eSupp) {
+          setRefreshStatus("NDX/BTC fetch error: " + eSupp.message);
+        }
       }
 
       // Attempt 2: Claude API with web_search (works in sandbox)
