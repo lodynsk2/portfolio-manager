@@ -5,6 +5,7 @@ var PROXY_URL = "https://portfolio-proxy-ja56.vercel.app/api/market";
 var FRED_URL = "https://portfolio-proxy-ja56.vercel.app/api/fred";
 var SECTORS_URL = "https://portfolio-proxy-ja56.vercel.app/api/sectors";
 var FG_URL = "https://portfolio-proxy-ja56.vercel.app/api/feargreed";
+var OHLC_URL = "https://portfolio-proxy-ja56.vercel.app/api/ohlc";
 
 /* ──────────────────────────────────────────────────────────────────── */
 
@@ -119,6 +120,48 @@ function parseFGLabel(score) {
   if (score <= 55) return "Neutral";
   if (score <= 75) return "Greed";
   return "Extreme Greed";
+}
+
+// Compute support/resistance from recent swing highs/lows
+// candles: array of {t, h, l, c} — daily OHLC
+// Returns { wkSupport, wkResistance, moSupport, moResistance } formatted strings
+function computeSwingSR(candles) {
+  if (!candles || candles.length < 5) return null;
+
+  // Sort ascending by timestamp just in case
+  var sorted = candles.slice().sort(function(a, b) { return a.t - b.t; });
+  var latest = sorted[sorted.length - 1];
+  var currentPrice = latest.c;
+
+  // Weekly = last ~5 trading days, Monthly = last ~22 trading days
+  var weekly = sorted.slice(-5);
+  var monthly = sorted.slice(-22);
+
+  // For swing S/R: find highest high and lowest low in the window.
+  // Support = lowest low below current price (or just the lowest low).
+  // Resistance = highest high above current price (or just the highest high).
+  function findSR(window, cur) {
+    var highsAbove = window.filter(function(c) { return c.h > cur; }).map(function(c) { return c.h; });
+    var lowsBelow = window.filter(function(c) { return c.l < cur; }).map(function(c) { return c.l; });
+    var resistance = highsAbove.length > 0 ? Math.max.apply(null, highsAbove) : Math.max.apply(null, window.map(function(c){ return c.h; }));
+    var support = lowsBelow.length > 0 ? Math.min.apply(null, lowsBelow) : Math.min.apply(null, window.map(function(c){ return c.l; }));
+    return { support: support, resistance: resistance };
+  }
+
+  var wk = findSR(weekly, currentPrice);
+  var mo = findSR(monthly, currentPrice);
+
+  // Format with thousands separators and 2 decimals
+  function fmt(n) {
+    return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  return {
+    wkSupport: fmt(wk.support),
+    wkResistance: fmt(wk.resistance),
+    moSupport: fmt(mo.support),
+    moResistance: fmt(mo.resistance),
+  };
 }
 
 
@@ -679,6 +722,36 @@ try {
 }
 } catch(fredErr) {
   console.warn("FRED fetch failed:", fredErr.message);
+}
+
+// Fetch OHLC history and compute swing support/resistance for 3 indices
+try {
+  setRefreshStatus("Fetching price history for S/R levels...");
+  var ohlcRes = await fetch(OHLC_URL);
+  if (ohlcRes.ok) {
+    var ohlcJson = await ohlcRes.json();
+    setData(function(prev) {
+      var out = { ...prev };
+      ["sp500","nasdaq","bitcoin"].forEach(function(key) {
+        var entry = ohlcJson[key];
+        if (entry && entry.candles && entry.candles.length >= 5) {
+          var sr = computeSwingSR(entry.candles);
+          if (sr) {
+            out[key] = { ...out[key],
+              wkSupport: sr.wkSupport,
+              wkResistance: sr.wkResistance,
+              moSupport: sr.moSupport,
+              moResistance: sr.moResistance
+            };
+          }
+        }
+      });
+      return out;
+    });
+    setRefreshStatus("S/R levels updated!");
+  }
+} catch(ohlcErr) {
+  console.warn("OHLC fetch failed:", ohlcErr.message);
 }
 
 // Generate AI analysis with bull/bear/neutral viewpoints
