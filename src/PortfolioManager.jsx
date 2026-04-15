@@ -1004,8 +1004,11 @@ function LiquidityChart({ history }) {
 
   const maxTotal = Math.max(...points.map(p => p.total)) * 1.05 || 1;
   const minTotal = 0;
-  const maxSPX = Math.max(...points.map(p => p.spx)) * 1.05 || 1;
-  const minSPX = Math.min(...points.map(p => p.spx).filter(v => v > 0)) * 0.95 || 0;
+  // Robust SPX scale — handle case where sp500 series is empty/missing
+  const spxValues = points.map(p => p.spx).filter(v => v > 0 && !isNaN(v));
+  const hasSPX = spxValues.length > 0;
+  const maxSPX = hasSPX ? Math.max(...spxValues) * 1.05 : 1;
+  const minSPX = hasSPX ? Math.min(...spxValues) * 0.95 : 0;
 
   function xScale(i) { return padL + (i / (points.length - 1)) * chartW; }
   function yScale(v) { return padT + chartH - (v / maxTotal) * chartH; }
@@ -1137,7 +1140,7 @@ function LiquidityChart({ history }) {
           {fedArea && <polygon points={fedArea} fill={C.blue} opacity="0.55"><title>Fed</title></polygon>}
 
           {/* S&P overlay line */}
-          {showSPX && (
+          {showSPX && hasSPX && (
             <g>
               <path d={spxPath} fill="none" stroke={C.purple} strokeWidth="1.8" opacity="0.9" />
               {/* Right Y-axis for SPX */}
@@ -1145,10 +1148,13 @@ function LiquidityChart({ history }) {
                 const v = minSPX + (maxSPX - minSPX) * frac;
                 const y = padT + chartH - frac * chartH;
                 return (
-                  <text key={i} x={W - padR + 4} y={y + 3} fontSize="9" fill={C.purple} textAnchor="start" fontFamily={font}>{Math.round(v)}</text>
+                  <text key={i} x={W - padR + 4} y={y + 3} fontSize="9" fill={C.purple} textAnchor="start" fontFamily={font}>{Math.round(v).toLocaleString()}</text>
                 );
               })}
             </g>
+          )}
+          {showSPX && !hasSPX && (
+            <text x={W - padR - 8} y={padT + 14} fontSize="10" fill={C.textDim} textAnchor="end" fontFamily={sans} fontStyle="italic">S&P data unavailable</text>
           )}
 
           {/* Hover line + dots */}
@@ -1158,7 +1164,7 @@ function LiquidityChart({ history }) {
               {activeBanks.boj && <circle cx={hover.x} cy={yScale(hover.p.boj)} r="3" fill={C.red} stroke={C.bg} strokeWidth="1.5" />}
               {activeBanks.ecb && <circle cx={hover.x} cy={yScale(hover.p.boj + hover.p.ecb)} r="3" fill={C.orange} stroke={C.bg} strokeWidth="1.5" />}
               {activeBanks.fed && <circle cx={hover.x} cy={yScale(hover.p.total)} r="3" fill={C.blue} stroke={C.bg} strokeWidth="1.5" />}
-              {showSPX && <circle cx={hover.x} cy={ySPXScale(hover.p.spx)} r="3" fill={C.purple} stroke={C.bg} strokeWidth="1.5" />}
+              {showSPX && hasSPX && <circle cx={hover.x} cy={ySPXScale(hover.p.spx)} r="3" fill={C.purple} stroke={C.bg} strokeWidth="1.5" />}
             </g>
           )}
         </svg>
@@ -1181,7 +1187,7 @@ function LiquidityChart({ history }) {
             <div style={{ borderTop:"1px solid " + C.border, marginTop:4, paddingTop:4, color:C.text, fontWeight:700, display:"flex", justifyContent:"space-between", gap:10 }}>
               <span>Total</span><span>${hover.p.total.toFixed(2)}T</span>
             </div>
-            {showSPX && <div style={{ color:C.purple, display:"flex", justifyContent:"space-between", gap:10, marginTop:2 }}><span>● S&P 500</span><span>{Math.round(hover.p.spx).toLocaleString()}</span></div>}
+            {showSPX && hasSPX && <div style={{ color:C.purple, display:"flex", justifyContent:"space-between", gap:10, marginTop:2 }}><span>● S&P 500</span><span>{Math.round(hover.p.spx).toLocaleString()}</span></div>}
           </div>
         )}
       </div>
@@ -1568,31 +1574,39 @@ function MacroStage({ d }) {
 
       {/* ROW 4a: Global Liquidity — full width interactive chart */}
       <Card>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12, flexWrap:"wrap", gap:12 }}>
-          <div>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:14, flexWrap:"wrap", gap:14 }}>
+          <div style={{ flex:"1 1 auto", minWidth:0 }}>
             <SecTitle icon="💧" title="Global Liquidity" badge={d.liquidity?.trend} bc={d.liquidity?.trend==="Contractionary"?C.red:d.liquidity?.trend==="Expansionary"?C.green:C.yellow} />
-            <div style={{ display:"flex", gap:20, alignItems:"baseline" }}>
-              <div>
-                <div style={{ fontSize:28, fontWeight:700, fontFamily:font, lineHeight:1 }}>${d.liquidity?.total}T</div>
-                <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>Current stack total</div>
+            <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+              <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:6, padding:"10px 14px", minWidth:120 }}>
+                <div style={{ fontSize:9, color:C.textDim, letterSpacing:1.2, marginBottom:4, textTransform:"uppercase" }}>Total</div>
+                <div style={{ fontSize:24, fontWeight:700, fontFamily:font, lineHeight:1, color:C.text }}>${d.liquidity?.total}T</div>
+                <div style={{ fontSize:10, color:C.textDim, marginTop:3 }}>Stack of CB assets</div>
               </div>
-              <div>
-                <div style={{ fontSize:16, fontWeight:700, color:d.liquidity?.trend==="Contractionary"?C.red:C.green, fontFamily:font }}>{d.liquidity?.score}/100</div>
-                <div style={{ fontSize:10, color:C.textDim }}>Liquidity score</div>
+              <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:6, padding:"10px 14px", minWidth:120 }}>
+                <div style={{ fontSize:9, color:C.textDim, letterSpacing:1.2, marginBottom:4, textTransform:"uppercase" }}>Score</div>
+                <div style={{ fontSize:24, fontWeight:700, fontFamily:font, lineHeight:1, color:d.liquidity?.trend==="Contractionary"?C.red:C.green }}>{d.liquidity?.score}<span style={{ fontSize:13, color:C.textDim, fontWeight:400 }}>/100</span></div>
+                <div style={{ fontSize:10, color:C.textDim, marginTop:3 }}>0=tight · 100=loose</div>
               </div>
-              <div>
-                <div style={{ fontSize:14, color:String(d.liquidity?.roc13w||"").startsWith("-")?C.red:C.green, fontFamily:font }}>{String(d.liquidity?.roc13w||"").startsWith("-")?"▼ ":"▲ "}{d.liquidity?.roc13w}%</div>
-                <div style={{ fontSize:10, color:C.textDim }}>13w RoC</div>
+              <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:6, padding:"10px 14px", minWidth:100 }}>
+                <div style={{ fontSize:9, color:C.textDim, letterSpacing:1.2, marginBottom:4, textTransform:"uppercase" }}>13-Week</div>
+                <div style={{ fontSize:20, fontWeight:700, fontFamily:font, lineHeight:1, color:String(d.liquidity?.roc13w||"").startsWith("-")?C.red:C.green }}>
+                  {String(d.liquidity?.roc13w||"").startsWith("-")?"▼":"▲"} {String(d.liquidity?.roc13w||"").replace("-","")}%
+                </div>
+                <div style={{ fontSize:10, color:C.textDim, marginTop:3 }}>Rate of change</div>
               </div>
-              <div>
-                <div style={{ fontSize:14, color:String(d.liquidity?.roc52w||"").startsWith("-")?C.red:C.green, fontFamily:font }}>{d.liquidity?.roc52w}%</div>
-                <div style={{ fontSize:10, color:C.textDim }}>52w RoC</div>
+              <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:6, padding:"10px 14px", minWidth:100 }}>
+                <div style={{ fontSize:9, color:C.textDim, letterSpacing:1.2, marginBottom:4, textTransform:"uppercase" }}>52-Week</div>
+                <div style={{ fontSize:20, fontWeight:700, fontFamily:font, lineHeight:1, color:String(d.liquidity?.roc52w||"").startsWith("-")?C.red:C.green }}>
+                  {String(d.liquidity?.roc52w||"").startsWith("-")?"▼":"▲"} {String(d.liquidity?.roc52w||"").replace("-","")}%
+                </div>
+                <div style={{ fontSize:10, color:C.textDim, marginTop:3 }}>Rate of change</div>
               </div>
             </div>
           </div>
-          <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:6, padding:"6px 10px", fontSize:10, color:C.textMid, maxWidth:280 }}>
-            <div style={{ color:C.textDim, fontSize:9, letterSpacing:1, marginBottom:3 }}>TIP</div>
-            Hover the chart to inspect a date. Click bank labels to toggle. Enable S&P 500 overlay to compare liquidity vs equities.
+          <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:6, padding:"8px 12px", fontSize:10, color:C.textMid, maxWidth:240, lineHeight:1.5 }}>
+            <div style={{ color:C.cyan, fontSize:9, letterSpacing:1.2, marginBottom:4, textTransform:"uppercase", fontWeight:700 }}>💡 How to use</div>
+            Hover anywhere on chart for date details. Click bank toggles to isolate. Enable S&P overlay to compare liquidity vs equities.
           </div>
         </div>
         <LiquidityChart history={d.liquidityHistory} />
