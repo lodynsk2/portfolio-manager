@@ -6,6 +6,7 @@ var FRED_URL = "https://portfolio-proxy-ja56.vercel.app/api/fred";
 var SECTORS_URL = "https://portfolio-proxy-ja56.vercel.app/api/sectors";
 var FG_URL = "https://portfolio-proxy-ja56.vercel.app/api/feargreed";
 var OHLC_URL = "https://portfolio-proxy-ja56.vercel.app/api/ohlc";
+var LIQ_URL = "https://portfolio-proxy-ja56.vercel.app/api/liquidity-history";
 
 /* ──────────────────────────────────────────────────────────────────── */
 
@@ -75,6 +76,7 @@ const SEED = {
   rates:{ status:"NEUTRAL", current:"4.33", expected:"4.08", impliedCuts:"-1" },
   inflation:{ cpi:"3.3", trend:"Rising", truflation:"2.95", spread:"-0.35", note:"March CPI spike driven by energy — core stayed at 2.6%" },
   liquidity:{ total:"17.4", score:"58", roc13w:"-0.40", roc52w:"-1.8", trend:"Contractionary" },
+  liquidityHistory: null,
   credit:{ moveIndex:"108.0", moveSignal:"Elevated", hyDAS:"340", igHyDiff:"65", tightNote:"Tight — Complacency Risk", sloosNote:"Net Tightening", goldCopper:"850", sahmRule:"0.30", ccDelinquency:"3.1" },
   breadth:{ pct50:"38.2", pct200:"54.6", ad5d:"Falling", ad20d:"Falling", sentiment:"BEARISH", note:"Narrow participation — majority of stocks below 50-day MA" },
   fci:{ value:"-2.10", nfci:"-0.38", status:"Loose", fedFunds:"+0.7", t10y:"+1.1", hySpread:"0.8", sp500load:"-2.0", usd:"+0.6" },
@@ -754,6 +756,21 @@ try {
   console.warn("OHLC fetch failed:", ohlcErr.message);
 }
 
+// Fetch liquidity history (Fed, ECB, BoJ + S&P 500) for interactive chart
+try {
+  setRefreshStatus("Fetching liquidity history...");
+  var liqRes = await fetch(LIQ_URL);
+  if (liqRes.ok) {
+    var liqJson = await liqRes.json();
+    setData(function(prev) {
+      return { ...prev, liquidityHistory: liqJson };
+    });
+    setRefreshStatus("Liquidity history loaded!");
+  }
+} catch(liqErr) {
+  console.warn("Liquidity history fetch failed:", liqErr.message);
+}
+
 // Generate AI analysis with bull/bear/neutral viewpoints
 try {
   setRefreshStatus("Generating AI analysis...");
@@ -916,6 +933,264 @@ function TVWidget({ config, scriptName, height }) {
   return (
     <div className="tradingview-widget-container" style={{ height: height, width: "100%" }}>
       <div id={id} className="tradingview-widget-container__widget" style={{ height: "100%", width: "100%" }} />
+    </div>
+  );
+}
+
+
+/* ─── INTERACTIVE LIQUIDITY CHART ─────────────────────────────── */
+function LiquidityChart({ history }) {
+  const [activeBanks, setActiveBanks] = useState({ fed:true, ecb:true, boj:true });
+  const [timeRange, setTimeRange] = useState("3Y");
+  const [showSPX, setShowSPX] = useState(false);
+  const [hover, setHover] = useState(null); // { x, y, date, values }
+
+  const BANKS = [
+    { key:"fed", label:"Fed", color:C.blue },
+    { key:"ecb", label:"ECB", color:C.orange },
+    { key:"boj", label:"BoJ", color:C.red },
+  ];
+  const RANGES = [
+    { key:"1Y", years:1 },
+    { key:"3Y", years:3 },
+    { key:"5Y", years:5 },
+    { key:"ALL", years:99 },
+  ];
+
+  // Bail out if data isn't loaded yet
+  if (!history || !history.fed || history.fed.length === 0) {
+    return (
+      <div style={{ height:240, display:"flex", alignItems:"center", justifyContent:"center", color:C.textDim, fontSize:12, fontStyle:"italic" }}>
+        Loading liquidity history...
+      </div>
+    );
+  }
+
+  // Filter by time range
+  const cutoff = new Date();
+  const rangeYears = RANGES.find(r => r.key === timeRange)?.years || 3;
+  cutoff.setFullYear(cutoff.getFullYear() - rangeYears);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+  // Build a unified date axis by using the Fed series (most complete weekly data)
+  // and looking up ECB/BoJ values at the nearest prior date.
+  const fedFiltered = (history.fed || []).filter(p => p.date >= cutoffStr);
+  if (fedFiltered.length < 2) {
+    return <div style={{ height:240, display:"flex", alignItems:"center", justifyContent:"center", color:C.textDim, fontSize:12 }}>Not enough data for this range</div>;
+  }
+
+  function lookupAt(series, targetDate) {
+    if (!series || series.length === 0) return 0;
+    // Binary search or linear for simplicity — series is sorted ascending
+    let best = null;
+    for (let i = 0; i < series.length; i++) {
+      if (series[i].date <= targetDate) best = series[i];
+      else break;
+    }
+    return best ? best.value : 0;
+  }
+
+  const points = fedFiltered.map(fp => {
+    const fed = activeBanks.fed ? fp.value : 0;
+    const ecb = activeBanks.ecb ? lookupAt(history.ecb, fp.date) : 0;
+    const boj = activeBanks.boj ? lookupAt(history.boj, fp.date) : 0;
+    const spx = lookupAt(history.sp500, fp.date);
+    return { date: fp.date, fed, ecb, boj, spx, total: fed+ecb+boj };
+  });
+
+  // Chart dimensions
+  const W = 680, H = 260, padL = 42, padR = 46, padT = 12, padB = 28;
+  const chartW = W - padL - padR, chartH = H - padT - padB;
+
+  const maxTotal = Math.max(...points.map(p => p.total)) * 1.05 || 1;
+  const minTotal = 0;
+  const maxSPX = Math.max(...points.map(p => p.spx)) * 1.05 || 1;
+  const minSPX = Math.min(...points.map(p => p.spx).filter(v => v > 0)) * 0.95 || 0;
+
+  function xScale(i) { return padL + (i / (points.length - 1)) * chartW; }
+  function yScale(v) { return padT + chartH - (v / maxTotal) * chartH; }
+  function ySPXScale(v) { return padT + chartH - ((v - minSPX) / (maxSPX - minSPX)) * chartH; }
+
+  // Build stacked areas: each layer stacks on top of previous
+  function buildArea(valueAccessor, baseAccessor) {
+    const top = points.map((p, i) => xScale(i) + "," + yScale(valueAccessor(p) + baseAccessor(p)));
+    const bottom = points.slice().reverse().map((p, idx) => {
+      const i = points.length - 1 - idx;
+      return xScale(i) + "," + yScale(baseAccessor(p));
+    });
+    return top.concat(bottom).join(" ");
+  }
+
+  // Stack order (bottom to top): BoJ → ECB → Fed
+  const bojArea = activeBanks.boj ? buildArea(p => p.boj, _ => 0) : null;
+  const ecbArea = activeBanks.ecb ? buildArea(p => p.ecb, p => p.boj) : null;
+  const fedArea = activeBanks.fed ? buildArea(p => p.fed, p => p.boj + p.ecb) : null;
+
+  // S&P overlay line
+  const spxPath = points.map((p, i) => (i === 0 ? "M" : "L") + xScale(i) + "," + ySPXScale(p.spx)).join(" ");
+
+  // Y-axis gridlines + labels
+  const ySteps = 4;
+  const yTicks = [];
+  for (let i = 0; i <= ySteps; i++) {
+    const v = (maxTotal / ySteps) * i;
+    yTicks.push({ v, y: yScale(v) });
+  }
+
+  // X-axis year labels
+  const xLabels = [];
+  const yearsSeen = new Set();
+  points.forEach((p, i) => {
+    const yr = p.date.slice(0, 4);
+    if (!yearsSeen.has(yr)) {
+      yearsSeen.add(yr);
+      xLabels.push({ year: yr, x: xScale(i) });
+    }
+  });
+
+  function handleMove(e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * W;
+    if (x < padL || x > W - padR) { setHover(null); return; }
+    const frac = (x - padL) / chartW;
+    const idx = Math.max(0, Math.min(points.length - 1, Math.round(frac * (points.length - 1))));
+    const p = points[idx];
+    setHover({ x: xScale(idx), idx, p });
+  }
+
+  const latest = points[points.length - 1];
+  const stackedTotal = latest.total;
+
+  return (
+    <div>
+      {/* Control bar */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10, flexWrap:"wrap", gap:8 }}>
+        {/* Bank toggles */}
+        <div style={{ display:"flex", gap:6 }}>
+          {BANKS.map(b => {
+            const active = activeBanks[b.key];
+            return (
+              <button key={b.key} onClick={() => setActiveBanks(prev => ({ ...prev, [b.key]: !prev[b.key] }))} style={{
+                background: active ? b.color + "22" : "transparent",
+                border: "1px solid " + (active ? b.color + "66" : C.border),
+                color: active ? b.color : C.textDim,
+                padding: "4px 10px", fontSize: 11, fontWeight: 600, borderRadius: 4,
+                cursor: "pointer", fontFamily: sans, display:"flex", alignItems:"center", gap:5,
+                transition: "all 0.15s",
+              }}>
+                <span style={{ width:7, height:7, borderRadius:"50%", background: active ? b.color : C.textDim, display:"inline-block" }} />
+                {b.label}
+              </button>
+            );
+          })}
+          <div style={{ width:1, background:C.border, margin:"0 4px" }} />
+          <button onClick={() => setShowSPX(v => !v)} style={{
+            background: showSPX ? C.purple + "22" : "transparent",
+            border: "1px solid " + (showSPX ? C.purple + "66" : C.border),
+            color: showSPX ? C.purple : C.textDim,
+            padding: "4px 10px", fontSize: 11, fontWeight: 600, borderRadius: 4,
+            cursor: "pointer", fontFamily: sans,
+          }}>S&P 500 overlay</button>
+        </div>
+        {/* Time range */}
+        <div style={{ display:"flex", gap:2, background:C.cardAlt, borderRadius:5, padding:2 }}>
+          {RANGES.map(r => {
+            const active = timeRange === r.key;
+            return (
+              <button key={r.key} onClick={() => setTimeRange(r.key)} style={{
+                background: active ? C.blue : "transparent",
+                border: "none",
+                color: active ? C.text : C.textMid,
+                padding: "3px 10px", fontSize: 11, fontWeight: 600, borderRadius: 3,
+                cursor: "pointer", fontFamily: sans,
+                transition: "all 0.15s",
+              }}>{r.key}</button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* The chart */}
+      <div style={{ position:"relative", background:C.cardAlt, borderRadius:6, padding:8 }}>
+        <svg width="100%" height={H} viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none" style={{ display:"block", cursor:"crosshair" }}
+          onMouseMove={handleMove} onMouseLeave={() => setHover(null)}>
+
+          {/* Y-axis gridlines */}
+          {yTicks.map((t, i) => (
+            <g key={i}>
+              <line x1={padL} y1={t.y} x2={W - padR} y2={t.y} stroke={C.border} strokeWidth="0.5" strokeDasharray="2,3" opacity="0.5" />
+              <text x={padL - 6} y={t.y + 3} fontSize="9" fill={C.textDim} textAnchor="end" fontFamily={font}>${t.v.toFixed(1)}T</text>
+            </g>
+          ))}
+
+          {/* X-axis year labels */}
+          {xLabels.map((l, i) => (
+            <g key={i}>
+              <line x1={l.x} y1={padT + chartH} x2={l.x} y2={padT + chartH + 3} stroke={C.textDim} strokeWidth="0.5" />
+              <text x={l.x} y={padT + chartH + 15} fontSize="10" fill={C.textDim} textAnchor="middle" fontFamily={font}>{l.year}</text>
+            </g>
+          ))}
+
+          {/* Stacked areas (BoJ bottom, ECB middle, Fed top) */}
+          {bojArea && <polygon points={bojArea} fill={C.red} opacity="0.55"><title>BoJ</title></polygon>}
+          {ecbArea && <polygon points={ecbArea} fill={C.orange} opacity="0.55"><title>ECB</title></polygon>}
+          {fedArea && <polygon points={fedArea} fill={C.blue} opacity="0.55"><title>Fed</title></polygon>}
+
+          {/* S&P overlay line */}
+          {showSPX && (
+            <g>
+              <path d={spxPath} fill="none" stroke={C.purple} strokeWidth="1.8" opacity="0.9" />
+              {/* Right Y-axis for SPX */}
+              {[0, 0.5, 1].map((frac, i) => {
+                const v = minSPX + (maxSPX - minSPX) * frac;
+                const y = padT + chartH - frac * chartH;
+                return (
+                  <text key={i} x={W - padR + 4} y={y + 3} fontSize="9" fill={C.purple} textAnchor="start" fontFamily={font}>{Math.round(v)}</text>
+                );
+              })}
+            </g>
+          )}
+
+          {/* Hover line + dots */}
+          {hover && (
+            <g>
+              <line x1={hover.x} y1={padT} x2={hover.x} y2={padT + chartH} stroke={C.text} strokeWidth="0.5" strokeDasharray="3,3" opacity="0.6" />
+              {activeBanks.boj && <circle cx={hover.x} cy={yScale(hover.p.boj)} r="3" fill={C.red} stroke={C.bg} strokeWidth="1.5" />}
+              {activeBanks.ecb && <circle cx={hover.x} cy={yScale(hover.p.boj + hover.p.ecb)} r="3" fill={C.orange} stroke={C.bg} strokeWidth="1.5" />}
+              {activeBanks.fed && <circle cx={hover.x} cy={yScale(hover.p.total)} r="3" fill={C.blue} stroke={C.bg} strokeWidth="1.5" />}
+              {showSPX && <circle cx={hover.x} cy={ySPXScale(hover.p.spx)} r="3" fill={C.purple} stroke={C.bg} strokeWidth="1.5" />}
+            </g>
+          )}
+        </svg>
+
+        {/* Tooltip */}
+        {hover && (
+          <div style={{
+            position:"absolute",
+            left: hover.x > W/2 ? "auto" : ((hover.x / W) * 100) + "%",
+            right: hover.x > W/2 ? ((1 - hover.x/W) * 100) + "%" : "auto",
+            top: 12,
+            transform: hover.x > W/2 ? "translateX(-8px)" : "translateX(8px)",
+            background:"rgba(10,12,20,0.95)", border:"1px solid " + C.border, borderRadius:5, padding:"7px 10px",
+            fontSize:11, fontFamily:font, pointerEvents:"none", minWidth:140, zIndex:5,
+          }}>
+            <div style={{ color:C.text, fontWeight:700, marginBottom:4, fontSize:11, fontFamily:sans, letterSpacing:0.3 }}>{hover.p.date}</div>
+            {activeBanks.fed && <div style={{ color:C.blue, display:"flex", justifyContent:"space-between", gap:10 }}><span>● Fed</span><span>${hover.p.fed.toFixed(2)}T</span></div>}
+            {activeBanks.ecb && <div style={{ color:C.orange, display:"flex", justifyContent:"space-between", gap:10 }}><span>● ECB</span><span>${hover.p.ecb.toFixed(2)}T</span></div>}
+            {activeBanks.boj && <div style={{ color:C.red, display:"flex", justifyContent:"space-between", gap:10 }}><span>● BoJ</span><span>${hover.p.boj.toFixed(2)}T</span></div>}
+            <div style={{ borderTop:"1px solid " + C.border, marginTop:4, paddingTop:4, color:C.text, fontWeight:700, display:"flex", justifyContent:"space-between", gap:10 }}>
+              <span>Total</span><span>${hover.p.total.toFixed(2)}T</span>
+            </div>
+            {showSPX && <div style={{ color:C.purple, display:"flex", justifyContent:"space-between", gap:10, marginTop:2 }}><span>● S&P 500</span><span>{Math.round(hover.p.spx).toLocaleString()}</span></div>}
+          </div>
+        )}
+      </div>
+
+      {/* Summary footer */}
+      <div style={{ display:"flex", justifyContent:"space-between", marginTop:10, fontSize:11, color:C.textDim }}>
+        <span>Current stacked total: <span style={{ color:C.text, fontWeight:700, fontFamily:font }}>${stackedTotal.toFixed(2)}T</span></span>
+        <span>{points.length} data points · {timeRange} range</span>
+      </div>
     </div>
   );
 }
@@ -1291,95 +1566,40 @@ function MacroStage({ d }) {
         </Card>
       </div>
 
-      {/* ROW 4: Liquidity + Credit + Breadth */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
-        <Card>
-          <SecTitle icon="💧" title="Global Liquidity" badge={d.liquidity?.trend} bc={d.liquidity?.trend==="Contractionary"?C.red:d.liquidity?.trend==="Expansionary"?C.green:C.yellow} />
-          <div style={{ fontSize:26, fontWeight:700, fontFamily:font, marginBottom:2 }}>${d.liquidity?.total}T</div>
-          <div style={{ fontSize:11, color:C.textDim, marginBottom:8 }}>Score: {d.liquidity?.score}/100</div>
-          <div style={{ display:"flex", gap:12, marginBottom:10 }}>
-            <div><div style={{ fontSize:10, color:C.textDim }}>13w RoC</div><div style={{ fontSize:13, color:C.red, fontFamily:font }}>▼ {d.liquidity?.roc13w}%</div></div>
-            <div><div style={{ fontSize:10, color:C.textDim }}>52w</div><div style={{ fontSize:13, color:C.red, fontFamily:font }}>{d.liquidity?.roc52w}%</div></div>
-          </div>
-          <div style={{ background:C.cardAlt, borderRadius:4, padding:"6px 6px 0", marginBottom:8 }}>
-            <div style={{ fontSize:9, color:C.textDim, marginBottom:4 }}>CB Balance Sheets (USD $T)</div>
-         <div style={{ position:"relative" }}>
-  <svg width="100%" height="70" viewBox="0 0 240 70" preserveAspectRatio="none" style={{ display:"block" }}>
-    {(function() {
-      var fedT = parseFloat(d.liquidity?.fedTotal || "6.6");
-      var ecbT = parseFloat(d.liquidity?.ecbTotal || "6.2");
-      var bojT = parseFloat(d.liquidity?.bojTotal || "4.6");
-      var pbocT = parseFloat(d.liquidity?.pbocTotal || "6.0");
-      var total = fedT + ecbT + bojT + pbocT;
-      var fedH = Math.round((fedT / total) * 65);
-      var ecbH = Math.round((ecbT / total) * 65);
-      var bojH = Math.round((bojT / total) * 65);
-      var pbocH = Math.round((pbocT / total) * 65);
-      var y4 = 68;
-      var y3 = y4 - pbocH;
-      var y2 = y3 - bojH;
-      var y1 = y2 - ecbH;
-      var y0 = y1 - fedH;
-      return (
-        <>
-          <polygon points={"0," + y0 + " 240," + (y0-2) + " 240,0 0,0"} fill={C.blue} opacity="0.7">
-            <title>Fed: ${fedT.toFixed(1)}T</title>
-          </polygon>
-          <polygon points={"0," + y1 + " 240," + (y1-2) + " 240," + y0 + " 0," + y0} fill={C.orange} opacity="0.7">
-            <title>ECB: ${ecbT.toFixed(1)}T</title>
-          </polygon>
-          <polygon points={"0," + y2 + " 240," + (y2-2) + " 240," + y1 + " 0," + y1} fill={C.red} opacity="0.7">
-            <title>BoJ: ${bojT.toFixed(1)}T</title>
-          </polygon>
-          <polygon points={"0,68 240,68 240," + y2 + " 0," + y2} fill={C.cyan} opacity="0.7">
-            <title>PBoC: ${pbocT.toFixed(1)}T</title>
-          </polygon>
-        </>
-      );
-    })()}
-  </svg>
-  <div style={{ position:"absolute", top:0, left:0, right:0, bottom:0, display:"flex", flexDirection:"column" }}>
-    {(function() {
-      var fedT = parseFloat(d.liquidity?.fedTotal || "6.6");
-      var ecbT = parseFloat(d.liquidity?.ecbTotal || "6.2");
-      var bojT = parseFloat(d.liquidity?.bojTotal || "4.6");
-      var pbocT = parseFloat(d.liquidity?.pbocTotal || "6.0");
-      var total = fedT + ecbT + bojT + pbocT;
-      var banks = [
-        { label:"Fed", val:fedT, color:C.blue },
-        { label:"ECB", val:ecbT, color:C.orange },
-        { label:"BoJ", val:bojT, color:C.red },
-        { label:"PBoC", val:pbocT, color:C.cyan },
-      ];
-      return banks.map(function(b) {
-        var h = Math.round((b.val / total) * 70);
-        return (
-          <div key={b.label} style={{ height:h, width:"100%", cursor:"crosshair", display:"flex", alignItems:"center", justifyContent:"center", opacity:0 , transition:"opacity 0.2s" }}
-            onMouseEnter={function(e){ e.currentTarget.style.opacity="1"; }}
-            onMouseLeave={function(e){ e.currentTarget.style.opacity="0"; }}
-          >
-            <div style={{ background:"rgba(0,0,0,0.85)", border:"1px solid " + b.color, borderRadius:4, padding:"2px 8px", fontSize:11, color:b.color, fontFamily:font, fontWeight:700, pointerEvents:"none" }}>
-              {b.label}: ${b.val.toFixed(1)}T
+      {/* ROW 4a: Global Liquidity — full width interactive chart */}
+      <Card>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12, flexWrap:"wrap", gap:12 }}>
+          <div>
+            <SecTitle icon="💧" title="Global Liquidity" badge={d.liquidity?.trend} bc={d.liquidity?.trend==="Contractionary"?C.red:d.liquidity?.trend==="Expansionary"?C.green:C.yellow} />
+            <div style={{ display:"flex", gap:20, alignItems:"baseline" }}>
+              <div>
+                <div style={{ fontSize:28, fontWeight:700, fontFamily:font, lineHeight:1 }}>${d.liquidity?.total}T</div>
+                <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>Current stack total</div>
+              </div>
+              <div>
+                <div style={{ fontSize:16, fontWeight:700, color:d.liquidity?.trend==="Contractionary"?C.red:C.green, fontFamily:font }}>{d.liquidity?.score}/100</div>
+                <div style={{ fontSize:10, color:C.textDim }}>Liquidity score</div>
+              </div>
+              <div>
+                <div style={{ fontSize:14, color:String(d.liquidity?.roc13w||"").startsWith("-")?C.red:C.green, fontFamily:font }}>{String(d.liquidity?.roc13w||"").startsWith("-")?"▼ ":"▲ "}{d.liquidity?.roc13w}%</div>
+                <div style={{ fontSize:10, color:C.textDim }}>13w RoC</div>
+              </div>
+              <div>
+                <div style={{ fontSize:14, color:String(d.liquidity?.roc52w||"").startsWith("-")?C.red:C.green, fontFamily:font }}>{d.liquidity?.roc52w}%</div>
+                <div style={{ fontSize:10, color:C.textDim }}>52w RoC</div>
+              </div>
             </div>
           </div>
-        );
-      });
-    })()}
-  </div>
-</div>
-            <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim, marginTop:2 }}>
-              <span>2021</span><span>2022</span><span>2023</span><span>2024</span><span>2026</span>
-            </div>
+          <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:6, padding:"6px 10px", fontSize:10, color:C.textMid, maxWidth:280 }}>
+            <div style={{ color:C.textDim, fontSize:9, letterSpacing:1, marginBottom:3 }}>TIP</div>
+            Hover the chart to inspect a date. Click bank labels to toggle. Enable S&P 500 overlay to compare liquidity vs equities.
           </div>
-          <div style={{ display:"flex", gap:8, fontSize:9, flexWrap:"wrap" }}>
-            {["Fed (net)","ECB","BoJ","PBoC","BoE"].map((l,i) => <span key={l} style={{ color:[C.blue,C.orange,C.red,C.cyan,C.purple][i] }}>● {l}</span>)}
-          </div>
-          <div style={{ marginTop:10 }}>
-            <div style={{ height:4, background:"linear-gradient(90deg," + C.red + "," + C.yellow + "," + C.green + ")", borderRadius:2 }} />
-            <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim, marginTop:2 }}><span>Tight</span><span>Neutral</span><span>Loose</span></div>
-          </div>
-        </Card>
+        </div>
+        <LiquidityChart history={d.liquidityHistory} />
+      </Card>
 
+      {/* ROW 4b: Credit + Breadth + Macro Indicators */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
         {/* MACRO INDICATORS */}
         <Card>
           <SecTitle icon="📊" title="Macro Indicators" badge="LIVE" bc={C.cyan} />
