@@ -998,11 +998,26 @@ function LiquidityChart({ history }) {
     return { date: fp.date, fed, ecb, boj, spx, total: fed+ecb+boj };
   });
 
-  // Chart dimensions
-  const W = 680, H = 260, padL = 42, padR = 46, padT = 12, padB = 28;
+  // Chart dimensions — large viewBox that scales uniformly; padding for axis labels
+  const W = 1400, H = 360, padL = 70, padR = 70, padT = 16, padB = 36;
   const chartW = W - padL - padR, chartH = H - padT - padB;
 
-  const maxTotal = Math.max(...points.map(p => p.total)) * 1.05 || 1;
+  // Compute clean Y-axis ticks (round to nice numbers)
+  function niceMax(raw) {
+    if (raw <= 0) return 1;
+    const exp = Math.floor(Math.log10(raw));
+    const mag = Math.pow(10, exp);
+    const norm = raw / mag;
+    let nice;
+    if (norm <= 1) nice = 1;
+    else if (norm <= 2) nice = 2;
+    else if (norm <= 5) nice = 5;
+    else nice = 10;
+    return nice * mag;
+  }
+
+  const rawMax = Math.max(...points.map(p => p.total));
+  const maxTotal = niceMax(rawMax * 1.1);
   const minTotal = 0;
   // Robust SPX scale — handle case where sp500 series is empty/missing
   const spxValues = points.map(p => p.spx).filter(v => v > 0 && !isNaN(v));
@@ -1032,8 +1047,8 @@ function LiquidityChart({ history }) {
   // S&P overlay line
   const spxPath = points.map((p, i) => (i === 0 ? "M" : "L") + xScale(i) + "," + ySPXScale(p.spx)).join(" ");
 
-  // Y-axis gridlines + labels
-  const ySteps = 4;
+  // Y-axis gridlines + labels (5 nice ticks)
+  const ySteps = 5;
   const yTicks = [];
   for (let i = 0; i <= ySteps; i++) {
     const v = (maxTotal / ySteps) * i;
@@ -1114,57 +1129,61 @@ function LiquidityChart({ history }) {
       </div>
 
       {/* The chart */}
-      <div style={{ position:"relative", background:C.cardAlt, borderRadius:6, padding:8 }}>
-        <svg width="100%" height={H} viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none" style={{ display:"block", cursor:"crosshair" }}
+      <div style={{ position:"relative", background:C.cardAlt, borderRadius:8, padding:12, border:"1px solid " + C.border }}>
+        <svg width="100%" height="auto" viewBox={"0 0 " + W + " " + H} preserveAspectRatio="xMidYMid meet" style={{ display:"block", cursor:"crosshair", maxHeight:420 }}
           onMouseMove={handleMove} onMouseLeave={() => setHover(null)}>
 
           {/* Y-axis gridlines */}
           {yTicks.map((t, i) => (
             <g key={i}>
-              <line x1={padL} y1={t.y} x2={W - padR} y2={t.y} stroke={C.border} strokeWidth="0.5" strokeDasharray="2,3" opacity="0.5" />
-              <text x={padL - 6} y={t.y + 3} fontSize="9" fill={C.textDim} textAnchor="end" fontFamily={font}>${t.v.toFixed(1)}T</text>
+              <line x1={padL} y1={t.y} x2={W - padR} y2={t.y} stroke={C.border} strokeWidth="1" strokeDasharray="3,4" opacity="0.6" />
+              <text x={padL - 10} y={t.y + 5} fontSize="14" fill={C.textDim} textAnchor="end" fontFamily={font}>${t.v.toFixed(t.v >= 10 ? 0 : 1)}T</text>
             </g>
           ))}
+
+          {/* X-axis baseline */}
+          <line x1={padL} y1={padT + chartH} x2={W - padR} y2={padT + chartH} stroke={C.border} strokeWidth="1" />
 
           {/* X-axis year labels */}
           {xLabels.map((l, i) => (
             <g key={i}>
-              <line x1={l.x} y1={padT + chartH} x2={l.x} y2={padT + chartH + 3} stroke={C.textDim} strokeWidth="0.5" />
-              <text x={l.x} y={padT + chartH + 15} fontSize="10" fill={C.textDim} textAnchor="middle" fontFamily={font}>{l.year}</text>
+              <line x1={l.x} y1={padT + chartH} x2={l.x} y2={padT + chartH + 5} stroke={C.textDim} strokeWidth="1" />
+              <text x={l.x} y={padT + chartH + 22} fontSize="14" fill={C.textDim} textAnchor="middle" fontFamily={font}>{l.year}</text>
             </g>
           ))}
 
           {/* Stacked areas (BoJ bottom, ECB middle, Fed top) */}
-          {bojArea && <polygon points={bojArea} fill={C.red} opacity="0.55"><title>BoJ</title></polygon>}
-          {ecbArea && <polygon points={ecbArea} fill={C.orange} opacity="0.55"><title>ECB</title></polygon>}
-          {fedArea && <polygon points={fedArea} fill={C.blue} opacity="0.55"><title>Fed</title></polygon>}
+          {bojArea && <polygon points={bojArea} fill={C.red} opacity="0.65"><title>BoJ</title></polygon>}
+          {ecbArea && <polygon points={ecbArea} fill={C.orange} opacity="0.65"><title>ECB</title></polygon>}
+          {fedArea && <polygon points={fedArea} fill={C.blue} opacity="0.65"><title>Fed</title></polygon>}
 
           {/* S&P overlay line */}
           {showSPX && hasSPX && (
             <g>
-              <path d={spxPath} fill="none" stroke={C.purple} strokeWidth="1.8" opacity="0.9" />
+              <path d={spxPath} fill="none" stroke={C.purple} strokeWidth="2.2" opacity="0.95" />
               {/* Right Y-axis for SPX */}
-              {[0, 0.5, 1].map((frac, i) => {
+              {[0, 0.25, 0.5, 0.75, 1].map((frac, i) => {
                 const v = minSPX + (maxSPX - minSPX) * frac;
                 const y = padT + chartH - frac * chartH;
                 return (
-                  <text key={i} x={W - padR + 4} y={y + 3} fontSize="9" fill={C.purple} textAnchor="start" fontFamily={font}>{Math.round(v).toLocaleString()}</text>
+                  <text key={i} x={W - padR + 8} y={y + 5} fontSize="13" fill={C.purple} textAnchor="start" fontFamily={font}>{Math.round(v).toLocaleString()}</text>
                 );
               })}
+              <text x={W - padR + 8} y={padT - 4} fontSize="11" fill={C.purple} textAnchor="start" fontFamily={sans} fontWeight="700" letterSpacing="1">SPX</text>
             </g>
           )}
           {showSPX && !hasSPX && (
-            <text x={W - padR - 8} y={padT + 14} fontSize="10" fill={C.textDim} textAnchor="end" fontFamily={sans} fontStyle="italic">S&P data unavailable</text>
+            <text x={W - padR - 12} y={padT + 22} fontSize="14" fill={C.textDim} textAnchor="end" fontFamily={sans} fontStyle="italic">S&P data unavailable</text>
           )}
 
           {/* Hover line + dots */}
           {hover && (
             <g>
-              <line x1={hover.x} y1={padT} x2={hover.x} y2={padT + chartH} stroke={C.text} strokeWidth="0.5" strokeDasharray="3,3" opacity="0.6" />
-              {activeBanks.boj && <circle cx={hover.x} cy={yScale(hover.p.boj)} r="3" fill={C.red} stroke={C.bg} strokeWidth="1.5" />}
-              {activeBanks.ecb && <circle cx={hover.x} cy={yScale(hover.p.boj + hover.p.ecb)} r="3" fill={C.orange} stroke={C.bg} strokeWidth="1.5" />}
-              {activeBanks.fed && <circle cx={hover.x} cy={yScale(hover.p.total)} r="3" fill={C.blue} stroke={C.bg} strokeWidth="1.5" />}
-              {showSPX && hasSPX && <circle cx={hover.x} cy={ySPXScale(hover.p.spx)} r="3" fill={C.purple} stroke={C.bg} strokeWidth="1.5" />}
+              <line x1={hover.x} y1={padT} x2={hover.x} y2={padT + chartH} stroke={C.text} strokeWidth="1" strokeDasharray="4,4" opacity="0.5" />
+              {activeBanks.boj && <circle cx={hover.x} cy={yScale(hover.p.boj)} r="5" fill={C.red} stroke={C.bg} strokeWidth="2" />}
+              {activeBanks.ecb && <circle cx={hover.x} cy={yScale(hover.p.boj + hover.p.ecb)} r="5" fill={C.orange} stroke={C.bg} strokeWidth="2" />}
+              {activeBanks.fed && <circle cx={hover.x} cy={yScale(hover.p.total)} r="5" fill={C.blue} stroke={C.bg} strokeWidth="2" />}
+              {showSPX && hasSPX && <circle cx={hover.x} cy={ySPXScale(hover.p.spx)} r="5" fill={C.purple} stroke={C.bg} strokeWidth="2" />}
             </g>
           )}
         </svg>
