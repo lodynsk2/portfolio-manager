@@ -81,7 +81,7 @@ const SEED = {
   breadth:{ pct50:"38.2", pct200:"54.6", ad5d:"Falling", ad20d:"Falling", sentiment:"BEARISH", note:"Narrow participation — majority of stocks below 50-day MA" },
   fci:{ value:"-2.10", nfci:"-0.38", status:"Loose", fedFunds:"+0.7", t10y:"+1.1", hySpread:"0.8", sp500load:"-2.0", usd:"+0.6" },
   options:{ dexPCR:"1.42", omegaPCR:"1.18", status:"BEARISH", conviction:"42" },
-  macroIndic:{ usM2:"$21.8T", usM2Trend:"Rising", usM2Change:"+0.3%", ismPMI:"103.2", ismStatus:"Expanding", ismLabel:"Industrial Production", globalM2:"$17.4T", globalM2Trend:"Falling" },
+  macroIndic:{ usM2:"$21.8T", usM2Trend:"Rising", usM2Change:"+0.3%", ismPMI:"52.7", ismStatus:"Expanding", ismLabel:"ISM Manufacturing PMI", globalM2:"$17.4T", globalM2Trend:"Falling" },
   sectorRotation: SECTOR_PAIRS.map(function(p) {
     var data = {
       "Cyclical vs Defensive":{w1:"r",w1m:"r",w3m:"r",w6m:"r",bull:false,prob:"72",winner:p.sub2,diffPct:-4.2,note:"Defensive leading, risk-off trend intact"},
@@ -559,28 +559,8 @@ if (fredJson.GDPC1 && fredJson.GDPC1_PREV && fredJson.CPIAUCSL && fredJson.CPI_P
         globalM2Trend: hasGlobalPrev ? (parseFloat(fredJson.WALCL) > fedPrev ? "Rising" : "Falling") : "Unknown"
       };
     }
-    // Industrial Production (ISM PMI substitute — ISM licensed, not on FRED)
-    // INDPRO = index, 2017=100. >100 = above baseline, trend matters more than level.
-    if (fredJson.INDPRO) {
-      var indVal = parseFloat(fredJson.INDPRO);
-      var indPrev = parseFloat(fredJson.INDPRO_PREV);
-      var hasIndPrev = !isNaN(indPrev) && indPrev > 0;
-      out.macroIndic = { ...out.macroIndic,
-        ismPMI: indVal.toFixed(1),
-        ismStatus: hasIndPrev ? (indVal > indPrev ? "Expanding" : "Contracting") : "Neutral",
-        ismLabel: "Industrial Production"
-      };
-    } else if (fredJson.MANEMP) {
-      // Fallback — manufacturing employment (thousands)
-      var manVal = parseFloat(fredJson.MANEMP);
-      var manPrev = parseFloat(fredJson.MANEMP_PREV);
-      var hasManPrev = !isNaN(manPrev) && manPrev > 0;
-      out.macroIndic = { ...out.macroIndic,
-        ismPMI: (manVal / 1000).toFixed(1) + "M",
-        ismStatus: hasManPrev ? (manVal > manPrev ? "Expanding" : "Contracting") : "Neutral",
-        ismLabel: "Mfg Employment"
-      };
-    }
+    // ISM Manufacturing PMI is fetched separately via Claude API web search (see below)
+    // because ISM data is licensed and not available on FRED.
   // Global Liquidity
 if (fredJson.WALCL) {
   var fed = parseFloat(fredJson.WALCL) / 1000000;
@@ -769,6 +749,52 @@ try {
   }
 } catch(liqErr) {
   console.warn("Liquidity history fetch failed:", liqErr.message);
+}
+
+// Fetch latest ISM Manufacturing PMI via Claude API (ISM data is licensed, not on FRED)
+try {
+  setRefreshStatus("Fetching ISM PMI...");
+  var ismDate = new Date().toLocaleDateString("en-US",{month:"long",year:"numeric"});
+  var ismRes = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 400,
+      tools: [{ type: "web_search_20250305", name: "web_search" }],
+      messages: [{ role: "user", content: "What is the most recent United States ISM Manufacturing PMI reading? Search for the latest monthly release as of " + ismDate + ". Return ONLY this JSON, no other text: {\"pmi\":\"NUMBER_AS_STRING\",\"month\":\"MONTH_YEAR\",\"prev\":\"PREVIOUS_MONTH_PMI\"}. Example: {\"pmi\":\"52.7\",\"month\":\"March 2026\",\"prev\":\"52.4\"}" }]
+    })
+  });
+  var ismJson = await ismRes.json();
+  var ismText = "";
+  if (ismJson.content && Array.isArray(ismJson.content)) {
+    ismJson.content.forEach(function(b) { if (b.type === "text" && b.text) ismText += b.text + "\n"; });
+  }
+  var ismClean = ismText.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
+  var ismParsed = null;
+  try { ismParsed = JSON.parse(ismClean); } catch(eIsm) {
+    var dIsm = 0, sIsm = -1;
+    for (var ki = 0; ki < ismClean.length; ki++) {
+      if (ismClean[ki]==="{") { if (dIsm===0) sIsm=ki; dIsm++; }
+      else if (ismClean[ki]==="}") { dIsm--; if (dIsm===0 && sIsm>=0) { try { ismParsed = JSON.parse(ismClean.slice(sIsm,ki+1)); } catch(eIsm2){} sIsm=-1; } }
+    }
+  }
+  if (ismParsed && ismParsed.pmi) {
+    var pmiVal = parseFloat(ismParsed.pmi);
+    var prevVal = parseFloat(ismParsed.prev);
+    setData(function(prev) {
+      return { ...prev, macroIndic: { ...prev.macroIndic,
+        ismPMI: pmiVal.toFixed(1),
+        ismStatus: pmiVal >= 50 ? "Expanding" : "Contracting",
+        ismLabel: "ISM Manufacturing PMI",
+        ismMonth: ismParsed.month || "",
+        ismPrev: !isNaN(prevVal) ? prevVal.toFixed(1) : null,
+      }};
+    });
+    setRefreshStatus("ISM PMI: " + pmiVal.toFixed(1));
+  }
+} catch(ismErr) {
+  console.warn("ISM PMI fetch failed:", ismErr.message);
 }
 
 // Generate AI analysis with bull/bear/neutral viewpoints
@@ -1671,18 +1697,23 @@ function MacroStage({ d }) {
               </p>
             </div>
 
-            {/* Industrial Production (ISM substitute) */}
+            {/* ISM Manufacturing PMI */}
             <div style={{ background:C.cardAlt, borderRadius:6, padding:10 }}>
-              <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>{d.macroIndic?.ismLabel || "Industrial Production"}</div>
-              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color: d.macroIndic?.ismStatus==="Expanding" ? C.green : d.macroIndic?.ismStatus==="Contracting" ? C.red : C.orange, marginBottom:6 }}>
+              <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>{d.macroIndic?.ismLabel || "ISM Manufacturing PMI"}</div>
+              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color: d.macroIndic?.ismStatus==="Expanding" ? C.green : d.macroIndic?.ismStatus==="Contracting" ? C.red : C.orange, marginBottom:2 }}>
                 {d.macroIndic?.ismStatus==="Expanding" ? "▲ " : d.macroIndic?.ismStatus==="Contracting" ? "▼ " : ""}{d.macroIndic?.ismPMI || "—"}
               </div>
-              <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.4 }}>
+              {d.macroIndic?.ismMonth && (
+                <div style={{ fontSize:10, color:C.textDim, fontFamily:font, marginBottom:4 }}>
+                  {d.macroIndic.ismMonth}{d.macroIndic.ismPrev ? " · prev " + d.macroIndic.ismPrev : ""}
+                </div>
+              )}
+              <p style={{ fontSize:11, color:C.textMid, margin:d.macroIndic?.ismMonth?0:"6px 0 0", lineHeight:1.4 }}>
                 {d.macroIndic?.ismStatus==="Expanding"
-                  ? "Production rising vs prior month. Economic strength."
+                  ? "Above 50 — manufacturing in expansion. Bullish signal."
                   : d.macroIndic?.ismStatus==="Contracting"
-                  ? "Production falling vs prior month. Economic weakness."
-                  : "Rising = economic growth · Falling = contraction"}
+                  ? "Below 50 — manufacturing contracting. Recession risk."
+                  : ">50 = expansion · <50 = contraction"}
               </p>
             </div>
           </div>
