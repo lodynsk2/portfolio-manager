@@ -506,6 +506,8 @@ try {
   setRefreshStatus("Fetching FRED data...");
   var fredRes = await fetch(FRED_URL);
   var fredJson = await fredRes.json();
+  var fredFieldCount = Object.keys(fredJson).filter(function(k){ return !k.startsWith("_") && !k.endsWith("_DATE"); }).length;
+  setRefreshStatus("FRED loaded: " + fredFieldCount + " fields");
   setData(function(prev) {
     var out = { ...prev };
     // Auto-detect Macro Season from live data
@@ -574,12 +576,17 @@ if (fredJson.GDPC1 && fredJson.GDPC1_PREV && fredJson.CPIAUCSL && fredJson.CPI_P
                detectedSeason === "Winter" ? "Capital preservation — recession risk elevated" :
                detectedSeason === "Summer" ? "Risk on — inflationary boom, peak liquidity" :
                "Early cycle — disinflationary boom, central banks easing",
-    description: "Auto-detected: GDP " + (growthRising ? "▲" : "▼") + " " + gdpCurrent.toFixed(0) +
-      " | CPI " + (inflationRising ? "▲" : "▼") + " " + cpiCurrent.toFixed(1) +
-      " | Fed Funds " + fedCurrent.toFixed(2) + "%" +
-      " | Yield Curve " + (yieldCurve >= 0 ? "+" : "") + yieldCurve.toFixed(2) +
-      " | HY Spread " + hySpreadVal.toFixed(2) + "%" +
-      " | Sahm Rule " + sahmVal.toFixed(2)
+    description: detectedSeason + " " + detectedPhase.toLowerCase() + " — " +
+      "S&P 500 at " + (out.spx?.price || prev.spx?.price || "—") + ", " +
+      "VIX at " + (out.vix?.price || prev.vix?.price || "—") +
+      (out.fg?.score != null ? ", CNN F&G at " + out.fg.score + " (" + (out.fg.label||"") + ")" : "") +
+      (out.fg?.cryptoScore != null ? ", crypto F&G at " + out.fg.cryptoScore : "") +
+      ". GDP " + (growthRising ? "rising " : "slowing ") + "(" + gdpCurrent.toFixed(0) + " vs " + gdpPrev.toFixed(0) + " prior). " +
+      "CPI " + (inflationRising ? "rising " : "easing ") + "(" + cpiCurrent.toFixed(1) + " vs " + cpiPrev.toFixed(1) + " YoY). " +
+      "Fed Funds " + fedCurrent.toFixed(2) + "% (" + (fedTightening ? "tightening" : "easing") + "). " +
+      "Yield curve " + (yieldCurve >= 0 ? "+" : "") + yieldCurve.toFixed(2) + ". " +
+      "HY spread " + hySpreadVal.toFixed(2) + "%. " +
+      "Sahm Rule " + sahmVal.toFixed(2) + "."
   };
 }
     if (fredJson.T10Y2Y) {
@@ -764,14 +771,24 @@ try {
         label: fgJson.cnnLabel || prev.fg.label,
         vsPrev: prevScore,
         cryptoScore: cryptoScore,
-        cryptoLabel: fgJson.cryptoLabel || prev.fg.cryptoLabel
+        cryptoLabel: fgJson.cryptoLabel || prev.fg.cryptoLabel,
+        timestamp: fgJson.timestamp || new Date().toISOString(),
       };
     }
     return out;
   });
-  setRefreshStatus("Fear & Greed updated!");
+  if (fgJson.cnnScore != null && fgJson.cryptoScore != null) {
+    setRefreshStatus("F&G LIVE: CNN " + fgJson.cnnScore + " · Crypto " + fgJson.cryptoScore);
+  } else if (fgJson.cnnScore != null) {
+    setRefreshStatus("F&G partial: CNN " + fgJson.cnnScore + " (crypto failed)");
+  } else if (fgJson.cryptoScore != null) {
+    setRefreshStatus("F&G partial: Crypto " + fgJson.cryptoScore + " (CNN failed)");
+  } else {
+    setRefreshStatus("F&G fetch returned no data — check proxy");
+  }
 } catch(fgErr) {
   console.warn("F&G fetch failed:", fgErr.message);
+  setRefreshStatus("F&G error: " + fgErr.message);
 }
   }
 } catch(secErr) {
@@ -1354,7 +1371,13 @@ function MacroStage({ d }) {
       {/* ROW 1: Regime */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr", gap:12 }}>
         <Card glow={sc}>
-          <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:10 }}>Macro Regime</div>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+            <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase" }}>Macro Regime</div>
+            <Badge
+              label={d.macroRegime?.description && d.macroRegime.description.indexOf(d.macroRegime.season) === 0 ? "LIVE" : "SEED"}
+              color={d.macroRegime?.description && d.macroRegime.description.indexOf(d.macroRegime.season) === 0 ? C.green : C.textDim}
+            />
+          </div>
           <div style={{ display:"flex", gap:13 }}>
             <div style={{ width:44, height:44, borderRadius:10, background:sc+"20", border:"1px solid " + sc + "40", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>
               {d.macroRegime?.season==="Summer"?"☀️":d.macroRegime?.season==="Spring"?"🌱":d.macroRegime?.season==="Autumn"?"🍂":"❄️"}
@@ -1677,7 +1700,7 @@ function MacroStage({ d }) {
       {/* ROW 3: F&G + VIX + Inflation */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
         <Card>
-          <SecTitle icon="🎯" title="Fear & Greed Index" />
+          <SecTitle icon="🎯" title="Fear & Greed Index" badge={d.fg?.timestamp ? "LIVE" : "SEED"} bc={d.fg?.timestamp ? C.green : C.textDim} />
           <div style={{ textAlign:"center", marginBottom:4 }}>
             {false ? <div><Skel w="80px" h={46} mb={7} /><Skel w="120px" h={15} mb={0} /></div> : (
               <div>
