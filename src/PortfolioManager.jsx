@@ -7,6 +7,7 @@ var SECTORS_URL = "https://portfolio-proxy-ja56.vercel.app/api/sectors";
 var FG_URL = "https://portfolio-proxy-ja56.vercel.app/api/feargreed";
 var OHLC_URL = "https://portfolio-proxy-ja56.vercel.app/api/ohlc";
 var LIQ_URL = "https://portfolio-proxy-ja56.vercel.app/api/liquidity-history";
+var SECTORS_LIVE_URL = "https://portfolio-proxy-ja56.vercel.app/api/sectors-live";
 
 /* ──────────────────────────────────────────────────────────────────── */
 
@@ -122,6 +123,80 @@ function parseFGLabel(score) {
   if (score <= 55) return "Neutral";
   if (score <= 75) return "Greed";
   return "Extreme Greed";
+}
+
+// Compute live sector rotation pair data from raw ETF returns
+// PAIRS: each entry is { name, e1, e2, sub1, sub2 }
+// For each pair: winner is the better-performing ETF over 6M,
+// "bullish" means risk-on side wins (the FIRST etf in each pair is risk-on)
+function computeSectorRotation(tickers, PAIRS) {
+  return PAIRS.map(function(p) {
+    var t1 = tickers[p.e1], t2 = tickers[p.e2];
+    if (!t1 || !t2 || t1.error || t2.error) {
+      // Fallback to neutral if data missing
+      return { ...p, w1:"n", w1m:"n", w3m:"n", w6m:"n", bull:null, prob:"50", winner:null, diffPct:0, note:"Data unavailable" };
+    }
+    // Per-period winner: "g" = e1 wins (risk-on), "r" = e2 wins (defensive), "n" = within 0.2%
+    function period(r1, r2) {
+      var diff = r1 - r2;
+      if (Math.abs(diff) < 0.2) return "n";
+      return diff > 0 ? "g" : "r";
+    }
+    var w1  = period(t1.r1w,  t2.r1w);
+    var w1m = period(t1.r1m,  t2.r1m);
+    var w3m = period(t1.r3m,  t2.r3m);
+    var w6m = period(t1.r6m,  t2.r6m);
+    // Aggregate bullishness from 4 periods (g=+1, r=-1, n=0)
+    function score(w) { return w === "g" ? 1 : w === "r" ? -1 : 0; }
+    var totalScore = score(w1) + score(w1m) + score(w3m) + score(w6m);
+    var bull, winner, prob;
+    if (totalScore >= 2) { bull = true;  winner = p.sub1; }
+    else if (totalScore <= -2) { bull = false; winner = p.sub2; }
+    else { bull = null; winner = null; }
+    // Probability: scale magnitude to 50-85% range
+    prob = String(Math.min(85, 50 + Math.abs(totalScore) * 9));
+    var diffPct = +(t1.r6m - t2.r6m).toFixed(1);
+    // Generate a contextual note
+    var note;
+    if (bull === true) note = p.sub1.split(" (")[0] + " leading across timeframes";
+    else if (bull === false) note = p.sub2.split(" (")[0] + " outperforming, " + (Math.abs(diffPct) > 5 ? "strong " : "") + "defensive bid";
+    else note = "Mixed signals across timeframes";
+    return { ...p, w1, w1m, w3m, w6m, bull, prob, winner, diffPct, note };
+  });
+}
+
+// Build top sectors list from raw ETF returns, sorted by 6M performance
+function computeTopSectors(tickers) {
+  var SECTOR_INFO = [
+    { etf:"XLK",  name:"Technology" },
+    { etf:"XLV",  name:"Healthcare" },
+    { etf:"XLF",  name:"Financials" },
+    { etf:"XLY",  name:"Consumer Discretionary" },
+    { etf:"XLP",  name:"Consumer Staples" },
+    { etf:"XLE",  name:"Energy" },
+    { etf:"XLI",  name:"Industrials" },
+    { etf:"XLB",  name:"Materials" },
+    { etf:"XLU",  name:"Utilities" },
+    { etf:"XLRE", name:"Real Estate" },
+    { etf:"XLC",  name:"Communication Services" },
+  ];
+  var sectors = SECTOR_INFO
+    .map(function(s) {
+      var t = tickers[s.etf];
+      if (!t || t.error) return null;
+      return {
+        name: s.name,
+        etf: s.etf,
+        r6m: (t.r6m >= 0 ? "+" : "") + t.r6m.toFixed(1),
+        r3m: (t.r3m >= 0 ? "+" : "") + t.r3m.toFixed(1),
+        pos: t.r3m >= 0,
+        r6mNum: t.r6m,
+      };
+    })
+    .filter(function(s) { return s !== null; })
+    .sort(function(a, b) { return b.r6mNum - a.r6mNum; })
+    .slice(0, 5);
+  return sectors;
 }
 
 // Compute support/resistance from recent swing highs/lows
@@ -749,6 +824,28 @@ try {
   }
 } catch(liqErr) {
   console.warn("Liquidity history fetch failed:", liqErr.message);
+}
+
+// Fetch live sector ETF returns and compute rotation pairs + top sectors
+try {
+  setRefreshStatus("Fetching live sector data...");
+  var secLiveRes = await fetch(SECTORS_LIVE_URL);
+  if (secLiveRes.ok) {
+    var secLiveJson = await secLiveRes.json();
+    var liveTickers = secLiveJson.tickers || {};
+    setData(function(prev) {
+      var newRotation = computeSectorRotation(liveTickers, SECTOR_PAIRS);
+      var newTopSectors = computeTopSectors(liveTickers);
+      return { ...prev,
+        sectorRotation: newRotation.length > 0 ? newRotation : prev.sectorRotation,
+        topSectors: newTopSectors.length > 0 ? newTopSectors : prev.topSectors,
+        sectorTimestamp: secLiveJson.timestamp,
+      };
+    });
+    setRefreshStatus("Live sector data loaded!");
+  }
+} catch(secErr) {
+  console.warn("Sectors-live fetch failed:", secErr.message);
 }
 
 // Fetch latest ISM Manufacturing PMI via Claude API (ISM data is licensed, not on FRED)
@@ -1414,49 +1511,66 @@ function MacroStage({ d }) {
 
       {/* ROW 2: Rates + DXY + Yield */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
-       <Card>
-          <SecTitle icon="↘" title="Forward Rates" />
-          {false ? <Skel w="80px" h={20} mb={12} /> : (
-            <div>
-              <div style={{ fontSize:12, color:C.textDim, marginBottom:4 }}>Status</div>
-              <div style={{ fontSize:22, fontWeight:700, color:d.rates?.status==="EASING"?C.green:d.rates?.status==="TIGHTENING"?C.red:C.orange, marginBottom:12 }}>{d.rates?.status}</div>
-              <p style={{ fontSize:11, color:C.textMid, margin:"0 0 12px", lineHeight:1.4 }}>
-                {d.rates?.status==="EASING" 
-                  ? "The Fed is cutting rates. Good for stocks, mortgages, and borrowers. Economy might be slowing." 
-                  : d.rates?.status==="TIGHTENING" 
-                  ? "The Fed is raising rates. Expensive to borrow, bonds more attractive. Fighting inflation."
-                  : "The Fed is holding steady. No major changes coming. Market waiting for clarity."}
-              </p>
-            </div>
-          )}
-          
-          <div style={{ marginBottom:12, paddingBottom:12, borderTop:"1px solid " + C.border, borderBottom:"1px solid " + C.border, paddingTop:12 }}>
-            <div style={{ fontSize:10, color:C.textDim, marginBottom:4 }}>Current Fed Funds Rate</div>
-            <div style={{ fontSize:20, fontWeight:700, fontFamily:font, marginBottom:2 }}>{d.rates?.current}%</div>
-            <p style={{ fontSize:10, color:C.textDim, margin:0 }}>What banks charge each other to borrow overnight</p>
+       <Card glow={C.purple}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <span style={{ fontSize:13 }}>🧠</span>
+            <span style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase" }}>AI-Enhanced Macro Analysis</span>
           </div>
+          <Badge label="Live · Sonnet" color={C.purple} />
+        </div>
 
-          <div style={{ marginBottom:12, paddingBottom:12, borderBottom:"1px solid " + C.border }}>
-            <div style={{ display:"flex", justifyContent:"center", margin:"8px 0" }}>
-              <div style={{ width:44, height:44, borderRadius:"50%", background:(d.rates?.status==="EASING"?C.green:C.red)+"20", border:"1px solid transparent", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20 }}>{d.rates?.status==="EASING"?"↘":"↗"}</div>
-            </div>
-            <p style={{ fontSize:10, color:C.textDim, textAlign:"center", margin:0 }}>
-              {d.rates?.status==="EASING" ? "Rates heading DOWN" : d.rates?.status==="TIGHTENING" ? "Rates heading UP" : "Rates STEADY"}
-            </p>
-          </div>
+        {/* Tab switcher */}
+        <div style={{ display:"flex", gap:6, marginBottom:14, borderBottom:"1px solid " + C.border, paddingBottom:0, flexWrap:"wrap" }}>
+          {[
+            { key:"bullish", label:"🐂 Bullish", color:C.green },
+            { key:"neutral", label:"⚖ Neutral", color:C.yellow },
+            { key:"bearish", label:"🐻 Bearish", color:C.red },
+          ].map(function(tab) {
+            var active = aiView === tab.key;
+            return (
+              <button key={tab.key} onClick={function(){ setAiView(tab.key); }} style={{
+                background: active ? tab.color + "22" : "transparent",
+                border: "none",
+                borderBottom: active ? "2px solid " + tab.color : "2px solid transparent",
+                color: active ? tab.color : C.textMid,
+                padding: "6px 10px",
+                fontSize: 11,
+                fontWeight: active ? 700 : 500,
+                letterSpacing: 0.5,
+                cursor: "pointer",
+                fontFamily: sans,
+                transition: "all 0.2s",
+                marginBottom: -1,
+              }}>{tab.label}</button>
+            );
+          })}
+        </div>
 
-          <div>
-            <div style={{ fontSize:10, color:C.textDim, marginBottom:4 }}>Market expects by year end</div>
-            <div style={{ fontSize:20, fontWeight:700, fontFamily:font, marginBottom:6 }}>{d.rates?.expected}%</div>
-            <div style={{ fontSize:10, color:C.textDim, background:C.cardAlt, padding:"6px 8px", borderRadius:4 }}>
-              {d.rates?.impliedCuts === "-1" 
-                ? "Market prices in about 1 rate cut before December" 
-                : d.rates?.impliedCuts === "-2" 
-                ? "Market prices in about 2 rate cuts" 
-                : "No major cuts or hikes expected"}
-            </div>
-          </div>
-        </Card>
+        {/* Active view content */}
+        <div style={{
+          fontSize:12,
+          lineHeight:1.7,
+          color:C.textMid,
+          background: (aiView==="bullish"?C.green:aiView==="bearish"?C.red:C.yellow) + "08",
+          border: "1px solid " + (aiView==="bullish"?C.green:aiView==="bearish"?C.red:C.yellow) + "22",
+          borderRadius: 6,
+          padding: "10px 12px",
+          maxHeight: 380,
+          overflowY: "auto",
+        }}>
+          {(d.aiViews?.[aiView] || "Click ⚡ Refresh to load AI analysis.").split("\n\n").map(function(para,i) {
+            return <p key={i} style={{ margin:"0 0 10px" }}>{para}</p>;
+          })}
+        </div>
+
+        <div style={{ display:"flex", gap:4, marginTop:10, alignItems:"center", flexWrap:"wrap" }}>
+          <span style={{ fontSize:9, color:C.textDim, letterSpacing:1 }}>FRAMEWORKS:</span>
+          {["mit_macro","liquidity","ray_dalio"].map(function(t) {
+            return <span key={t} style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"2px 6px", fontSize:10, color:C.textDim }}>{t}</span>;
+          })}
+        </div>
+      </Card>
 
         <Card>
           <SecTitle icon="$" title="US Dollar (DXY)" />
@@ -1489,54 +1603,72 @@ function MacroStage({ d }) {
         </Card>
 
     <Card>
-          <SecTitle icon="〜" title="Yield Curve" />
+          <SecTitle icon="📊" title="Macro Indicators" badge="LIVE" bc={C.cyan} />
           
-          <div style={{ marginBottom:12, paddingBottom:12, borderBottom:"1px solid " + C.border }}>
-            <div style={{ fontSize:11, color:C.textDim, marginBottom:6 }}>10-Year vs 2-Year Spread</div>
-            <div style={{ fontSize:26, fontWeight:700, fontFamily:font, color:d.yield?.status==="INVERTED"?C.red:C.green, marginBottom:4 }}>
-              {d.yield?.spread}
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12, marginBottom:12 }}>
+            {/* Global M2 */}
+            <div style={{ background:C.cardAlt, borderRadius:6, padding:10 }}>
+              <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>Global M2 (CB Balance Sheets)</div>
+              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color: d.macroIndic?.globalM2Trend==="Rising" ? C.green : d.macroIndic?.globalM2Trend==="Falling" ? C.red : C.orange, marginBottom:6 }}>
+                {d.macroIndic?.globalM2Trend==="Rising" ? "▲ " : d.macroIndic?.globalM2Trend==="Falling" ? "▼ " : ""}{d.macroIndic?.globalM2 || "—"}
+              </div>
+              <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.4 }}>
+                {d.macroIndic?.globalM2Trend==="Rising" 
+                  ? "Global liquidity expanding. Supports asset prices."
+                  : d.macroIndic?.globalM2Trend==="Falling"
+                  ? "Global liquidity contracting. Pressure on valuations."
+                  : "Sum of Fed + ECB + BoJ balance sheets"}
+              </p>
             </div>
-            <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.4 }}>
-              {d.yield?.status==="INVERTED"
-                ? "🔴 INVERTED - This is a serious recession warning. Investors expect tough times ahead."
-                : d.yield?.status==="FLAT"
-                ? "🟡 FLAT - Market is uncertain. Changes coming."
-                : "🟢 NORMAL - Healthy curve. Long-term rates higher than short-term (as they should be)."}
-            </p>
+
+            {/* US M2 */}
+            <div style={{ background:C.cardAlt, borderRadius:6, padding:10 }}>
+              <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>US M2 Money Supply</div>
+              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color: d.macroIndic?.usM2Trend==="Rising" ? C.green : d.macroIndic?.usM2Trend==="Falling" ? C.red : C.orange, marginBottom:2 }}>
+                {d.macroIndic?.usM2Trend==="Rising" ? "▲ " : d.macroIndic?.usM2Trend==="Falling" ? "▼ " : ""}{d.macroIndic?.usM2 || "—"}
+              </div>
+              {d.macroIndic?.usM2Change && (
+                <div style={{ fontSize:11, color:d.macroIndic?.usM2Trend==="Rising"?C.green:C.red, fontFamily:font, marginBottom:6 }}>{d.macroIndic.usM2Change} MoM</div>
+              )}
+              <p style={{ fontSize:11, color:C.textMid, margin:d.macroIndic?.usM2Change?0:"6px 0 0", lineHeight:1.4 }}>
+                {d.macroIndic?.usM2Trend==="Rising"
+                  ? "More dollars in circulation. Bullish for risk assets."
+                  : d.macroIndic?.usM2Trend==="Falling"
+                  ? "Money supply contracting. Headwind for equities."
+                  : "Monitor M2 growth rate for inflation signals"}
+              </p>
+            </div>
+
+            {/* ISM Manufacturing PMI */}
+            <div style={{ background:C.cardAlt, borderRadius:6, padding:10 }}>
+              <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>{d.macroIndic?.ismLabel || "ISM Manufacturing PMI"}</div>
+              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color: d.macroIndic?.ismStatus==="Expanding" ? C.green : d.macroIndic?.ismStatus==="Contracting" ? C.red : C.orange, marginBottom:2 }}>
+                {d.macroIndic?.ismStatus==="Expanding" ? "▲ " : d.macroIndic?.ismStatus==="Contracting" ? "▼ " : ""}{d.macroIndic?.ismPMI || "—"}
+              </div>
+              {d.macroIndic?.ismMonth && (
+                <div style={{ fontSize:10, color:C.textDim, fontFamily:font, marginBottom:4 }}>
+                  {d.macroIndic.ismMonth}{d.macroIndic.ismPrev ? " · prev " + d.macroIndic.ismPrev : ""}
+                </div>
+              )}
+              <p style={{ fontSize:11, color:C.textMid, margin:d.macroIndic?.ismMonth?0:"6px 0 0", lineHeight:1.4 }}>
+                {d.macroIndic?.ismStatus==="Expanding"
+                  ? "Above 50 — manufacturing in expansion. Bullish signal."
+                  : d.macroIndic?.ismStatus==="Contracting"
+                  ? "Below 50 — manufacturing contracting. Recession risk."
+                  : ">50 = expansion · <50 = contraction"}
+              </p>
+            </div>
           </div>
 
-          <div style={{ marginBottom:12, paddingBottom:12, borderBottom:"1px solid " + C.border }}>
-            <div style={{ fontSize:10, color:C.textDim, marginBottom:6 }}>What this means</div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
-              <div>
-                <div style={{ fontSize:10, color:C.textDim, marginBottom:4 }}>Short-term (2Y)</div>
-                <p style={{ fontSize:11, color:C.textMid, margin:0 }}>What people think will happen soon</p>
-              </div>
-              <div>
-                <div style={{ fontSize:10, color:C.textDim, marginBottom:4 }}>Long-term (10Y)</div>
-                <p style={{ fontSize:11, color:C.textMid, margin:0 }}>What people expect over 10 years</p>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ background:(d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red)+"15", border:"1px solid " + (d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red) + "40", borderRadius:6, padding:"10px 12px" }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-              <div style={{ fontSize:11, fontWeight:700, color:C.textDim }}>Recession Risk</div>
-              <span style={{ background:(d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red)+"25", color:(d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red), padding:"2px 8px", borderRadius:4, fontSize:11, fontWeight:700 }}>
-                {d.yield?.recessionRisk || "LOW"}
-              </span>
-            </div>
-            <Bar pct={d.yield?.recessionPct || 15} color={d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red} height={5} />
-            <div style={{ display:"flex", justifyContent:"space-between", marginTop:6, fontSize:10 }}>
-              <span style={{ color:C.textDim }}>Probability</span>
-              <span style={{ fontFamily:font, fontWeight:700, color:C.text }}>{d.yield?.recessionPct || 15}%</span>
-            </div>
-            <p style={{ fontSize:10, color:C.textMid, margin:"8px 0 0", lineHeight:1.4 }}>
-              {d.yield?.recessionRisk==="LOW" 
-                ? "Economy looks healthy. Normal times ahead."
-                : d.yield?.recessionRisk==="MEDIUM"
-                ? "Be cautious. Recession risk is elevated."
-                : "🔴 Serious recession risk. Major economic slowdown likely."}
+          {/* Summary */}
+          <div style={{ background:C.cardAlt, borderRadius:6, padding:10, borderTop:"1px solid " + C.border, marginTop:8, paddingTop:10 }}>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:6, fontWeight:700 }}>📋 Summary</div>
+            <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.5 }}>
+              {d.macroIndic?.ismStatus==="Expanding" && d.macroIndic?.usM2Trend==="Rising"
+                ? "✓ Tailwinds: Manufacturing expanding, M2 rising. Risk-on backdrop."
+                : d.macroIndic?.ismStatus==="Contracting" || d.macroIndic?.usM2Trend==="Falling"
+                ? "⚠ Headwinds: Manufacturing weak or M2 contracting. Economic caution warranted."
+                : "Live macro data pending. Monitor both growth (ISM) and liquidity (M2)."}
             </p>
           </div>
         </Card>
@@ -1659,74 +1791,42 @@ function MacroStage({ d }) {
 
       {/* ROW 4b: Credit + Breadth + Macro Indicators */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
-        {/* MACRO INDICATORS */}
+        {/* YIELD CURVE — moved from Row 2 */}
         <Card>
-          <SecTitle icon="📊" title="Macro Indicators" badge="LIVE" bc={C.cyan} />
+          <SecTitle icon="〜" title="Yield Curve" />
           
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12, marginBottom:12 }}>
-            {/* Global M2 */}
-            <div style={{ background:C.cardAlt, borderRadius:6, padding:10 }}>
-              <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>Global M2 (CB Balance Sheets)</div>
-              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color: d.macroIndic?.globalM2Trend==="Rising" ? C.green : d.macroIndic?.globalM2Trend==="Falling" ? C.red : C.orange, marginBottom:6 }}>
-                {d.macroIndic?.globalM2Trend==="Rising" ? "▲ " : d.macroIndic?.globalM2Trend==="Falling" ? "▼ " : ""}{d.macroIndic?.globalM2 || "—"}
-              </div>
-              <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.4 }}>
-                {d.macroIndic?.globalM2Trend==="Rising" 
-                  ? "Global liquidity expanding. Supports asset prices."
-                  : d.macroIndic?.globalM2Trend==="Falling"
-                  ? "Global liquidity contracting. Pressure on valuations."
-                  : "Sum of Fed + ECB + BoJ balance sheets"}
-              </p>
+          <div style={{ marginBottom:12, paddingBottom:12, borderBottom:"1px solid " + C.border }}>
+            <div style={{ fontSize:11, color:C.textDim, marginBottom:6 }}>10-Year vs 2-Year Spread</div>
+            <div style={{ fontSize:26, fontWeight:700, fontFamily:font, color:d.yield?.status==="INVERTED"?C.red:C.green, marginBottom:4 }}>
+              {d.yield?.spread}
             </div>
-
-            {/* US M2 */}
-            <div style={{ background:C.cardAlt, borderRadius:6, padding:10 }}>
-              <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>US M2 Money Supply</div>
-              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color: d.macroIndic?.usM2Trend==="Rising" ? C.green : d.macroIndic?.usM2Trend==="Falling" ? C.red : C.orange, marginBottom:2 }}>
-                {d.macroIndic?.usM2Trend==="Rising" ? "▲ " : d.macroIndic?.usM2Trend==="Falling" ? "▼ " : ""}{d.macroIndic?.usM2 || "—"}
-              </div>
-              {d.macroIndic?.usM2Change && (
-                <div style={{ fontSize:11, color:d.macroIndic?.usM2Trend==="Rising"?C.green:C.red, fontFamily:font, marginBottom:6 }}>{d.macroIndic.usM2Change} MoM</div>
-              )}
-              <p style={{ fontSize:11, color:C.textMid, margin:d.macroIndic?.usM2Change?0:"6px 0 0", lineHeight:1.4 }}>
-                {d.macroIndic?.usM2Trend==="Rising"
-                  ? "More dollars in circulation. Bullish for risk assets."
-                  : d.macroIndic?.usM2Trend==="Falling"
-                  ? "Money supply contracting. Headwind for equities."
-                  : "Monitor M2 growth rate for inflation signals"}
-              </p>
-            </div>
-
-            {/* ISM Manufacturing PMI */}
-            <div style={{ background:C.cardAlt, borderRadius:6, padding:10 }}>
-              <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>{d.macroIndic?.ismLabel || "ISM Manufacturing PMI"}</div>
-              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color: d.macroIndic?.ismStatus==="Expanding" ? C.green : d.macroIndic?.ismStatus==="Contracting" ? C.red : C.orange, marginBottom:2 }}>
-                {d.macroIndic?.ismStatus==="Expanding" ? "▲ " : d.macroIndic?.ismStatus==="Contracting" ? "▼ " : ""}{d.macroIndic?.ismPMI || "—"}
-              </div>
-              {d.macroIndic?.ismMonth && (
-                <div style={{ fontSize:10, color:C.textDim, fontFamily:font, marginBottom:4 }}>
-                  {d.macroIndic.ismMonth}{d.macroIndic.ismPrev ? " · prev " + d.macroIndic.ismPrev : ""}
-                </div>
-              )}
-              <p style={{ fontSize:11, color:C.textMid, margin:d.macroIndic?.ismMonth?0:"6px 0 0", lineHeight:1.4 }}>
-                {d.macroIndic?.ismStatus==="Expanding"
-                  ? "Above 50 — manufacturing in expansion. Bullish signal."
-                  : d.macroIndic?.ismStatus==="Contracting"
-                  ? "Below 50 — manufacturing contracting. Recession risk."
-                  : ">50 = expansion · <50 = contraction"}
-              </p>
-            </div>
+            <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.4 }}>
+              {d.yield?.status==="INVERTED"
+                ? "🔴 INVERTED - This is a serious recession warning. Investors expect tough times ahead."
+                : d.yield?.status==="FLAT"
+                ? "🟡 FLAT - Market is uncertain. Changes coming."
+                : "🟢 NORMAL - Healthy curve. Long-term rates higher than short-term (as they should be)."}
+            </p>
           </div>
 
-          {/* Summary */}
-          <div style={{ background:C.cardAlt, borderRadius:6, padding:10, borderTop:"1px solid " + C.border, marginTop:8, paddingTop:10 }}>
-            <div style={{ fontSize:10, color:C.textDim, marginBottom:6, fontWeight:700 }}>📋 Summary</div>
-            <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.5 }}>
-              {d.macroIndic?.ismStatus==="Expanding" && d.macroIndic?.usM2Trend==="Rising"
-                ? "✓ Tailwinds: Manufacturing expanding, M2 rising. Risk-on backdrop."
-                : d.macroIndic?.ismStatus==="Contracting" || d.macroIndic?.usM2Trend==="Falling"
-                ? "⚠ Headwinds: Manufacturing weak or M2 contracting. Economic caution warranted."
-                : "Live macro data pending. Monitor both growth (ISM) and liquidity (M2)."}
+          <div style={{ background:(d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red)+"15", border:"1px solid " + (d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red) + "40", borderRadius:6, padding:"10px 12px" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:C.textDim }}>Recession Risk</div>
+              <span style={{ background:(d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red)+"25", color:(d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red), padding:"2px 8px", borderRadius:4, fontSize:11, fontWeight:700 }}>
+                {d.yield?.recessionRisk || "LOW"}
+              </span>
+            </div>
+            <Bar pct={d.yield?.recessionPct || 15} color={d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red} height={5} />
+            <div style={{ display:"flex", justifyContent:"space-between", marginTop:6, fontSize:10 }}>
+              <span style={{ color:C.textDim }}>Probability</span>
+              <span style={{ fontFamily:font, fontWeight:700, color:C.text }}>{d.yield?.recessionPct || 15}%</span>
+            </div>
+            <p style={{ fontSize:10, color:C.textMid, margin:"8px 0 0", lineHeight:1.4 }}>
+              {d.yield?.recessionRisk==="LOW" 
+                ? "Economy looks healthy. Normal times ahead."
+                : d.yield?.recessionRisk==="MEDIUM"
+                ? "Be cautious. Recession risk is elevated."
+                : "🔴 Serious recession risk. Major economic slowdown likely."}
             </p>
           </div>
         </Card>
@@ -1928,63 +2028,52 @@ function MacroStage({ d }) {
         </div>
       </Card>
 
-      {/* AI ANALYSIS */}
-      <Card glow={C.purple}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-            <span style={{ fontSize:13 }}>🧠</span>
-            <span style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase" }}>AI-Enhanced Macro Analysis</span>
+      {/* FORWARD RATES — moved from Row 2 (now full width) */}
+      <Card>
+        <SecTitle icon="↘" title="Forward Rates" />
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:14 }}>
+          <div>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:6, letterSpacing:1 }}>STATUS</div>
+            <div style={{ fontSize:24, fontWeight:700, color:d.rates?.status==="EASING"?C.green:d.rates?.status==="TIGHTENING"?C.red:C.orange, marginBottom:8 }}>{d.rates?.status}</div>
+            <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.5 }}>
+              {d.rates?.status==="EASING" 
+                ? "Fed cutting rates. Good for stocks, mortgages, borrowers. Economy may be slowing." 
+                : d.rates?.status==="TIGHTENING" 
+                ? "Fed raising rates. Expensive to borrow, bonds more attractive. Fighting inflation."
+                : "Fed holding steady. No major changes coming. Market waiting for clarity."}
+            </p>
           </div>
-          <Badge label="Live · Sonnet" color={C.purple} />
-        </div>
 
-        {/* Tab switcher */}
-        <div style={{ display:"flex", gap:6, marginBottom:14, borderBottom:"1px solid " + C.border, paddingBottom:0 }}>
-          {[
-            { key:"bullish", label:"🐂 Bullish", color:C.green },
-            { key:"neutral", label:"⚖ Neutral", color:C.yellow },
-            { key:"bearish", label:"🐻 Bearish", color:C.red },
-          ].map(function(tab) {
-            var active = aiView === tab.key;
-            return (
-              <button key={tab.key} onClick={function(){ setAiView(tab.key); }} style={{
-                background: active ? tab.color + "22" : "transparent",
-                border: "none",
-                borderBottom: active ? "2px solid " + tab.color : "2px solid transparent",
-                color: active ? tab.color : C.textMid,
-                padding: "8px 14px",
-                fontSize: 12,
-                fontWeight: active ? 700 : 500,
-                letterSpacing: 0.5,
-                cursor: "pointer",
-                fontFamily: sans,
-                transition: "all 0.2s",
-                marginBottom: -1,
-              }}>{tab.label}</button>
-            );
-          })}
-        </div>
+          <div style={{ borderLeft:"1px solid " + C.border, paddingLeft:14 }}>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:6, letterSpacing:1 }}>CURRENT FED FUNDS RATE</div>
+            <div style={{ fontSize:30, fontWeight:700, fontFamily:font, marginBottom:6 }}>{d.rates?.current}%</div>
+            <p style={{ fontSize:11, color:C.textDim, margin:0, lineHeight:1.5 }}>What banks charge each other to borrow overnight</p>
+          </div>
 
-        {/* Active view content */}
-        <div style={{
-          fontSize:13,
-          lineHeight:1.85,
-          color:C.textMid,
-          background: (aiView==="bullish"?C.green:aiView==="bearish"?C.red:C.yellow) + "08",
-          border: "1px solid " + (aiView==="bullish"?C.green:aiView==="bearish"?C.red:C.yellow) + "22",
-          borderRadius: 6,
-          padding: "12px 14px",
-        }}>
-          {(d.aiViews?.[aiView] || "Click ⚡ Refresh to load AI analysis.").split("\n\n").map(function(para,i) {
-            return <p key={i} style={{ margin:"0 0 12px" }}>{para}</p>;
-          })}
-        </div>
+          <div style={{ borderLeft:"1px solid " + C.border, paddingLeft:14 }}>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:6, letterSpacing:1 }}>DIRECTION</div>
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
+              <div style={{ width:44, height:44, borderRadius:"50%", background:(d.rates?.status==="EASING"?C.green:C.red)+"20", border:"1px solid " + (d.rates?.status==="EASING"?C.green:C.red) + "44", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20 }}>{d.rates?.status==="EASING"?"↘":"↗"}</div>
+              <div>
+                <div style={{ fontSize:13, fontWeight:700, color:d.rates?.status==="EASING"?C.green:C.red }}>
+                  {d.rates?.status==="EASING" ? "Heading DOWN" : d.rates?.status==="TIGHTENING" ? "Heading UP" : "STEADY"}
+                </div>
+                <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>Trend</div>
+              </div>
+            </div>
+          </div>
 
-        <div style={{ display:"flex", gap:6, marginTop:12, alignItems:"center", flexWrap:"wrap" }}>
-          <span style={{ fontSize:10, color:C.textDim, letterSpacing:1 }}>FRAMEWORKS:</span>
-          {["mit_macro_seasons","global_liquidity","ray_dalio_cycles"].map(function(t) {
-            return <span key={t} style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"2px 7px", fontSize:11, color:C.textDim }}>{t}</span>;
-          })}
+          <div style={{ borderLeft:"1px solid " + C.border, paddingLeft:14 }}>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:6, letterSpacing:1 }}>MARKET EXPECTS BY YEAR END</div>
+            <div style={{ fontSize:30, fontWeight:700, fontFamily:font, marginBottom:8 }}>{d.rates?.expected}%</div>
+            <div style={{ fontSize:11, color:C.textMid, background:C.cardAlt, padding:"6px 10px", borderRadius:4, lineHeight:1.4 }}>
+              {d.rates?.impliedCuts === "-1" 
+                ? "~1 rate cut priced in before December" 
+                : d.rates?.impliedCuts === "-2" 
+                ? "~2 rate cuts priced in" 
+                : "No major cuts or hikes expected"}
+            </div>
+          </div>
         </div>
       </Card>
 
@@ -1995,12 +2084,15 @@ function MacroStage({ d }) {
             <div style={{ width:28, height:28, borderRadius:6, background:C.blue+"30", border:"1px solid " + C.blue + "44", display:"flex", alignItems:"center", justifyContent:"center", fontSize:13 }}>🔄</div>
             <div>
               <div style={{ fontSize:13, fontWeight:700, letterSpacing:1.5, color:C.text }}>SECTOR ROTATION</div>
-              <div style={{ fontSize:10, color:C.textDim }}>HMM Regime Detection</div>
+              <div style={{ fontSize:10, color:C.textDim }}>Live ETF returns · 1W/1M/3M/6M momentum</div>
             </div>
           </div>
-          <div style={{ display:"flex", alignItems:"center", gap:4 }}>
-            <span style={{ fontSize:11, color:C.green }}>✓</span>
-            <span style={{ fontSize:11, color:C.textDim }}>OK</span>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            {d.sectorTimestamp ? (
+              <Badge label="LIVE" color={C.green} />
+            ) : (
+              <Badge label="SEED" color={C.textDim} />
+            )}
           </div>
         </div>
 
@@ -2090,7 +2182,7 @@ function MacroStage({ d }) {
 
       {/* TOP SECTORS */}
       <Card>
-        <SecTitle icon="📋" title="Top Sectors (6M Returns)" />
+        <SecTitle icon="📋" title="Top Sectors (6M Returns)" badge={d.sectorTimestamp ? "LIVE" : "SEED"} bc={d.sectorTimestamp ? C.green : C.textDim} />
         <div style={{ fontSize:11, color:C.textDim, marginBottom:12 }}>Top 5 performing sectors by 6-month total return</div>
         <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
           <thead>
