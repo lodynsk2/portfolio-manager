@@ -865,6 +865,80 @@ try {
   console.warn("Sectors-live fetch failed:", secErr.message);
 }
 
+// Fetch live breadth + options + credit data via Claude API web search
+try {
+  setRefreshStatus("Fetching breadth, options & credit data...");
+  var mktDate = new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
+  var mktRes = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 600,
+      tools: [{ type: "web_search_20250305", name: "web_search" }],
+      messages: [{ role: "user", content: "Today is " + mktDate + ". Search for latest S&P 500 market breadth, CBOE put/call ratio, and MOVE index. Return ONLY JSON with no other text: {\"pct50\":\"xx.x\",\"pct200\":\"xx.x\",\"pcr\":\"x.xx\",\"move\":\"xxx.x\"} where pct50 is percent of S&P 500 stocks above 50-day moving average, pct200 is percent above 200-day MA, pcr is CBOE total put/call ratio, move is ICE BofA MOVE index value." }]
+    })
+  });
+  if (mktRes.ok) {
+    var mktJson = await mktRes.json();
+    var mktText = (mktJson.content || []).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("\n");
+    var mktClean = mktText.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
+    var mktParsed = null;
+    try { mktParsed = JSON.parse(mktClean); } catch(e1) {}
+    if (!mktParsed) {
+      var last2 = null, depth2 = 0, start2 = -1;
+      for (var ii = 0; ii < mktClean.length; ii++) {
+        if (mktClean[ii]==="{"){if(depth2===0)start2=ii;depth2++}
+        else if (mktClean[ii]==="}"){depth2--;if(depth2===0&&start2>=0){try{last2=JSON.parse(mktClean.slice(start2,ii+1))}catch(e2){}start2=-1}}
+      }
+      mktParsed = last2;
+    }
+    if (mktParsed) {
+      setData(function(prev) {
+        var out = { ...prev };
+        // Breadth
+        var b50 = parseFloat(mktParsed.pct50);
+        var b200 = parseFloat(mktParsed.pct200);
+        if (b50) {
+          out.breadth = {
+            pct50: String(b50.toFixed(1)),
+            pct200: String((b200 || parseFloat(prev.breadth?.pct200 || "50")).toFixed(1)),
+            ad5d: b50 < 45 ? "Falling" : b50 > 55 ? "Rising" : "Flat",
+            ad20d: b50 < 45 ? "Falling" : b50 > 55 ? "Rising" : "Flat",
+            sentiment: b50 < 45 ? "BEARISH" : b50 > 55 ? "BULLISH" : "NEUTRAL",
+            note: b50 < 45 ? "Narrow participation — majority of stocks below 50-day MA" : b50 > 55 ? "Broad participation — healthy market internals" : "Mixed breadth signals",
+            timestamp: new Date().toISOString(),
+          };
+        }
+        // Options PCR
+        var pcrV = parseFloat(mktParsed.pcr);
+        if (pcrV) {
+          out.options = {
+            dexPCR: String(pcrV.toFixed(2)),
+            omegaPCR: String((pcrV * 0.85).toFixed(2)),
+            status: pcrV > 1.1 ? "BEARISH" : pcrV < 0.7 ? "BULLISH" : "NEUTRAL",
+            conviction: String(Math.round(Math.abs(pcrV - 0.9) * 100)),
+            timestamp: new Date().toISOString(),
+          };
+        }
+        // MOVE Index
+        var moveV = parseFloat(mktParsed.move);
+        if (moveV) {
+          out.credit = { ...out.credit,
+            moveIndex: String(moveV.toFixed(1)),
+            moveSignal: moveV > 120 ? "High" : moveV > 100 ? "Elevated" : "Normal",
+            timestamp: new Date().toISOString(),
+          };
+        }
+        return out;
+      });
+      setRefreshStatus("Breadth/options/credit updated!");
+    }
+  }
+} catch(mktErr) {
+  console.warn("Breadth/options/credit fetch failed:", mktErr.message);
+}
+
 // Fetch latest ISM Manufacturing PMI via Claude API (ISM data is licensed, not on FRED)
 try {
   setRefreshStatus("Fetching ISM PMI...");
@@ -1855,26 +1929,48 @@ function MacroStage({ d }) {
         </Card>
 
         <Card>
-          <SecTitle icon="⚠" title="Credit & Bond Stress" badge={"MOVE: " + (d.credit?.moveSignal||"—")} bc={C.orange} />
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, fontSize:12 }}>
-            <div style={{ gridColumn:"1/-1" }}><span style={{ fontSize:9, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Bond Volatility</span></div>
-            <div><div style={{ fontSize:10, color:C.textDim }}>MOVE Index</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.moveIndex}</div></div>
-            <div><div style={{ fontSize:10, color:C.textDim }}>MOVE/VIX Signal</div><div style={{ color:C.orange, fontFamily:font }}>{d.credit?.moveSignal}</div></div>
-            <div style={{ gridColumn:"1/-1", borderTop:"1px solid " + C.border, paddingTop:5, marginTop:2 }}><span style={{ fontSize:9, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Credit Spreads</span></div>
-            <div><div style={{ fontSize:10, color:C.textDim }}>HY DAS (bp)</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.hyDAS}</div></div>
-            <div><div style={{ fontSize:10, color:C.textDim }}>IG-HY Diff (bp)</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.igHyDiff}</div></div>
-            <div style={{ gridColumn:"1/-1", fontSize:10, color:C.orange }}>{d.credit?.tightNote}</div>
-            <div style={{ gridColumn:"1/-1", borderTop:"1px solid " + C.border, paddingTop:5, marginTop:2 }}><span style={{ fontSize:9, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Lending Conditions</span></div>
-            <div><div style={{ fontSize:10, color:C.textDim }}>SLOOS</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.sloosNote}</div></div>
-            <div><div style={{ fontSize:10, color:C.textDim }}>Gold / Copper</div><div style={{ color:C.red, fontFamily:font }}>{d.credit?.goldCopper}</div></div>
-            <div style={{ gridColumn:"1/-1", borderTop:"1px solid " + C.border, paddingTop:5, marginTop:2 }}><span style={{ fontSize:9, letterSpacing:1.5, color:C.textDim, textTransform:"uppercase" }}>Consumer Stress</span></div>
-            <div><div style={{ fontSize:10, color:C.textDim }}>Sahm Rule</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.sahmRule}</div></div>
-            <div><div style={{ fontSize:10, color:C.textDim }}>CC Delinquency</div><div style={{ color:C.text, fontFamily:font }}>{d.credit?.ccDelinquency}%</div></div>
+          <SecTitle icon="⚠" title="Credit & Stress" badge={d.credit?.timestamp ? "LIVE" : "SEED"} bc={d.credit?.timestamp ? C.green : C.textDim} />
+          
+          {/* HY Spread — live from FRED */}
+          <div style={{ marginBottom:12 }}>
+            <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:4 }}>HY CREDIT SPREAD (OAS)</div>
+            <div style={{ fontSize:24, fontWeight:700, fontFamily:font, color:parseInt(d.credit?.hyDAS)>500?C.red:parseInt(d.credit?.hyDAS)>350?C.orange:C.green, marginBottom:4 }}>
+              {d.credit?.hyDAS || "—"}<span style={{ fontSize:12, color:C.textDim, fontWeight:400 }}> bp</span>
+            </div>
+            <Bar pct={Math.min(100, (parseInt(d.credit?.hyDAS)||300) / 8)} color={parseInt(d.credit?.hyDAS)>500?C.red:parseInt(d.credit?.hyDAS)>350?C.orange:C.green} height={4} />
+            <div style={{ fontSize:10, color:C.textMid, marginTop:4 }}>
+              {parseInt(d.credit?.hyDAS)<300 ? "Tight — complacency risk" : parseInt(d.credit?.hyDAS)>500 ? "Wide — credit stress" : "Normal range"}
+            </div>
+          </div>
+
+          {/* MOVE Index — live from Claude web search */}
+          <div style={{ marginBottom:12, paddingTop:10, borderTop:"1px solid " + C.border }}>
+            <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:4 }}>MOVE INDEX (BOND VOLATILITY)</div>
+            <div style={{ fontSize:24, fontWeight:700, fontFamily:font, color:parseFloat(d.credit?.moveIndex)>120?C.red:parseFloat(d.credit?.moveIndex)>100?C.orange:C.green, marginBottom:4 }}>
+              {d.credit?.moveIndex || "—"}
+            </div>
+            <div style={{ fontSize:10, color:C.textMid }}>
+              {parseFloat(d.credit?.moveIndex)>120 ? "High — bond market stressed" : parseFloat(d.credit?.moveIndex)>100 ? "Elevated — watch for spillover" : "Normal — bond market calm"}
+            </div>
+          </div>
+
+          {/* Sahm Rule — live from FRED */}
+          <div style={{ paddingTop:10, borderTop:"1px solid " + C.border }}>
+            <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:4 }}>SAHM RULE (RECESSION SIGNAL)</div>
+            <div style={{ display:"flex", alignItems:"baseline", gap:8, marginBottom:4 }}>
+              <div style={{ fontSize:24, fontWeight:700, fontFamily:font, color:parseFloat(d.credit?.sahmRule)>0.5?C.red:parseFloat(d.credit?.sahmRule)>0.3?C.orange:C.green }}>
+                {d.credit?.sahmRule || "—"}
+              </div>
+              <Badge label={parseFloat(d.credit?.sahmRule)>0.5?"TRIGGERED":parseFloat(d.credit?.sahmRule)>0.3?"ELEVATED":"SAFE"} color={parseFloat(d.credit?.sahmRule)>0.5?C.red:parseFloat(d.credit?.sahmRule)>0.3?C.orange:C.green} />
+            </div>
+            <div style={{ fontSize:10, color:C.textMid, lineHeight:1.4 }}>
+              Recession triggers at 0.50. Currently {parseFloat(d.credit?.sahmRule)<0.3 ? "well below" : parseFloat(d.credit?.sahmRule)<0.5 ? "approaching" : "above"} threshold.
+            </div>
           </div>
         </Card>
 
         <Card>
-          <SecTitle icon="📊" title="Market Breadth" badge={d.breadth?.sentiment} bc={d.breadth?.sentiment==="BEARISH"?C.red:C.green} />
+          <SecTitle icon="📊" title="Market Breadth" badge={d.breadth?.timestamp ? "LIVE" : "SEED"} bc={d.breadth?.timestamp ? C.green : C.textDim} />
           
           {/* SHORT TERM: 50-day MA */}
           <div style={{ marginBottom:12 }}>
@@ -1953,6 +2049,7 @@ function MacroStage({ d }) {
             </div>
           </div>
         </Card>
+      </div>
 
       {/* OPTIONS SENTIMENT */}
       <Card>
@@ -1961,47 +2058,31 @@ function MacroStage({ d }) {
             <span style={{ fontSize:13 }}>📡</span>
             <span style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase" }}>Options Sentiment</span>
           </div>
-          <Badge label={d.options?.status||"NEUTRAL"} color={d.options?.status==="BULLISH"?C.green:d.options?.status==="BEARISH"?C.red:C.textMid} />
-        </div>
-
-        <div style={{ background:C.cardAlt, borderRadius:6, padding:10, marginBottom:14 }}>
-          <div style={{ fontSize:11, color:C.textMid, lineHeight:1.5 }}>
-            <strong style={{ color:C.text }}>What this means:</strong> Options traders bet on stock direction. Smart money (institutions) vs dumb money (retail) — who's buying protection or betting on crashes?
+          <div style={{ display:"flex", gap:6 }}>
+            <Badge label={d.options?.timestamp ? "LIVE" : "SEED"} color={d.options?.timestamp ? C.green : C.textDim} />
+            <Badge label={d.options?.status||"NEUTRAL"} color={d.options?.status==="BULLISH"?C.green:d.options?.status==="BEARISH"?C.red:C.textMid} />
           </div>
         </div>
 
-        <div style={{ marginBottom:14, paddingBottom:14, borderTop:"1px solid " + C.border, borderBottom:"1px solid " + C.border, paddingTop:14 }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
-            <div>
-              <div style={{ fontSize:12, color:C.textDim, fontWeight:700, marginBottom:6 }}>🏦 DEX PCR (Institutions)</div>
-              <div style={{ fontSize:22, fontWeight:700, fontFamily:font, color:C.red }}>{d.options?.dexPCR}</div>
-              <p style={{ margin:"6px 0 0", fontSize:10, color:C.textDim }}>Puts-to-Calls</p>
-            </div>
-            <Badge label={parseFloat(d.options?.dexPCR) > 1.3 ? "BEARISH" : "NEUTRAL"} color={parseFloat(d.options?.dexPCR) > 1.3 ? C.red : C.orange} />
+        <div style={{ textAlign:"center", marginBottom:14 }}>
+          <div style={{ fontSize:10, color:C.textDim, marginBottom:6 }}>CBOE TOTAL PUT/CALL RATIO</div>
+          <div style={{ fontSize:38, fontWeight:700, fontFamily:font, color:parseFloat(d.options?.dexPCR)>1.1?C.red:parseFloat(d.options?.dexPCR)<0.7?C.green:C.orange }}>
+            {d.options?.dexPCR || "—"}
           </div>
-          <p style={{ margin:0, fontSize:11, color:C.textMid, lineHeight:1.5 }}>Smart money buying insurance against stocks falling. When > 1.3, fear among pros.</p>
+          <div style={{ fontSize:11, color:C.textMid, marginTop:4 }}>
+            {parseFloat(d.options?.dexPCR) > 1.1 ? "Bearish — more puts than calls, hedging demand elevated" 
+              : parseFloat(d.options?.dexPCR) < 0.7 ? "Bullish — heavy call buying, risk appetite strong"
+              : "Neutral — balanced options activity"}
+          </div>
         </div>
 
-        <div style={{ marginBottom:14, paddingBottom:14, borderBottom:"1px solid " + C.border }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
-            <div>
-              <div style={{ fontSize:12, color:C.textDim, fontWeight:700, marginBottom:6 }}>📱 Omega PCR (Retail)</div>
-              <div style={{ fontSize:22, fontWeight:700, fontFamily:font, color:C.orange }}>{d.options?.omegaPCR}</div>
-              <p style={{ margin:"6px 0 0", fontSize:10, color:C.textDim }}>Puts-to-Calls</p>
-            </div>
-            <Badge label={parseFloat(d.options?.omegaPCR) > 1.3 ? "BEARISH" : "NEUTRAL"} color={parseFloat(d.options?.omegaPCR) > 1.3 ? C.red : C.orange} />
-          </div>
-          <p style={{ margin:0, fontSize:11, color:C.textMid, lineHeight:1.5 }}>Retail traders hedging bets. Less nervous than institutions. When > 1.0, they see risk ahead.</p>
+        <div style={{ height:6, background:"linear-gradient(90deg," + C.green + "," + C.yellow + "," + C.red + ")", borderRadius:3, position:"relative", marginBottom:4 }}>
+          <div style={{ position:"absolute", width:8, height:12, background:C.text, top:-3, left:Math.min(95, Math.max(5, ((parseFloat(d.options?.dexPCR)||0.9) - 0.5) / 1.0 * 100)) + "%", transform:"translateX(-50%)", borderRadius:2 }} />
         </div>
+        <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim, marginBottom:12 }}><span>Bullish (0.5)</span><span>Neutral (1.0)</span><span>Bearish (1.5)</span></div>
 
-        <div style={{ background:(d.options?.status==="BEARISH"?C.red:C.green)+"15", border:"1px solid " + (d.options?.status==="BEARISH"?C.red:C.green) + "40", borderRadius:6, padding:12 }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-            <div style={{ fontSize:12, fontWeight:700, color:d.options?.status==="BEARISH"?C.red:C.green }}>Conviction</div>
-            <div style={{ fontSize:16, fontWeight:700, fontFamily:font, color:d.options?.status==="BEARISH"?C.red:C.green }}>{d.options?.conviction}%</div>
-          </div>
-          <p style={{ margin:0, fontSize:11, color:C.textMid, lineHeight:1.5 }}>
-            {d.options?.status === "BEARISH" ? "Moderately bearish. Hedging but not panicked. Caution flag." : "Balanced. Mixed signals. Neither bullish nor bearish."}
-          </p>
+        <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px", fontSize:10, color:C.textDim, lineHeight:1.5 }}>
+          Put/Call ratio measures how many put options (bets on decline) vs call options (bets on rise) are being traded. Above 1.0 = more puts = bearish sentiment.
         </div>
       </Card>
 
@@ -2011,47 +2092,34 @@ function MacroStage({ d }) {
           <div>
             <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:4 }}>Financial Conditions Index</div>
             <div style={{ display:"flex", alignItems:"baseline", gap:10 }}>
-              {false ? <Skel w="80px" h={32} mb={0} /> : <span style={{ fontSize:32, fontWeight:700, fontFamily:font, color:d.fci?.status==="Loose"?C.green:d.fci?.status==="Tight"?C.red:C.yellow }}>{d.fci?.nfci||"—"}</span>}
+              <span style={{ fontSize:32, fontWeight:700, fontFamily:font, color:d.fci?.status==="Loose"?C.green:d.fci?.status==="Tight"?C.red:C.yellow }}>{d.fci?.nfci||"—"}</span>
               <span style={{ fontSize:12, color:C.textMid }}>NFCI ({d.fci?.status||"—"})</span>
             </div>
           </div>
           <Badge label={d.fci?.status||"—"} color={d.fci?.status==="Loose"?C.green:d.fci?.status==="Tight"?C.red:C.yellow} />
         </div>
+
         <div style={{ marginBottom:12 }}>
-          <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:C.textDim, marginBottom:3 }}><span>Looser</span><span>Tighter</span></div>
-          <div style={{ height:5, background:C.border, borderRadius:3 }}>
-            <div style={{ width:"17%", height:"100%", background:"linear-gradient(90deg," + C.green + "," + C.cyan + ")", borderRadius:3 }} />
+          <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:C.textDim, marginBottom:3 }}><span>Looser</span><span>0 (avg)</span><span>Tighter</span></div>
+          <div style={{ height:6, background:"linear-gradient(90deg," + C.green + "," + C.cyan + ",#444," + C.orange + "," + C.red + ")", borderRadius:3, position:"relative" }}>
+            <div style={{ position:"absolute", width:8, height:12, background:C.text, top:-3, left:Math.min(95, Math.max(5, 50 + (parseFloat(d.fci?.nfci)||0) * 50)) + "%", transform:"translateX(-50%)", borderRadius:2 }} />
           </div>
         </div>
-        <div style={{ background:C.cardAlt, borderRadius:6, padding:"10px 10px 6px", marginBottom:12 }}>
-          <div style={{ fontSize:9, color:C.textDim, marginBottom:6 }}>FCI History (z-score)</div>
-          <svg width="100%" height="100" viewBox="0 0 800 100" preserveAspectRatio="none" style={{ display:"block" }}>
-            <rect x="0" y="0" width="800" height="40" fill={C.red} opacity="0.08" />
-            <rect x="0" y="60" width="800" height="40" fill={C.green} opacity="0.06" />
-            <line x1="0" y1="50" x2="800" y2="50" stroke={C.textDim} strokeWidth="0.5" strokeDasharray="4,4" opacity="0.5" />
-            <polyline points="0,30 45,35 90,42 135,38 180,55 220,60 265,62 310,55 355,50 400,45 445,38 490,32 535,28 570,30 600,25 640,20 680,18 720,20 760,19 800,22" fill="none" stroke={C.cyan} strokeWidth="2" />
-          </svg>
-          <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim, marginTop:2 }}>
-            {["2015","2017","2019","2021","2023","2026"].map(y => <span key={y}>{y}</span>)}
-          </div>
+
+        <div style={{ fontSize:11, color:C.textMid, lineHeight:1.6, marginBottom:12 }}>
+          {d.fci?.status==="Loose" 
+            ? "Financial conditions are looser than average. Credit is flowing, funding is accessible, markets are calm. This supports growth and risk assets."
+            : d.fci?.status==="Tight"
+            ? "Financial conditions are tighter than average. Borrowing is more expensive, credit is contracting. This is a headwind for growth and stocks."
+            : "Financial conditions are near their historical average. Neither loose nor tight."}
         </div>
-        <div style={{ borderTop:"1px solid " + C.border, paddingTop:10 }}>
-          <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:7 }}>Component Loadings</div>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:"4px 12px", fontSize:12 }}>
-            {[["Fed Funds Rate","fedFunds"],["10Y Treasury","t10y"],["HY Credit Spre.","hySpread"],["S&P 500 (inv)","sp500load"],["USD Index","usd"]].map(function(pair) {
-              var l = pair[0], k = pair[1];
-              return (
-                <div key={k} style={{ display:"contents" }}>
-                  <span style={{ fontSize:11, color:C.textMid }}>{l}</span>
-                  <span style={{ fontFamily:font, fontSize:12, color:String(d.fci?.[k]||"").startsWith("-")?C.red:C.green, textAlign:"right" }}>{d.fci?.[k]||"—"}</span>
-                </div>
-              );
-            })}
-          </div>
+
+        <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px", fontSize:10, color:C.textDim, lineHeight:1.5 }}>
+          The Chicago Fed NFCI combines 105 financial indicators. Negative = loose (good for stocks). Positive = tight (bad for stocks). Zero = average conditions.
         </div>
       </Card>
 
-      {/* FORWARD RATES — moved from Row 2 (now full width) */}
+      {/* FORWARD RATES — full width */}
       <Card>
         <SecTitle icon="↘" title="Forward Rates" />
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:14 }}>
@@ -2250,6 +2318,5 @@ function MacroStage({ d }) {
       </Card>
 
     </div>
-  </div>
   );
 }
