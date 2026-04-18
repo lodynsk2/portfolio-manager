@@ -1032,7 +1032,7 @@ try {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: "claude-sonnet-4-20250514",
-      max_tokens: 1500,
+      max_tokens: 3000,
       messages: [{ role: "user", content:
         contextStr +
         "\nYou are a professional macro strategist. Using ONLY the specific numbers above (cite them), generate THREE distinct investment viewpoints. Each should be 2-3 paragraphs. Be specific — reference actual values. Return ONLY valid JSON (no markdown fences, no other text):\n" +
@@ -1045,20 +1045,41 @@ try {
   } else {
     var aiJson = await aiRes.json();
     var aiText = (aiJson.content || []).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("\n");
+    console.log("AI raw response length:", aiText.length, "First 300 chars:", aiText.slice(0,300));
     var aiClean = aiText.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
+    
+    // Try direct parse first
     var views = null;
     try { views = JSON.parse(aiClean); } catch(eAI) {
+      // Try to find JSON object with brace matching
       var dAI = 0, sAI = -1;
       for (var k = 0; k < aiClean.length; k++) {
         if (aiClean[k]==="{"){if(dAI===0)sAI=k;dAI++}
         else if (aiClean[k]==="}"){dAI--;if(dAI===0&&sAI>=0){try{views=JSON.parse(aiClean.slice(sAI,k+1))}catch(eAI2){}sAI=-1}}
       }
     }
+    
+    // If still no views, try to extract each key individually with regex
+    if (!views || (!views.bullish && !views.bearish && !views.neutral)) {
+      console.log("Brace matching failed, trying regex extraction...");
+      var bullMatch = aiClean.match(/"bullish"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
+      var neutralMatch = aiClean.match(/"neutral"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
+      var bearMatch = aiClean.match(/"bearish"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
+      if (bullMatch || neutralMatch || bearMatch) {
+        views = {
+          bullish: bullMatch ? bullMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, '"') : "",
+          neutral: neutralMatch ? neutralMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, '"') : "",
+          bearish: bearMatch ? bearMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, '"') : "",
+        };
+      }
+    }
+    
     if (views && (views.bullish || views.bearish || views.neutral)) {
       views._timestamp = new Date().toISOString();
       setData(function(prev) { return { ...prev, aiViews: views }; });
       setRefreshStatus("AI analysis ready!");
     } else {
+      console.log("AI parse failed. Clean text:", aiClean.slice(0, 500));
       setRefreshStatus("AI returned unexpected format — using cached");
     }
   }
