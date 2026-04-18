@@ -9,6 +9,7 @@ var OHLC_URL = "https://portfolio-proxy-ja56.vercel.app/api/ohlc";
 var LIQ_URL = "https://portfolio-proxy-ja56.vercel.app/api/liquidity-history";
 var SECTORS_LIVE_URL = "https://portfolio-proxy-ja56.vercel.app/api/sectors-live";
 var CLAUDE_URL = "https://portfolio-proxy-ja56.vercel.app/api/claude";
+var PORTFOLIO_URL = "https://portfolio-proxy-ja56.vercel.app/api/portfolio";
 
 /* ──────────────────────────────────────────────────────────────────── */
 
@@ -1154,7 +1155,8 @@ try {
         {err && <div style={{ background:"#2b0d10", border:"1px solid " + C.red + "44", borderRadius:8, padding:"7px 13px", marginBottom:11, fontSize:12, color:C.red }}>⚠ {err}</div>}
 
         {stage===1 && <MacroStage d={d} />}
-        {stage!==1 && (
+        {stage===2 && <PortfolioStage />}
+        {stage!==1 && stage!==2 && (
           <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:400 }}>
             <div style={{ fontSize:28, opacity:0.2, marginBottom:8 }}>🚧</div>
             <div style={{ color:C.textDim, fontSize:14 }}>Stage {stage} — coming soon</div>
@@ -2362,6 +2364,214 @@ function MacroStage({ d }) {
         </div>
       </Card>
 
+    </div>
+  );
+}
+
+/* ─── PORTFOLIO HOLDINGS (The Claude Portfolio) ────────────────── */
+var PORTFOLIO_HOLDINGS = [
+  { ticker:"AVGO", name:"Broadcom Inc.", sector:"Technology", weight:10, qty:24, themes:["AI Chips","Custom Silicon"] },
+  { ticker:"VST",  name:"Vistra Corp.", sector:"Energy", weight:10, qty:56, themes:["Nuclear","AI Power"] },
+  { ticker:"MSFT", name:"Microsoft Corp.", sector:"Technology", weight:8, qty:10, themes:["Cloud","AI Infrastructure"] },
+  { ticker:"LLY",  name:"Eli Lilly & Co.", sector:"Healthcare", weight:8, qty:5, themes:["GLP-1","Obesity"] },
+  { ticker:"AMZN", name:"Amazon.com Inc.", sector:"Technology", weight:7, qty:18, themes:["AWS","E-Commerce"] },
+  { ticker:"META", name:"Meta Platforms", sector:"Technology", weight:7, qty:6, themes:["Ads","Llama AI"] },
+  { ticker:"GOOGL",name:"Alphabet Inc.", sector:"Technology", weight:6, qty:18, themes:["Search","Cloud"] },
+  { ticker:"CEG",  name:"Constellation Energy", sector:"Energy", weight:6, qty:13, themes:["Nuclear","Data Centers"] },
+  { ticker:"GLD",  name:"SPDR Gold Trust", sector:"Commodities", weight:5, qty:10, themes:["Gold","Safe Haven"] },
+  { ticker:"XOM",  name:"Exxon Mobil Corp.", sector:"Energy", weight:5, qty:22, themes:["Oil","Dividends"] },
+  { ticker:"UNH",  name:"UnitedHealth Group", sector:"Healthcare", weight:5, qty:5, themes:["Insurance","Optum"] },
+  { ticker:"NVDA", name:"Nvidia Corp.", sector:"Technology", weight:5, qty:22, themes:["AI GPUs","Data Center"] },
+  { ticker:"AU",   name:"AngloGold Ashanti", sector:"Materials", weight:4, qty:69, themes:["Gold Mining","EM"] },
+  { ticker:"PLTR", name:"Palantir Technologies", sector:"Technology", weight:4, qty:18, themes:["Defense AI","Gov Tech"] },
+  { ticker:"FCX",  name:"Freeport-McMoRan", sector:"Materials", weight:4, qty:48, themes:["Copper","EV Metals"] },
+];
+
+/* ─── PORTFOLIO STAGE ────────────────────────────────────────────── */
+function PortfolioStage() {
+  var _ps = useState([]);
+  var holdings = _ps[0], setHoldings = _ps[1];
+  var _pl = useState(true);
+  var loading = _pl[0], setLoading = _pl[1];
+  var _pe = useState(null);
+  var error = _pe[0], setError = _pe[1];
+  var _sc = useState("weight");
+  var sortCol = _sc[0], setSortCol = _sc[1];
+  var _sd = useState(-1);
+  var sortDir = _sd[0], setSortDir = _sd[1];
+
+  var regime = "Summer";
+
+  useEffect(function() {
+    (async function() {
+      setLoading(true);
+      try {
+        var tickers = PORTFOLIO_HOLDINGS.map(function(h){return h.ticker}).join(",");
+        var res = await fetch(PORTFOLIO_URL + "?tickers=" + tickers);
+        var json = await res.json();
+        var merged = PORTFOLIO_HOLDINGS.map(function(h) {
+          var d = json.holdings && json.holdings[h.ticker];
+          if (!d || d.error) return { ...h, price:null, ma50:null, ma200:null, rsi:null, tq:null, zScore:null, r6m:null, maDev:null, trend:"—", phase:"—", action:"—" };
+          return { ...h, ...d };
+        });
+        setHoldings(merged);
+      } catch(e) {
+        setError(e.message);
+        setHoldings(PORTFOLIO_HOLDINGS.map(function(h){return { ...h, price:null, trend:"—", phase:"—", action:"—" }}));
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  function doSort(col) {
+    if (sortCol === col) setSortDir(function(d){return d * -1});
+    else { setSortCol(col); setSortDir(-1); }
+  }
+
+  var sorted = holdings.slice().sort(function(a, b) {
+    var va = a[sortCol], vb = b[sortCol];
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    if (typeof va === "string") return va.localeCompare(vb) * sortDir;
+    return (va - vb) * sortDir;
+  });
+
+  var bullCount = holdings.filter(function(h){return h.trend==="Bullish"}).length;
+  var bearCount = holdings.filter(function(h){return h.trend==="Bearish"}).length;
+  var holdCount = holdings.filter(function(h){return h.action==="Hold"}).length;
+  var scaleCount = holdings.filter(function(h){return h.action==="Scale Out"}).length;
+  var closeCount = holdings.filter(function(h){return h.action==="Close"}).length;
+
+  var sectorWeights = {};
+  holdings.forEach(function(h){ sectorWeights[h.sector] = (sectorWeights[h.sector]||0) + h.weight; });
+
+  var trendColor = function(t) { return t==="Bullish"?C.green:t==="Bearish"?C.red:C.textMid; };
+  var actionColor = function(a) { return a==="Hold"?C.green:a==="Scale Out"?C.orange:a==="Close"?C.red:C.textDim; };
+  var actionBg = function(a) { return a==="Hold"?C.green+"22":a==="Scale Out"?C.orange+"22":a==="Close"?C.red+"22":C.cardAlt; };
+
+  var thS = { textAlign:"left", padding:"8px 6px", color:C.textDim, fontSize:9, fontWeight:700, letterSpacing:1.2, textTransform:"uppercase", cursor:"pointer", userSelect:"none", borderBottom:"1px solid "+C.border, whiteSpace:"nowrap" };
+  var tdS = { padding:"8px 6px", fontSize:12, borderBottom:"1px solid "+C.border, whiteSpace:"nowrap" };
+  var rightCols = ["price","ma50","ma200","rsi","tq","zScore","r6m","weight","maDev","qty"];
+
+  var cols = [
+    {key:"ticker",label:"TICKER",w:70},{key:"name",label:"ASSET",w:140},{key:"sector",label:"SECTOR",w:90},
+    {key:"maDev",label:"MA DEV",w:65},{key:"qty",label:"QTY",w:45},{key:"price",label:"PRICE",w:75},
+    {key:"ma50",label:"50 DMA",w:70},{key:"ma200",label:"200 DMA",w:70},{key:"trend",label:"TREND",w:70},
+    {key:"phase",label:"PHASE",w:95},{key:"action",label:"ACTION",w:70},{key:"rsi",label:"RSI",w:45},
+    {key:"tq",label:"TQ",w:45},{key:"zScore",label:"Z-SCORE",w:65},{key:"r6m",label:"6M %",w:55},
+    {key:"weight",label:"WT %",w:45},
+  ];
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <span style={{ fontSize:18 }}>⚡</span>
+          <div>
+            <div style={{ fontSize:16, fontWeight:700 }}>Portfolio Analysis</div>
+            <div style={{ fontSize:11, color:C.textMid }}>{holdings.length} holdings analysed</div>
+          </div>
+        </div>
+        <div style={{ display:"flex", gap:10, alignItems:"center", fontSize:11 }}>
+          <span style={{ color:C.green }}>○ {holdCount} Hold</span>
+          <span style={{ color:C.orange }}>△ {scaleCount} Scale Out</span>
+          <span style={{ color:C.red }}>✕ {closeCount} Close</span>
+          <Badge label={"Regime: "+regime} color={SC[regime]||C.gold} />
+        </div>
+      </div>
+
+      <Card>
+        <div style={{ overflowX:"auto" }}>
+          <table style={{ width:"100%", borderCollapse:"collapse", minWidth:1200 }}>
+            <thead>
+              <tr>
+                {cols.map(function(col) {
+                  var isRight = rightCols.indexOf(col.key) >= 0;
+                  return <th key={col.key} onClick={function(){doSort(col.key)}} style={{ ...thS, width:col.w, textAlign:isRight?"right":"left" }}>{col.label}{sortCol===col.key?(sortDir>0?" ↑":" ↓"):""}</th>;
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={16} style={{ padding:40, textAlign:"center", color:C.textDim }}><Spinner size={16} /> Loading portfolio data...</td></tr>
+              ) : sorted.map(function(h, i) {
+                var mc = h.maDev==null?C.textDim:h.maDev>0?C.green:C.red;
+                return (
+                  <tr key={h.ticker} style={{ background:i%2===0?"transparent":C.cardAlt+"44" }}>
+                    <td style={{ ...tdS, fontWeight:700, color:C.cyan, fontFamily:font }}>{h.ticker}</td>
+                    <td style={{ ...tdS, color:C.textMid, fontSize:11, maxWidth:140, overflow:"hidden", textOverflow:"ellipsis" }}>{h.name}</td>
+                    <td style={{ ...tdS, fontSize:10, color:C.textDim }}>{h.sector}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11 }}>
+                      {h.maDev!=null ? <span style={{ color:mc }}>{h.maDev>0?"+":""}{h.maDev}%</span> : "—"}
+                    </td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11, color:C.textMid }}>{h.qty}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontWeight:700 }}>{h.price!=null?h.price.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}):"—"}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11, color:C.textDim }}>{h.ma50||"—"}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11, color:C.textDim }}>{h.ma200||"—"}</td>
+                    <td style={tdS}><span style={{ color:trendColor(h.trend), fontWeight:600, fontSize:11 }}>{h.trend==="Bullish"?"↗ ":h.trend==="Bearish"?"↘ ":"— "}{h.trend}</span></td>
+                    <td style={{ ...tdS, fontSize:10, color:C.textMid }}>{h.phase}</td>
+                    <td style={tdS}><span style={{ background:actionBg(h.action), color:actionColor(h.action), padding:"2px 8px", borderRadius:4, fontSize:10, fontWeight:700 }}>{h.action}</span></td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11, color:h.rsi>70?C.red:h.rsi<30?C.green:C.text }}>{h.rsi||"—"}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11, color:h.tq>50?C.green:h.tq<25?C.red:C.orange }}>{h.tq!=null?h.tq.toFixed(1):"—"}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11, color:h.zScore>2?C.red:h.zScore<-2?C.red:h.zScore>0?C.green:C.orange }}>{h.zScore!=null?(h.zScore>0?"+":"")+h.zScore.toFixed(2):"—"}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11, color:h.r6m>0?C.green:C.red }}>{h.r6m!=null?(h.r6m>0?"+":"")+h.r6m+"%":"—"}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11, fontWeight:700, color:C.text }}>{h.weight}%</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <Card>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+          <div style={{ fontSize:14, fontWeight:700, display:"flex", alignItems:"center", gap:8 }}>
+            <span>📊</span> Portfolio Balance
+            <Badge label={regime.toUpperCase()} color={SC[regime]||C.gold} />
+            {closeCount>0 && <Badge label={closeCount+" Issues"} color={C.red} />}
+          </div>
+        </div>
+
+        <div style={{ marginBottom:16 }}>
+          <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:8 }}>SECTOR WEIGHTS</div>
+          <div style={{ display:"grid", gridTemplateColumns:"130px 1fr 50px 50px", gap:"6px 8px", alignItems:"center" }}>
+            <div style={{ fontSize:9, color:C.textDim }}>Sector</div><div /><div style={{ fontSize:9, color:C.textDim, textAlign:"right" }}>Current</div><div style={{ fontSize:9, color:C.textDim, textAlign:"right" }}>Target</div>
+            {Object.entries(sectorWeights).sort(function(a,b){return b[1]-a[1]}).map(function(entry) {
+              var s=entry[0],wt=entry[1];
+              var targets={Technology:30,Energy:21,Healthcare:13,Materials:8,Commodities:5};
+              var target=targets[s]||5;
+              var diff=wt-target;
+              return [
+                <div key={s+"l"} style={{ fontSize:12, color:C.text }}>{s}</div>,
+                <div key={s+"b"} style={{ height:6, background:C.border, borderRadius:3 }}><div style={{ width:Math.min(100,wt*2)+"%", height:"100%", background:Math.abs(diff)>5?C.red:C.green, borderRadius:3, opacity:0.7 }} /></div>,
+                <span key={s+"c"} style={{ textAlign:"right", fontFamily:font, fontSize:12, fontWeight:700 }}>{wt}%</span>,
+                <span key={s+"t"} style={{ textAlign:"right", fontFamily:font, fontSize:11, color:C.textDim }}>{target}%</span>,
+              ];
+            })}
+          </div>
+        </div>
+
+        {(closeCount>0||scaleCount>0) && (
+          <div style={{ borderTop:"1px solid "+C.border, paddingTop:12 }}>
+            <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:8 }}>ACTIONS REQUIRED</div>
+            {holdings.filter(function(h){return h.action==="Close"}).map(function(h) {
+              return <div key={h.ticker} style={{ background:C.red+"12", border:"1px solid "+C.red+"30", borderRadius:6, padding:"8px 12px", marginBottom:6 }}>
+                <span style={{ color:C.red, fontWeight:700, fontSize:12 }}>✕ {h.ticker}</span>
+                <span style={{ color:C.textMid, fontSize:11, marginLeft:8 }}>{h.phase} — {h.trend} trend. Consider closing.</span>
+              </div>;
+            })}
+            {holdings.filter(function(h){return h.action==="Scale Out"}).map(function(h) {
+              return <div key={h.ticker} style={{ background:C.orange+"12", border:"1px solid "+C.orange+"30", borderRadius:6, padding:"8px 12px", marginBottom:6 }}>
+                <span style={{ color:C.orange, fontWeight:700, fontSize:12 }}>△ {h.ticker}</span>
+                <span style={{ color:C.textMid, fontSize:11, marginLeft:8 }}>Z-Score {h.zScore>0?"+":""}{h.zScore} — extended. RSI {h.rsi}. Consider trimming.</span>
+              </div>;
+            })}
+          </div>
+        )}
+      </Card>
+
+      {error && <div style={{ background:"#2b0d10", border:"1px solid "+C.red+"44", borderRadius:8, padding:"7px 13px", fontSize:12, color:C.red }}>⚠ {error}</div>}
     </div>
   );
 }
