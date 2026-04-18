@@ -8,6 +8,7 @@ var FG_URL = "https://portfolio-proxy-ja56.vercel.app/api/feargreed";
 var OHLC_URL = "https://portfolio-proxy-ja56.vercel.app/api/ohlc";
 var LIQ_URL = "https://portfolio-proxy-ja56.vercel.app/api/liquidity-history";
 var SECTORS_LIVE_URL = "https://portfolio-proxy-ja56.vercel.app/api/sectors-live";
+var CLAUDE_URL = "https://portfolio-proxy-ja56.vercel.app/api/claude";
 
 /* ──────────────────────────────────────────────────────────────────── */
 
@@ -414,7 +415,7 @@ export default function App() {
         try {
           setRefreshStatus("Fetching Nasdaq + Bitcoin...");
           var dSupp = new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
-          var suppRes = await fetch("https://api.anthropic.com/v1/messages", {
+          var suppRes = await fetch(CLAUDE_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -461,7 +462,7 @@ export default function App() {
       // Attempt 2: Claude API with web_search (works in sandbox)
       if (!parsed) {
         var d = new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
-        var response = await fetch("https://api.anthropic.com/v1/messages", {
+        var response = await fetch(CLAUDE_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -869,7 +870,7 @@ try {
 try {
   setRefreshStatus("Fetching breadth, options & credit data...");
   var mktDate = new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
-  var mktRes = await fetch("https://api.anthropic.com/v1/messages", {
+  var mktRes = await fetch(CLAUDE_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -943,7 +944,7 @@ try {
 try {
   setRefreshStatus("Fetching ISM PMI...");
   var ismDate = new Date().toLocaleDateString("en-US",{month:"long",year:"numeric"});
-  var ismRes = await fetch("https://api.anthropic.com/v1/messages", {
+  var ismRes = await fetch(CLAUDE_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1026,7 +1027,7 @@ try {
     "- Bull pairs: " + (snap.sectorRotation||[]).filter(function(p){return p.bull===true}).map(function(p){return p.name}).join(", ") + "\n" +
     "- Bear pairs: " + (snap.sectorRotation||[]).filter(function(p){return p.bull===false}).map(function(p){return p.name}).join(", ") + "\n";
 
-  var aiRes = await fetch("https://api.anthropic.com/v1/messages", {
+  var aiRes = await fetch(CLAUDE_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
