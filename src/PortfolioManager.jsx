@@ -988,28 +988,43 @@ try {
 // Generate AI analysis with bull/bear/neutral viewpoints
 try {
   setRefreshStatus("Generating AI analysis...");
+  // Build snapshot from CURRENT state (after all data fetches above)
+  await new Promise(function(r) { setTimeout(r, 200); }); // Let React flush state updates
   var snapshot = null;
-  setData(function(prev) { snapshot = prev; return prev; });
-  // Wait one tick for setData to resolve
-  await new Promise(function(r) { setTimeout(r, 50); });
+  setData(function(prev) { snapshot = { ...prev }; return prev; });
+  await new Promise(function(r) { setTimeout(r, 100); });
   var snap = snapshot || SEED;
+  
+  var todayStr = new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
   var contextStr =
-    "Current market snapshot:\n" +
-    "- S&P 500: " + (snap.sp500?.price||"?") + " (" + (snap.sp500?.change||"?") + "%)\n" +
-    "- Nasdaq: " + (snap.nasdaq?.price||"?") + " (" + (snap.nasdaq?.change||"?") + "%)\n" +
-    "- Bitcoin: " + (snap.bitcoin?.price||"?") + " (" + (snap.bitcoin?.change||"?") + "%)\n" +
+    "Today is " + todayStr + ". Generate a macro analysis based on this LIVE market data:\n\n" +
+    "PRICES & INDICES:\n" +
+    "- S&P 500: " + (snap.sp500?.price||"?") + " (" + (snap.sp500?.change||"?") + "% daily)\n" +
     "- VIX: " + (snap.vix?.price||"?") + " (" + (snap.vix?.level||"?") + ")\n" +
-    "- DXY: " + (snap.dxy?.price||"?") + " (" + (snap.dxy?.strength||"?") + ")\n" +
+    "- DXY (Dollar): " + (snap.dxy?.price||"?") + " (" + (snap.dxy?.strength||"?") + ")\n\n" +
+    "RATES & YIELDS:\n" +
     "- 10Y-2Y Yield Spread: " + (snap.yield?.spread||"?") + " (" + (snap.yield?.status||"?") + ")\n" +
-    "- Fed Funds Rate: " + (snap.rates?.current||"?") + "% (" + (snap.rates?.status||"?") + ")\n" +
+    "- Fed Funds Rate: " + (snap.rates?.current||"?") + "% (" + (snap.rates?.status||"?") + ")\n\n" +
+    "INFLATION:\n" +
     "- CPI YoY: " + (snap.inflation?.cpi||"?") + "% (trend: " + (snap.inflation?.trend||"?") + ")\n" +
-    "- Fear & Greed: " + (snap.fg?.score||"?") + " (" + (snap.fg?.label||"?") + ")\n" +
-    "- Crypto F&G: " + (snap.fg?.cryptoScore||"?") + "\n" +
+    "- Truflation: " + (snap.inflation?.truflation||"?") + "%\n\n" +
+    "SENTIMENT:\n" +
+    "- CNN Fear & Greed: " + (snap.fg?.score != null ? snap.fg.score : "?") + " (" + (snap.fg?.label||"?") + ")\n" +
+    "- Crypto F&G: " + (snap.fg?.cryptoScore != null ? snap.fg.cryptoScore : "?") + " (" + (snap.fg?.cryptoLabel||"?") + ")\n\n" +
+    "BREADTH & CREDIT:\n" +
     "- Market Breadth (% above 50DMA): " + (snap.breadth?.pct50||"?") + "%\n" +
-    "- HY Credit Spreads: " + (snap.credit?.hyDAS||"?") + "bp\n" +
-    "- Global Liquidity: " + (snap.macroIndic?.globalM2||"?") + " (" + (snap.macroIndic?.globalM2Trend||"?") + ")\n" +
-    "- Industrial Production: " + (snap.macroIndic?.ismPMI||"?") + " (" + (snap.macroIndic?.ismStatus||"?") + ")\n" +
-    "- MIT Macro Season: " + (snap.macroRegime?.season||"?") + " / " + (snap.macroRegime?.phase||"?") + "\n";
+    "- HY Credit Spread: " + (snap.credit?.hyDAS||"?") + "bp\n" +
+    "- MOVE Index: " + (snap.credit?.moveIndex||"?") + "\n" +
+    "- Sahm Rule: " + (snap.credit?.sahmRule||"?") + "\n" +
+    "- NFCI: " + (snap.fci?.nfci||"?") + " (" + (snap.fci?.status||"?") + ")\n\n" +
+    "MACRO:\n" +
+    "- Global M2: " + (snap.macroIndic?.globalM2||"?") + " (" + (snap.macroIndic?.globalM2Trend||"?") + ")\n" +
+    "- ISM Manufacturing PMI: " + (snap.macroIndic?.ismPMI||"?") + " (" + (snap.macroIndic?.ismStatus||"?") + ")\n" +
+    "- MIT Macro Season: " + (snap.macroRegime?.season||"?") + " / " + (snap.macroRegime?.phase||"?") + "\n\n" +
+    "SECTOR ROTATION:\n" +
+    "- Top sectors (6M): " + (snap.topSectors||[]).slice(0,3).map(function(s){return s.name + " (" + s.r6m + "%)"}).join(", ") + "\n" +
+    "- Bull pairs: " + (snap.sectorRotation||[]).filter(function(p){return p.bull===true}).map(function(p){return p.name}).join(", ") + "\n" +
+    "- Bear pairs: " + (snap.sectorRotation||[]).filter(function(p){return p.bull===false}).map(function(p){return p.name}).join(", ") + "\n";
 
   var aiRes = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -1019,28 +1034,36 @@ try {
       max_tokens: 1500,
       messages: [{ role: "user", content:
         contextStr +
-        "\nGenerate THREE distinct macro viewpoints. Each should be 2-3 concise paragraphs citing SPECIFIC numbers from the snapshot above. Return ONLY valid JSON (no markdown fences):\n" +
-        '{"bullish":"case for risk-on positioning, growth, equities","neutral":"balanced view weighing risks on both sides","bearish":"case for defensive positioning, caution, risk-off"}'
+        "\nYou are a professional macro strategist. Using ONLY the specific numbers above (cite them), generate THREE distinct investment viewpoints. Each should be 2-3 paragraphs. Be specific — reference actual values. Return ONLY valid JSON (no markdown fences, no other text):\n" +
+        '{"bullish":"the bull case for risk-on, equities, growth","neutral":"balanced view weighing both sides","bearish":"the bear case for caution, defensives, risk-off"}'
       }]
     })
   });
-  var aiJson = await aiRes.json();
-  var aiText = (aiJson.content || []).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("\n");
-  var aiClean = aiText.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
-  var views = null;
-  try { views = JSON.parse(aiClean); } catch(eAI) {
-    var dAI = 0, sAI = -1;
-    for (var k = 0; k < aiClean.length; k++) {
-      if (aiClean[k]==="{"){if(dAI===0)sAI=k;dAI++}
-      else if (aiClean[k]==="}"){dAI--;if(dAI===0&&sAI>=0){try{views=JSON.parse(aiClean.slice(sAI,k+1))}catch(eAI2){}sAI=-1}}
+  if (aiRes.status === 429) {
+    setRefreshStatus("AI rate limited — using cached analysis");
+  } else {
+    var aiJson = await aiRes.json();
+    var aiText = (aiJson.content || []).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("\n");
+    var aiClean = aiText.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
+    var views = null;
+    try { views = JSON.parse(aiClean); } catch(eAI) {
+      var dAI = 0, sAI = -1;
+      for (var k = 0; k < aiClean.length; k++) {
+        if (aiClean[k]==="{"){if(dAI===0)sAI=k;dAI++}
+        else if (aiClean[k]==="}"){dAI--;if(dAI===0&&sAI>=0){try{views=JSON.parse(aiClean.slice(sAI,k+1))}catch(eAI2){}sAI=-1}}
+      }
     }
-  }
-  if (views && (views.bullish || views.bearish || views.neutral)) {
-    setData(function(prev) { return { ...prev, aiViews: views }; });
-    setRefreshStatus("AI analysis ready!");
+    if (views && (views.bullish || views.bearish || views.neutral)) {
+      views._timestamp = new Date().toISOString();
+      setData(function(prev) { return { ...prev, aiViews: views }; });
+      setRefreshStatus("AI analysis ready!");
+    } else {
+      setRefreshStatus("AI returned unexpected format — using cached");
+    }
   }
 } catch(aiErr) {
   console.warn("AI analysis failed:", aiErr.message);
+  setRefreshStatus("AI analysis failed: " + aiErr.message);
 }
     } catch(e) {
       setErr("Refresh error: " + e.message);
@@ -1614,7 +1637,7 @@ function MacroStage({ d }) {
             <span style={{ fontSize:13 }}>🧠</span>
             <span style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase" }}>AI-Enhanced Macro Analysis</span>
           </div>
-          <Badge label="Live · Sonnet" color={C.purple} />
+          <Badge label={d.aiViews?._timestamp ? "Live · Sonnet" : "SEED"} color={d.aiViews?._timestamp ? C.purple : C.textDim} />
         </div>
 
         {/* Tab switcher */}
