@@ -2462,17 +2462,37 @@ function PortfolioStage() {
     if (!h) return;
     fetch(CLAUDE_URL, {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:400,messages:[{role:"user",content:
-        "Give a 2-sentence bull case and 2-sentence bear case for "+h.name+" ("+h.ticker+") as of April 2026. Current price: $"+h.price+", RSI: "+h.rsi+", 6M return: "+h.r6m+"%, Z-score: "+h.zScore+". Return ONLY JSON: {\"bull\":\"...\",\"bear\":\"...\",\"score\":X} where score is 1-10 conviction."}]})
-    }).then(function(r){return r.json()}).then(function(j){
+      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:600,messages:[{role:"user",content:
+        "You are a senior equity analyst. Give a concise bull case (2 sentences) and bear case (2 sentences) for "+h.name+" ("+h.ticker+") as of April 2026. Current price: $"+h.price+", RSI: "+h.rsi+", 6M return: "+h.r6m+"%, Z-score: "+h.zScore+", Trend: "+h.trend+", Phase: "+h.phase+". Respond with ONLY valid JSON, no markdown, no backticks, no other text: {\"bull\":\"your bull case here\",\"bear\":\"your bear case here\",\"score\":7}"}]})
+    }).then(function(r){
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }).then(function(j){
       var txt = (j.content||[]).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("");
+      console.log("AI response for " + ticker + ":", txt.slice(0, 200));
       var clean = txt.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
-      try { var parsed = JSON.parse(clean); setAiData(function(prev){var n={...prev};n[ticker]=parsed;return n}); } catch(e) {
-        var m = clean.match(/"bull"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
-        var mb = clean.match(/"bear"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
-        if(m||mb) setAiData(function(prev){var n={...prev};n[ticker]={bull:m?m[1]:"",bear:mb?mb[1]:"",score:5};return n});
+      var parsed = null;
+      try { parsed = JSON.parse(clean); } catch(e) {
+        // Try brace matching
+        var d2=0,s2=-1;
+        for(var k=0;k<clean.length;k++){if(clean[k]==="{"){if(d2===0)s2=k;d2++}else if(clean[k]==="}"){d2--;if(d2===0&&s2>=0){try{parsed=JSON.parse(clean.slice(s2,k+1))}catch(e3){}s2=-1}}}
       }
-    }).catch(function(){});
+      if (!parsed) {
+        // Regex fallback
+        var bm = clean.match(/"bull"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
+        var brm = clean.match(/"bear"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
+        if (bm || brm) parsed = { bull:bm?bm[1].replace(/\\n/g,"\n").replace(/\\"/g,'"'):"N/A", bear:brm?brm[1].replace(/\\n/g,"\n").replace(/\\"/g,'"'):"N/A", score:5 };
+      }
+      if (parsed) {
+        setAiData(function(prev){var n={...prev};n[ticker]=parsed;return n});
+      } else {
+        setAiData(function(prev){var n={...prev};n[ticker]={bull:"Analysis unavailable — response format error",bear:"Check console for details",score:0};return n});
+        console.warn("AI parse failed for "+ticker+". Raw:", clean.slice(0,300));
+      }
+    }).catch(function(err){
+      console.error("AI fetch error for "+ticker+":", err.message);
+      setAiData(function(prev){var n={...prev};n[ticker]={bull:"Failed to load: "+err.message,bear:"Check that the Claude proxy is deployed and ANTHROPIC_API_KEY is set",score:0};return n});
+    });
   }
 
   function doSort(col) {
