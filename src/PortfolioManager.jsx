@@ -2371,20 +2371,20 @@ function MacroStage({ d }) {
 /* ─── PORTFOLIO HOLDINGS (The Claude Portfolio — launched Apr 1, 2026) ─── */
 var PORTFOLIO_HOLDINGS = [
   { ticker:"AVGO", name:"Broadcom Inc.", sector:"Technology", weight:10, qty:24, sleeve:"Core", cap:"Large", assetClass:"Equity", themes:["AI Chips","Custom Silicon"], costBasis:208.33 },
-  { ticker:"VST",  name:"Vistra Corp.", sector:"Energy", weight:10, qty:56, sleeve:"Core", cap:"Mid", assetClass:"Equity", themes:["Nuclear","AI Power"], costBasis:89.29 },
+  { ticker:"VST",  name:"Vistra Corp.", sector:"Energy", weight:10, qty:56, sleeve:"Strategic", cap:"Mid", assetClass:"Equity", themes:["Nuclear","AI Power"], costBasis:89.29 },
   { ticker:"MSFT", name:"Microsoft Corp.", sector:"Technology", weight:8, qty:10, sleeve:"Core", cap:"Large", assetClass:"Equity", themes:["Cloud","AI Infrastructure"], costBasis:400.00 },
   { ticker:"LLY",  name:"Eli Lilly & Co.", sector:"Healthcare", weight:8, qty:5, sleeve:"Core", cap:"Large", assetClass:"Equity", themes:["GLP-1","Obesity"], costBasis:800.00 },
   { ticker:"AMZN", name:"Amazon.com Inc.", sector:"Technology", weight:7, qty:18, sleeve:"Core", cap:"Large", assetClass:"Equity", themes:["AWS","E-Commerce"], costBasis:194.44 },
   { ticker:"META", name:"Meta Platforms", sector:"Technology", weight:7, qty:6, sleeve:"Core", cap:"Large", assetClass:"Equity", themes:["Ads","Llama AI"], costBasis:583.33 },
-  { ticker:"GOOGL",name:"Alphabet Inc.", sector:"Technology", weight:6, qty:18, sleeve:"Satellite", cap:"Large", assetClass:"Equity", themes:["Search","Cloud"], costBasis:166.67 },
-  { ticker:"CEG",  name:"Constellation Energy", sector:"Energy", weight:6, qty:13, sleeve:"Satellite", cap:"Mid", assetClass:"Equity", themes:["Nuclear","Data Centers"], costBasis:230.77 },
-  { ticker:"GLD",  name:"SPDR Gold Trust", sector:"Commodities", weight:5, qty:10, sleeve:"Satellite", cap:"N/A", assetClass:"Gold", themes:["Gold","Safe Haven"], costBasis:250.00 },
-  { ticker:"XOM",  name:"Exxon Mobil Corp.", sector:"Energy", weight:5, qty:22, sleeve:"Satellite", cap:"Large", assetClass:"Equity", themes:["Oil","Dividends"], costBasis:113.64 },
+  { ticker:"GOOGL",name:"Alphabet Inc.", sector:"Technology", weight:6, qty:18, sleeve:"Core", cap:"Large", assetClass:"Equity", themes:["Search","Cloud"], costBasis:166.67 },
+  { ticker:"CEG",  name:"Constellation Energy", sector:"Energy", weight:6, qty:13, sleeve:"Strategic", cap:"Mid", assetClass:"Equity", themes:["Nuclear","Data Centers"], costBasis:230.77 },
+  { ticker:"GLD",  name:"SPDR Gold Trust", sector:"Commodities", weight:5, qty:10, sleeve:"Strategic", cap:"N/A", assetClass:"Gold", themes:["Gold","Safe Haven"], costBasis:250.00 },
+  { ticker:"XOM",  name:"Exxon Mobil Corp.", sector:"Energy", weight:5, qty:22, sleeve:"Strategic", cap:"Large", assetClass:"Equity", themes:["Oil","Dividends"], costBasis:113.64 },
   { ticker:"UNH",  name:"UnitedHealth Group", sector:"Healthcare", weight:5, qty:5, sleeve:"Core", cap:"Large", assetClass:"Equity", themes:["Insurance","Optum"], costBasis:500.00 },
-  { ticker:"NVDA", name:"Nvidia Corp.", sector:"Technology", weight:5, qty:22, sleeve:"Satellite", cap:"Large", assetClass:"Equity", themes:["AI GPUs","Data Center"], costBasis:113.64 },
-  { ticker:"AU",   name:"AngloGold Ashanti", sector:"Materials", weight:4, qty:69, sleeve:"Satellite", cap:"Mid", assetClass:"Equity", themes:["Gold Mining","EM"], costBasis:28.99 },
-  { ticker:"PLTR", name:"Palantir Technologies", sector:"Technology", weight:4, qty:18, sleeve:"Satellite", cap:"Mid", assetClass:"Equity", themes:["Defense AI","Gov Tech"], costBasis:111.11 },
-  { ticker:"FCX",  name:"Freeport-McMoRan", sector:"Materials", weight:4, qty:48, sleeve:"Satellite", cap:"Mid", assetClass:"Equity", themes:["Copper","EV Metals"], costBasis:41.67 },
+  { ticker:"NVDA", name:"Nvidia Corp.", sector:"Technology", weight:5, qty:22, sleeve:"Strategic", cap:"Large", assetClass:"Equity", themes:["AI GPUs","Data Center"], costBasis:113.64 },
+  { ticker:"AU",   name:"AngloGold Ashanti", sector:"Materials", weight:4, qty:69, sleeve:"Speculative", cap:"Mid", assetClass:"Equity", themes:["Gold Mining","EM"], costBasis:28.99 },
+  { ticker:"PLTR", name:"Palantir Technologies", sector:"Technology", weight:4, qty:18, sleeve:"Speculative", cap:"Mid", assetClass:"Equity", themes:["Defense AI","Gov Tech"], costBasis:111.11 },
+  { ticker:"FCX",  name:"Freeport-McMoRan", sector:"Materials", weight:4, qty:48, sleeve:"Speculative", cap:"Mid", assetClass:"Equity", themes:["Copper","EV Metals"], costBasis:41.67 },
 ];
 var PORTFOLIO_INCEPTION = "2026-04-01";
 var PORTFOLIO_CASH = 3000; // 6% cash reserve
@@ -2408,6 +2408,67 @@ function detectLPPLS(h) {
   return "Normal";
 }
 
+/* ─── TRADINGVIEW ADVANCED CHART ──────────────────────────────── */
+function TradingViewChart({ ticker }) {
+  var containerId = "tv-chart-" + ticker;
+
+  useEffect(function() {
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    // Clear previous widget
+    container.innerHTML = "";
+
+    var script = document.createElement("script");
+    script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+    script.type = "text/javascript";
+    script.async = true;
+    script.innerHTML = JSON.stringify({
+      autosize: true,
+      symbol: ticker,
+      interval: "D",
+      timezone: "America/New_York",
+      theme: "dark",
+      style: "1",
+      locale: "en",
+      backgroundColor: "#111220",
+      gridColor: "#1c1e3022",
+      hide_top_toolbar: false,
+      hide_legend: false,
+      allow_symbol_change: true,
+      save_image: false,
+      calendar: false,
+      hide_volume: false,
+      support_host: "https://www.tradingview.com",
+      studies: [
+        "RSI@tv-basicstudies",
+        "MASimple@tv-basicstudies|50",
+        "MASimple@tv-basicstudies|200"
+      ],
+      overrides: {
+        "mainSeriesProperties.candleStyle.upColor": "#00e676",
+        "mainSeriesProperties.candleStyle.downColor": "#ff4757",
+        "mainSeriesProperties.candleStyle.borderUpColor": "#00e676",
+        "mainSeriesProperties.candleStyle.borderDownColor": "#ff4757",
+        "mainSeriesProperties.candleStyle.wickUpColor": "#00e676",
+        "mainSeriesProperties.candleStyle.wickDownColor": "#ff4757",
+      }
+    });
+    container.appendChild(script);
+
+    return function() {
+      if (container) container.innerHTML = "";
+    };
+  }, [ticker]);
+
+  return (
+    <div id={containerId} style={{ height:500 }}>
+      <div className="tradingview-widget-container" style={{ height:"100%", width:"100%" }}>
+        <div className="tradingview-widget-container__widget" style={{ height:"calc(100% - 32px)", width:"100%" }} />
+      </div>
+    </div>
+  );
+}
+
 /* ─── PORTFOLIO STAGE ────────────────────────────────────────────── */
 function PortfolioStage() {
   var _ps = useState([]);
@@ -2424,6 +2485,9 @@ function PortfolioStage() {
   var aiHolding = _ai[0], setAiHolding = _ai[1];
   var _ad = useState({});
   var aiData = _ad[0], setAiData = _ad[1];
+  var _st = useState(null);
+  var selectedTicker = _st[0], setSelectedTicker = _st[1];
+  var chartRef = useState(null);
 
   var regime = "Summer";
 
@@ -2519,7 +2583,7 @@ function PortfolioStage() {
   var sectorWeights = {};
   var assetClassWeights = {};
   var capWeights = { Large:0, Mid:0, Small:0 };
-  var sleeveWeights = { Core:0, Satellite:0 };
+  var sleeveWeights = { Core:0, Strategic:0, Speculative:0 };
   holdings.forEach(function(h) {
     sectorWeights[h.sector] = (sectorWeights[h.sector]||0) + h.weight;
     assetClassWeights[h.assetClass] = (assetClassWeights[h.assetClass]||0) + h.weight;
@@ -2586,7 +2650,7 @@ function PortfolioStage() {
       <Card style={{ padding:"10px 12px" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
           <div style={{ fontSize:13, fontWeight:700 }}>⚡ Holdings Analysis</div>
-          <div style={{ fontSize:10, color:C.textMid }}>{holdings.length} positions · Click AI column for per-stock analysis</div>
+          <div style={{ fontSize:10, color:C.textMid }}>{holdings.length} positions · Click row for chart · AI column for analysis</div>
         </div>
         <div style={{ overflowX:"auto", maxHeight:520, overflowY:"auto" }}>
           <table style={{ width:"100%", borderCollapse:"collapse", minWidth:1500 }}>
@@ -2606,7 +2670,7 @@ function PortfolioStage() {
                 var patColor = h.pattern==="Inv H&S"||h.pattern==="Dbl Bot"||h.pattern==="Cup&Hdl"?C.green:h.pattern==="Dbl Top"?C.red:C.textDim;
                 var lpColor = h.lppls==="⚠ Bubble"?C.red:h.lppls==="Elevated"?C.orange:h.lppls==="Capitulation"?C.cyan:C.textDim;
                 return (
-                  <tr key={h.ticker} style={{ background:i%2===0?"transparent":C.cardAlt+"33" }}>
+                  <tr key={h.ticker} onClick={function(){setSelectedTicker(selectedTicker===h.ticker?null:h.ticker)}} style={{ background:selectedTicker===h.ticker?C.blue+"18":i%2===0?"transparent":C.cardAlt+"33", cursor:"pointer", transition:"background 0.15s" }}>
                     <td style={{ ...tdS, fontWeight:700, color:C.cyan, fontFamily:font, fontSize:11 }}>{h.ticker}</td>
                     <td style={{ ...tdS, color:C.textMid, fontSize:10, maxWidth:120, overflow:"hidden", textOverflow:"ellipsis" }}>{h.name}</td>
                     <td style={{ ...tdS, fontSize:9, color:C.textDim }}>{h.sector}</td>
@@ -2642,6 +2706,22 @@ function PortfolioStage() {
           </table>
         </div>
       </Card>
+
+      {/* TRADINGVIEW CHART */}
+      {selectedTicker && (
+        <Card style={{ padding:0, overflow:"hidden" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px 0" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:13 }}>📈</span>
+              <span style={{ fontSize:13, fontWeight:700, color:C.cyan, fontFamily:font }}>{selectedTicker}</span>
+              <span style={{ fontSize:11, color:C.textMid }}>{(holdings.find(function(x){return x.ticker===selectedTicker})||{}).name}</span>
+              <Badge label="TradingView" color={C.blue} />
+            </div>
+            <button onClick={function(){setSelectedTicker(null)}} style={{ background:"transparent", border:"1px solid "+C.border, borderRadius:4, color:C.textDim, padding:"2px 8px", cursor:"pointer", fontSize:10 }}>✕ Close</button>
+          </div>
+          <TradingViewChart ticker={selectedTicker} />
+        </Card>
+      )}
 
       {/* AI ANALYSIS TOOLTIP */}
       {aiHolding && (
@@ -2680,14 +2760,33 @@ function PortfolioStage() {
         {/* Sleeve Allocation */}
         <div style={{ marginBottom:16 }}>
           <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:8 }}>SLEEVE ALLOCATION</div>
-          <div style={{ display:"flex", gap:8, marginBottom:6 }}>
-            <div style={{ flex:sleeveWeights.Core, height:8, background:C.blue, borderRadius:"4px 0 0 4px" }} />
-            <div style={{ flex:sleeveWeights.Satellite, height:8, background:C.purple, borderRadius:"0 4px 4px 0" }} />
+          <div style={{ display:"flex", gap:2, marginBottom:8 }}>
+            <div style={{ flex:sleeveWeights.Core, height:10, background:C.blue, borderRadius:"4px 0 0 4px" }} />
+            <div style={{ flex:sleeveWeights.Strategic||1, height:10, background:C.orange }} />
+            <div style={{ flex:sleeveWeights.Speculative||1, height:10, background:C.red, borderRadius:"0 4px 4px 0" }} />
           </div>
-          <div style={{ display:"flex", justifyContent:"space-between", fontSize:10 }}>
-            <span style={{ color:C.blue }}>● Core: {sleeveWeights.Core}%</span>
-            <span style={{ color:C.purple }}>● Satellite: {sleeveWeights.Satellite}%</span>
-            <span style={{ color:C.textDim }}>Target: 60/40</span>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
+            <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px", borderTop:"2px solid "+C.blue }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:4 }}>
+                <span style={{ fontSize:11, fontWeight:700, color:C.blue }}>Core</span>
+                <span style={{ fontFamily:font, fontSize:14, fontWeight:700 }}>{sleeveWeights.Core}%</span>
+              </div>
+              <div style={{ fontSize:9, color:C.textDim, lineHeight:1.4 }}>Long-duration holdings for secular super-cycle expansion. Minimal trading through cycles.</div>
+            </div>
+            <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px", borderTop:"2px solid "+C.orange }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:4 }}>
+                <span style={{ fontSize:11, fontWeight:700, color:C.orange }}>Strategic</span>
+                <span style={{ fontFamily:font, fontSize:14, fontWeight:700 }}>{sleeveWeights.Strategic}%</span>
+              </div>
+              <div style={{ fontSize:9, color:C.textDim, lineHeight:1.4 }}>Cycle-aware positions with thematic alignment. Actively managed sizing through macro cycles.</div>
+            </div>
+            <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px", borderTop:"2px solid "+C.red }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:4 }}>
+                <span style={{ fontSize:11, fontWeight:700, color:C.red }}>Speculative</span>
+                <span style={{ fontFamily:font, fontSize:14, fontWeight:700 }}>{sleeveWeights.Speculative}%</span>
+              </div>
+              <div style={{ fontSize:9, color:C.textDim, lineHeight:1.4 }}>High beta, liquidity-sensitive allocations. Targeted for participation in the liquidity cycle.</div>
+            </div>
           </div>
         </div>
 
