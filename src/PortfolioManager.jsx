@@ -869,6 +869,7 @@ try {
 
 // Fetch live breadth + options + credit data via Claude API web search
 try {
+  await new Promise(function(r){setTimeout(r, 2000)});
   setRefreshStatus("Fetching breadth, options & credit data...");
   var mktDate = new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
   var mktRes = await fetch(CLAUDE_URL, {
@@ -943,6 +944,7 @@ try {
 
 // Fetch latest ISM Manufacturing PMI via Claude API (ISM data is licensed, not on FRED)
 try {
+  await new Promise(function(r){setTimeout(r, 4000)});
   setRefreshStatus("Fetching ISM PMI...");
   var ismDate = new Date().toLocaleDateString("en-US",{month:"long",year:"numeric"});
   var ismRes = await fetch(CLAUDE_URL, {
@@ -989,6 +991,7 @@ try {
 
 // Generate AI analysis with bull/bear/neutral viewpoints
 try {
+  await new Promise(function(r){setTimeout(r, 6000)});
   setRefreshStatus("Generating AI analysis...");
   // Build snapshot from CURRENT state (after all data fetches above)
   await new Promise(function(r) { setTimeout(r, 200); }); // Let React flush state updates
@@ -2556,7 +2559,7 @@ function PortfolioStage() {
       }
     }).catch(function(err){
       console.error("AI fetch error for "+ticker+":", err.message);
-      setAiData(function(prev){var n={...prev};n[ticker]={bull:"Failed to load: "+err.message,bear:"Check that the Claude proxy is deployed and ANTHROPIC_API_KEY is set",score:0};return n});
+      setAiData(function(prev){var n={...prev};n[ticker]={bull:"Failed to load: "+err.message,bear:"Rate limited — wait 60s and try again",score:0};return n});
     });
   }
 
