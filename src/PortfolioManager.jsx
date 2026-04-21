@@ -420,7 +420,7 @@ export default function App() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              model: "claude-sonnet-4-20250514",
+              model: "claude-sonnet-4-6",
               max_tokens: 800,
               tools: [{ type: "web_search_20250305", name: "web_search" }],
               messages: [{ role: "user", content: "Today is " + dSupp + ". Search the web for the CURRENT live price of the Nasdaq Composite Index (^IXIC) and Bitcoin (BTC-USD). I need today's price and today's percent change. Respond with ONLY a JSON object and no other text: {\"nasdaq\":\"PRICE_AS_STRING\",\"nasdaqChg\":\"SIGNED_PCT_CHANGE\",\"bitcoin\":\"PRICE_AS_STRING\",\"bitcoinChg\":\"SIGNED_PCT_CHANGE\"}. Example format: {\"nasdaq\":\"18450.25\",\"nasdaqChg\":\"+0.85\",\"bitcoin\":\"87300.50\",\"bitcoinChg\":\"-1.20\"}" }]
@@ -467,7 +467,7 @@ export default function App() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: "claude-sonnet-4-20250514",
+            model: "claude-sonnet-4-6",
             max_tokens: 1000,
             tools: [{ type: "web_search_20250305", name: "web_search" }],
             messages: [{ role: "user", content: "Today is " + d + ". Search for current S&P 500, Nasdaq Composite, Bitcoin (BTC-USD), VIX, DXY, 10Y yield prices. Return ONLY JSON, no other text: {\"sp500\":\"6xxx.xx\",\"sp500Chg\":\"-x.xx\",\"nasdaq\":\"2xxxx.xx\",\"nasdaqChg\":\"-x.xx\",\"bitcoin\":\"xxxxx.xx\",\"bitcoinChg\":\"-x.xx\",\"vix\":\"xx.xx\",\"vixChg\":\"+x.xx\",\"dxy\":\"xxx.xx\",\"t10y\":\"x.xx\"}" }]
@@ -875,7 +875,7 @@ try {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 600,
       tools: [{ type: "web_search_20250305", name: "web_search" }],
       messages: [{ role: "user", content: "Today is " + mktDate + ". Search for latest S&P 500 market breadth, CBOE put/call ratio, and MOVE index. Return ONLY JSON with no other text: {\"pct50\":\"xx.x\",\"pct200\":\"xx.x\",\"pcr\":\"x.xx\",\"move\":\"xxx.x\"} where pct50 is percent of S&P 500 stocks above 50-day moving average, pct200 is percent above 200-day MA, pcr is CBOE total put/call ratio, move is ICE BofA MOVE index value." }]
@@ -949,7 +949,7 @@ try {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 400,
       tools: [{ type: "web_search_20250305", name: "web_search" }],
       messages: [{ role: "user", content: "What is the most recent United States ISM Manufacturing PMI reading? Search for the latest monthly release as of " + ismDate + ". Return ONLY this JSON, no other text: {\"pmi\":\"NUMBER_AS_STRING\",\"month\":\"MONTH_YEAR\",\"prev\":\"PREVIOUS_MONTH_PMI\"}. Example: {\"pmi\":\"52.7\",\"month\":\"March 2026\",\"prev\":\"52.4\"}" }]
@@ -1032,7 +1032,7 @@ try {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 3000,
       messages: [{ role: "user", content:
         contextStr +
@@ -2527,7 +2527,7 @@ function PortfolioStage() {
     if (!h) return;
     fetch(CLAUDE_URL, {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:600,messages:[{role:"user",content:
+      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:600,messages:[{role:"user",content:
         "You are a senior equity analyst. Give a concise bull case (2 sentences) and bear case (2 sentences) for "+h.name+" ("+h.ticker+") as of April 2026. Current price: $"+h.price+", RSI: "+h.rsi+", 6M return: "+h.r6m+"%, Z-score: "+h.zScore+", Trend: "+h.trend+", Phase: "+h.phase+". Respond with ONLY valid JSON, no markdown, no backticks, no other text: {\"bull\":\"your bull case here\",\"bear\":\"your bear case here\",\"score\":7}"}]})
     }).then(function(r){
       if (!r.ok) throw new Error("HTTP " + r.status);
@@ -2870,5 +2870,3 @@ function PortfolioStage() {
     </div>
   );
 }
-
-
