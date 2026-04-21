@@ -2368,24 +2368,45 @@ function MacroStage({ d }) {
   );
 }
 
-/* ─── PORTFOLIO HOLDINGS (The Claude Portfolio) ────────────────── */
+/* ─── PORTFOLIO HOLDINGS (The Claude Portfolio — launched Apr 1, 2026) ─── */
 var PORTFOLIO_HOLDINGS = [
-  { ticker:"AVGO", name:"Broadcom Inc.", sector:"Technology", weight:10, qty:24, themes:["AI Chips","Custom Silicon"] },
-  { ticker:"VST",  name:"Vistra Corp.", sector:"Energy", weight:10, qty:56, themes:["Nuclear","AI Power"] },
-  { ticker:"MSFT", name:"Microsoft Corp.", sector:"Technology", weight:8, qty:10, themes:["Cloud","AI Infrastructure"] },
-  { ticker:"LLY",  name:"Eli Lilly & Co.", sector:"Healthcare", weight:8, qty:5, themes:["GLP-1","Obesity"] },
-  { ticker:"AMZN", name:"Amazon.com Inc.", sector:"Technology", weight:7, qty:18, themes:["AWS","E-Commerce"] },
-  { ticker:"META", name:"Meta Platforms", sector:"Technology", weight:7, qty:6, themes:["Ads","Llama AI"] },
-  { ticker:"GOOGL",name:"Alphabet Inc.", sector:"Technology", weight:6, qty:18, themes:["Search","Cloud"] },
-  { ticker:"CEG",  name:"Constellation Energy", sector:"Energy", weight:6, qty:13, themes:["Nuclear","Data Centers"] },
-  { ticker:"GLD",  name:"SPDR Gold Trust", sector:"Commodities", weight:5, qty:10, themes:["Gold","Safe Haven"] },
-  { ticker:"XOM",  name:"Exxon Mobil Corp.", sector:"Energy", weight:5, qty:22, themes:["Oil","Dividends"] },
-  { ticker:"UNH",  name:"UnitedHealth Group", sector:"Healthcare", weight:5, qty:5, themes:["Insurance","Optum"] },
-  { ticker:"NVDA", name:"Nvidia Corp.", sector:"Technology", weight:5, qty:22, themes:["AI GPUs","Data Center"] },
-  { ticker:"AU",   name:"AngloGold Ashanti", sector:"Materials", weight:4, qty:69, themes:["Gold Mining","EM"] },
-  { ticker:"PLTR", name:"Palantir Technologies", sector:"Technology", weight:4, qty:18, themes:["Defense AI","Gov Tech"] },
-  { ticker:"FCX",  name:"Freeport-McMoRan", sector:"Materials", weight:4, qty:48, themes:["Copper","EV Metals"] },
+  { ticker:"AVGO", name:"Broadcom Inc.", sector:"Technology", weight:10, qty:24, sleeve:"Core", cap:"Large", assetClass:"Equity", themes:["AI Chips","Custom Silicon"], costBasis:208.33 },
+  { ticker:"VST",  name:"Vistra Corp.", sector:"Energy", weight:10, qty:56, sleeve:"Core", cap:"Mid", assetClass:"Equity", themes:["Nuclear","AI Power"], costBasis:89.29 },
+  { ticker:"MSFT", name:"Microsoft Corp.", sector:"Technology", weight:8, qty:10, sleeve:"Core", cap:"Large", assetClass:"Equity", themes:["Cloud","AI Infrastructure"], costBasis:400.00 },
+  { ticker:"LLY",  name:"Eli Lilly & Co.", sector:"Healthcare", weight:8, qty:5, sleeve:"Core", cap:"Large", assetClass:"Equity", themes:["GLP-1","Obesity"], costBasis:800.00 },
+  { ticker:"AMZN", name:"Amazon.com Inc.", sector:"Technology", weight:7, qty:18, sleeve:"Core", cap:"Large", assetClass:"Equity", themes:["AWS","E-Commerce"], costBasis:194.44 },
+  { ticker:"META", name:"Meta Platforms", sector:"Technology", weight:7, qty:6, sleeve:"Core", cap:"Large", assetClass:"Equity", themes:["Ads","Llama AI"], costBasis:583.33 },
+  { ticker:"GOOGL",name:"Alphabet Inc.", sector:"Technology", weight:6, qty:18, sleeve:"Satellite", cap:"Large", assetClass:"Equity", themes:["Search","Cloud"], costBasis:166.67 },
+  { ticker:"CEG",  name:"Constellation Energy", sector:"Energy", weight:6, qty:13, sleeve:"Satellite", cap:"Mid", assetClass:"Equity", themes:["Nuclear","Data Centers"], costBasis:230.77 },
+  { ticker:"GLD",  name:"SPDR Gold Trust", sector:"Commodities", weight:5, qty:10, sleeve:"Satellite", cap:"N/A", assetClass:"Gold", themes:["Gold","Safe Haven"], costBasis:250.00 },
+  { ticker:"XOM",  name:"Exxon Mobil Corp.", sector:"Energy", weight:5, qty:22, sleeve:"Satellite", cap:"Large", assetClass:"Equity", themes:["Oil","Dividends"], costBasis:113.64 },
+  { ticker:"UNH",  name:"UnitedHealth Group", sector:"Healthcare", weight:5, qty:5, sleeve:"Core", cap:"Large", assetClass:"Equity", themes:["Insurance","Optum"], costBasis:500.00 },
+  { ticker:"NVDA", name:"Nvidia Corp.", sector:"Technology", weight:5, qty:22, sleeve:"Satellite", cap:"Large", assetClass:"Equity", themes:["AI GPUs","Data Center"], costBasis:113.64 },
+  { ticker:"AU",   name:"AngloGold Ashanti", sector:"Materials", weight:4, qty:69, sleeve:"Satellite", cap:"Mid", assetClass:"Equity", themes:["Gold Mining","EM"], costBasis:28.99 },
+  { ticker:"PLTR", name:"Palantir Technologies", sector:"Technology", weight:4, qty:18, sleeve:"Satellite", cap:"Mid", assetClass:"Equity", themes:["Defense AI","Gov Tech"], costBasis:111.11 },
+  { ticker:"FCX",  name:"Freeport-McMoRan", sector:"Materials", weight:4, qty:48, sleeve:"Satellite", cap:"Mid", assetClass:"Equity", themes:["Copper","EV Metals"], costBasis:41.67 },
 ];
+var PORTFOLIO_INCEPTION = "2026-04-01";
+var PORTFOLIO_CASH = 3000; // 6% cash reserve
+
+/* ─── PATTERN & LPPLS DETECTION (simplified) ─── */
+function detectPattern(h) {
+  if (!h.ma50 || !h.ma200 || !h.price) return "—";
+  var abv50 = h.price > h.ma50, abv200 = h.price > h.ma200;
+  var rising50 = h.maDev > 2;
+  if (abv50 && abv200 && h.zScore > 1.5 && h.rsi > 65) return "Dbl Top";
+  if (!abv50 && !abv200 && h.zScore < -1.5 && h.rsi < 35) return "Dbl Bot";
+  if (!abv50 && abv200 && h.rsi > 40 && h.rsi < 55) return "Inv H&S";
+  if (abv50 && !abv200 && h.maDev > 0) return "Cup&Hdl";
+  return "—";
+}
+function detectLPPLS(h) {
+  if (!h.zScore || !h.tq) return "—";
+  if (h.zScore > 2.5 && h.tq > 60) return "⚠ Bubble";
+  if (h.zScore > 2.0 && h.tq > 50) return "Elevated";
+  if (h.zScore < -2.0) return "Capitulation";
+  return "Normal";
+}
 
 /* ─── PORTFOLIO STAGE ────────────────────────────────────────────── */
 function PortfolioStage() {
@@ -2399,6 +2420,10 @@ function PortfolioStage() {
   var sortCol = _sc[0], setSortCol = _sc[1];
   var _sd = useState(-1);
   var sortDir = _sd[0], setSortDir = _sd[1];
+  var _ai = useState(null);
+  var aiHolding = _ai[0], setAiHolding = _ai[1];
+  var _ad = useState({});
+  var aiData = _ad[0], setAiData = _ad[1];
 
   var regime = "Summer";
 
@@ -2411,17 +2436,44 @@ function PortfolioStage() {
         var json = await res.json();
         var merged = PORTFOLIO_HOLDINGS.map(function(h) {
           var d = json.holdings && json.holdings[h.ticker];
-          if (!d || d.error) return { ...h, price:null, ma50:null, ma200:null, rsi:null, tq:null, zScore:null, r6m:null, maDev:null, trend:"—", phase:"—", action:"—" };
-          return { ...h, ...d };
+          if (!d || d.error) return { ...h, price:null, ma50:null, ma200:null, rsi:null, tq:null, zScore:null, r6m:null, maDev:null, trend:"—", phase:"—", action:"—", pattern:"—", lppls:"—", value:h.weight/100*50000 };
+          var merged = { ...h, ...d };
+          merged.pattern = detectPattern(merged);
+          merged.lppls = detectLPPLS(merged);
+          merged.value = d.price ? d.price * h.qty : h.weight/100*50000;
+          merged.pnl = d.price ? (d.price - h.costBasis) * h.qty : 0;
+          merged.pnlPct = d.price && h.costBasis ? ((d.price / h.costBasis - 1) * 100) : 0;
+          return merged;
         });
         setHoldings(merged);
       } catch(e) {
         setError(e.message);
-        setHoldings(PORTFOLIO_HOLDINGS.map(function(h){return { ...h, price:null, trend:"—", phase:"—", action:"—" }}));
+        setHoldings(PORTFOLIO_HOLDINGS.map(function(h){return { ...h, price:null, trend:"—", phase:"—", action:"—", pattern:"—", lppls:"—", value:h.weight/100*50000, pnl:0, pnlPct:0 }}));
       }
       setLoading(false);
     })();
   }, []);
+
+  // Fetch AI analysis for a single holding
+  function fetchAI(ticker) {
+    if (aiData[ticker]) { setAiHolding(ticker); return; }
+    setAiHolding(ticker);
+    var h = holdings.find(function(x){return x.ticker===ticker});
+    if (!h) return;
+    fetch(CLAUDE_URL, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:400,messages:[{role:"user",content:
+        "Give a 2-sentence bull case and 2-sentence bear case for "+h.name+" ("+h.ticker+") as of April 2026. Current price: $"+h.price+", RSI: "+h.rsi+", 6M return: "+h.r6m+"%, Z-score: "+h.zScore+". Return ONLY JSON: {\"bull\":\"...\",\"bear\":\"...\",\"score\":X} where score is 1-10 conviction."}]})
+    }).then(function(r){return r.json()}).then(function(j){
+      var txt = (j.content||[]).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("");
+      var clean = txt.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
+      try { var parsed = JSON.parse(clean); setAiData(function(prev){var n={...prev};n[ticker]=parsed;return n}); } catch(e) {
+        var m = clean.match(/"bull"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
+        var mb = clean.match(/"bear"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
+        if(m||mb) setAiData(function(prev){var n={...prev};n[ticker]={bull:m?m[1]:"",bear:mb?mb[1]:"",score:5};return n});
+      }
+    }).catch(function(){});
+  }
 
   function doSort(col) {
     if (sortCol === col) setSortDir(function(d){return d * -1});
@@ -2430,92 +2482,139 @@ function PortfolioStage() {
 
   var sorted = holdings.slice().sort(function(a, b) {
     var va = a[sortCol], vb = b[sortCol];
-    if (va == null) return 1;
-    if (vb == null) return -1;
+    if (va == null) return 1; if (vb == null) return -1;
     if (typeof va === "string") return va.localeCompare(vb) * sortDir;
     return (va - vb) * sortDir;
   });
 
-  var bullCount = holdings.filter(function(h){return h.trend==="Bullish"}).length;
-  var bearCount = holdings.filter(function(h){return h.trend==="Bearish"}).length;
+  // Summary stats
+  var totalValue = holdings.reduce(function(s,h){return s+(h.value||0)},0) + PORTFOLIO_CASH;
+  var totalPnL = holdings.reduce(function(s,h){return s+(h.pnl||0)},0);
+  var totalPnLPct = totalValue > 0 ? ((totalValue - 50000) / 50000 * 100) : 0;
   var holdCount = holdings.filter(function(h){return h.action==="Hold"}).length;
   var scaleCount = holdings.filter(function(h){return h.action==="Scale Out"}).length;
   var closeCount = holdings.filter(function(h){return h.action==="Close"}).length;
 
+  // Portfolio balance calcs
   var sectorWeights = {};
-  holdings.forEach(function(h){ sectorWeights[h.sector] = (sectorWeights[h.sector]||0) + h.weight; });
+  var assetClassWeights = {};
+  var capWeights = { Large:0, Mid:0, Small:0 };
+  var sleeveWeights = { Core:0, Satellite:0 };
+  holdings.forEach(function(h) {
+    sectorWeights[h.sector] = (sectorWeights[h.sector]||0) + h.weight;
+    assetClassWeights[h.assetClass] = (assetClassWeights[h.assetClass]||0) + h.weight;
+    if (h.cap && capWeights[h.cap] != null) capWeights[h.cap] += h.weight;
+    sleeveWeights[h.sleeve] = (sleeveWeights[h.sleeve]||0) + h.weight;
+  });
 
   var trendColor = function(t) { return t==="Bullish"?C.green:t==="Bearish"?C.red:C.textMid; };
   var actionColor = function(a) { return a==="Hold"?C.green:a==="Scale Out"?C.orange:a==="Close"?C.red:C.textDim; };
   var actionBg = function(a) { return a==="Hold"?C.green+"22":a==="Scale Out"?C.orange+"22":a==="Close"?C.red+"22":C.cardAlt; };
 
-  var thS = { textAlign:"left", padding:"8px 6px", color:C.textDim, fontSize:9, fontWeight:700, letterSpacing:1.2, textTransform:"uppercase", cursor:"pointer", userSelect:"none", borderBottom:"1px solid "+C.border, whiteSpace:"nowrap" };
-  var tdS = { padding:"8px 6px", fontSize:12, borderBottom:"1px solid "+C.border, whiteSpace:"nowrap" };
-  var rightCols = ["price","ma50","ma200","rsi","tq","zScore","r6m","weight","maDev","qty"];
+  var thS = { textAlign:"left", padding:"7px 5px", color:C.textDim, fontSize:8, fontWeight:700, letterSpacing:1, textTransform:"uppercase", cursor:"pointer", userSelect:"none", borderBottom:"1px solid "+C.border, whiteSpace:"nowrap", position:"sticky", top:0, background:C.card, zIndex:1 };
+  var tdS = { padding:"6px 5px", fontSize:11, borderBottom:"1px solid "+C.border, whiteSpace:"nowrap" };
+  var rightCols = ["price","ma50","ma200","rsi","tq","zScore","r6m","weight","maDev","qty","pnlPct"];
 
   var cols = [
-    {key:"ticker",label:"TICKER",w:70},{key:"name",label:"ASSET",w:140},{key:"sector",label:"SECTOR",w:90},
-    {key:"maDev",label:"MA DEV",w:65},{key:"qty",label:"QTY",w:45},{key:"price",label:"PRICE",w:75},
-    {key:"ma50",label:"50 DMA",w:70},{key:"ma200",label:"200 DMA",w:70},{key:"trend",label:"TREND",w:70},
-    {key:"phase",label:"PHASE",w:95},{key:"action",label:"ACTION",w:70},{key:"rsi",label:"RSI",w:45},
-    {key:"tq",label:"TQ",w:45},{key:"zScore",label:"Z-SCORE",w:65},{key:"r6m",label:"6M %",w:55},
-    {key:"weight",label:"WT %",w:45},
+    {key:"ticker",label:"TICKER",w:60},{key:"name",label:"ASSET",w:120},{key:"sector",label:"SECTOR",w:80},
+    {key:"themes",label:"THEMES",w:130},
+    {key:"maDev",label:"MA DEV",w:60},{key:"qty",label:"QTY",w:40},{key:"price",label:"PRICE",w:68},
+    {key:"ma50",label:"50 DMA",w:62},{key:"ma200",label:"200 DMA",w:62},{key:"trend",label:"TREND",w:65},
+    {key:"phase",label:"PHASE",w:85},{key:"action",label:"ACTION",w:60},{key:"rsi",label:"RSI",w:38},
+    {key:"tq",label:"TQ",w:38},{key:"zScore",label:"Z-SCORE",w:55},{key:"r6m",label:"6M",w:48},
+    {key:"pnlPct",label:"P&L",w:50},
+    {key:"pattern",label:"PATTERN",w:60},{key:"lppls",label:"LPPLS",w:65},
+    {key:"ai",label:"AI",w:30},
   ];
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <span style={{ fontSize:18 }}>⚡</span>
-          <div>
-            <div style={{ fontSize:16, fontWeight:700 }}>Portfolio Analysis</div>
-            <div style={{ fontSize:11, color:C.textMid }}>{holdings.length} holdings analysed</div>
+
+      {/* SUMMARY ROW */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr", gap:10 }}>
+        <Card style={{ padding:"12px 14px" }}>
+          <div style={{ fontSize:9, color:C.textDim, letterSpacing:1.2, marginBottom:4 }}>PORTFOLIO VALUE</div>
+          <div style={{ fontSize:22, fontWeight:700, fontFamily:font }}>${totalValue.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+          <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>Inception: Apr 1, 2026</div>
+        </Card>
+        <Card style={{ padding:"12px 14px" }}>
+          <div style={{ fontSize:9, color:C.textDim, letterSpacing:1.2, marginBottom:4 }}>TOTAL P&L</div>
+          <div style={{ fontSize:22, fontWeight:700, fontFamily:font, color:totalPnL>=0?C.green:C.red }}>{totalPnL>=0?"+":""}${Math.abs(totalPnL).toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+          <div style={{ fontSize:10, color:totalPnLPct>=0?C.green:C.red, marginTop:2 }}>{totalPnLPct>=0?"+":""}{totalPnLPct.toFixed(2)}% since inception</div>
+        </Card>
+        <Card style={{ padding:"12px 14px" }}>
+          <div style={{ fontSize:9, color:C.textDim, letterSpacing:1.2, marginBottom:4 }}>CASH RESERVE</div>
+          <div style={{ fontSize:22, fontWeight:700, fontFamily:font }}>${PORTFOLIO_CASH.toLocaleString()}</div>
+          <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>{(PORTFOLIO_CASH/totalValue*100).toFixed(1)}% of portfolio</div>
+        </Card>
+        <Card style={{ padding:"12px 14px" }}>
+          <div style={{ fontSize:9, color:C.textDim, letterSpacing:1.2, marginBottom:4 }}>SIGNALS</div>
+          <div style={{ display:"flex", gap:8, marginTop:4 }}>
+            <div><span style={{ fontSize:18, fontWeight:700, color:C.green }}>{holdCount}</span><div style={{ fontSize:9, color:C.textDim }}>Hold</div></div>
+            <div><span style={{ fontSize:18, fontWeight:700, color:C.orange }}>{scaleCount}</span><div style={{ fontSize:9, color:C.textDim }}>Scale</div></div>
+            <div><span style={{ fontSize:18, fontWeight:700, color:C.red }}>{closeCount}</span><div style={{ fontSize:9, color:C.textDim }}>Close</div></div>
           </div>
-        </div>
-        <div style={{ display:"flex", gap:10, alignItems:"center", fontSize:11 }}>
-          <span style={{ color:C.green }}>○ {holdCount} Hold</span>
-          <span style={{ color:C.orange }}>△ {scaleCount} Scale Out</span>
-          <span style={{ color:C.red }}>✕ {closeCount} Close</span>
-          <Badge label={"Regime: "+regime} color={SC[regime]||C.gold} />
-        </div>
+        </Card>
+        <Card style={{ padding:"12px 14px" }}>
+          <div style={{ fontSize:9, color:C.textDim, letterSpacing:1.2, marginBottom:4 }}>REGIME</div>
+          <div style={{ fontSize:18, fontWeight:700, color:SC[regime]||C.gold }}>{regime}</div>
+          <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>{holdings.filter(function(h){return h.trend==="Bullish"}).length}/{holdings.length} bullish</div>
+        </Card>
       </div>
 
-      <Card>
-        <div style={{ overflowX:"auto" }}>
-          <table style={{ width:"100%", borderCollapse:"collapse", minWidth:1200 }}>
+      {/* HOLDINGS TABLE */}
+      <Card style={{ padding:"10px 12px" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+          <div style={{ fontSize:13, fontWeight:700 }}>⚡ Holdings Analysis</div>
+          <div style={{ fontSize:10, color:C.textMid }}>{holdings.length} positions · Click AI column for per-stock analysis</div>
+        </div>
+        <div style={{ overflowX:"auto", maxHeight:520, overflowY:"auto" }}>
+          <table style={{ width:"100%", borderCollapse:"collapse", minWidth:1500 }}>
             <thead>
               <tr>
                 {cols.map(function(col) {
                   var isRight = rightCols.indexOf(col.key) >= 0;
-                  return <th key={col.key} onClick={function(){doSort(col.key)}} style={{ ...thS, width:col.w, textAlign:isRight?"right":"left" }}>{col.label}{sortCol===col.key?(sortDir>0?" ↑":" ↓"):""}</th>;
+                  return <th key={col.key} onClick={function(){if(col.key!=="ai"&&col.key!=="themes")doSort(col.key)}} style={{ ...thS, width:col.w, textAlign:isRight?"right":"left" }}>{col.label}{sortCol===col.key?(sortDir>0?" ↑":" ↓"):""}</th>;
                 })}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={16} style={{ padding:40, textAlign:"center", color:C.textDim }}><Spinner size={16} /> Loading portfolio data...</td></tr>
+                <tr><td colSpan={cols.length} style={{ padding:40, textAlign:"center", color:C.textDim }}><Spinner size={16} /> Loading portfolio data...</td></tr>
               ) : sorted.map(function(h, i) {
                 var mc = h.maDev==null?C.textDim:h.maDev>0?C.green:C.red;
+                var patColor = h.pattern==="Inv H&S"||h.pattern==="Dbl Bot"||h.pattern==="Cup&Hdl"?C.green:h.pattern==="Dbl Top"?C.red:C.textDim;
+                var lpColor = h.lppls==="⚠ Bubble"?C.red:h.lppls==="Elevated"?C.orange:h.lppls==="Capitulation"?C.cyan:C.textDim;
                 return (
-                  <tr key={h.ticker} style={{ background:i%2===0?"transparent":C.cardAlt+"44" }}>
-                    <td style={{ ...tdS, fontWeight:700, color:C.cyan, fontFamily:font }}>{h.ticker}</td>
-                    <td style={{ ...tdS, color:C.textMid, fontSize:11, maxWidth:140, overflow:"hidden", textOverflow:"ellipsis" }}>{h.name}</td>
-                    <td style={{ ...tdS, fontSize:10, color:C.textDim }}>{h.sector}</td>
-                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11 }}>
+                  <tr key={h.ticker} style={{ background:i%2===0?"transparent":C.cardAlt+"33" }}>
+                    <td style={{ ...tdS, fontWeight:700, color:C.cyan, fontFamily:font, fontSize:11 }}>{h.ticker}</td>
+                    <td style={{ ...tdS, color:C.textMid, fontSize:10, maxWidth:120, overflow:"hidden", textOverflow:"ellipsis" }}>{h.name}</td>
+                    <td style={{ ...tdS, fontSize:9, color:C.textDim }}>{h.sector}</td>
+                    <td style={tdS}>
+                      <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
+                        {(h.themes||[]).map(function(t){return <span key={t} style={{ background:C.blue+"22", color:C.blueLight, border:"1px solid "+C.blue+"33", borderRadius:3, padding:"1px 5px", fontSize:8, whiteSpace:"nowrap" }}>{t}</span>})}
+                      </div>
+                    </td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10 }}>
                       {h.maDev!=null ? <span style={{ color:mc }}>{h.maDev>0?"+":""}{h.maDev}%</span> : "—"}
                     </td>
-                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11, color:C.textMid }}>{h.qty}</td>
-                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontWeight:700 }}>{h.price!=null?h.price.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}):"—"}</td>
-                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11, color:C.textDim }}>{h.ma50||"—"}</td>
-                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11, color:C.textDim }}>{h.ma200||"—"}</td>
-                    <td style={tdS}><span style={{ color:trendColor(h.trend), fontWeight:600, fontSize:11 }}>{h.trend==="Bullish"?"↗ ":h.trend==="Bearish"?"↘ ":"— "}{h.trend}</span></td>
-                    <td style={{ ...tdS, fontSize:10, color:C.textMid }}>{h.phase}</td>
-                    <td style={tdS}><span style={{ background:actionBg(h.action), color:actionColor(h.action), padding:"2px 8px", borderRadius:4, fontSize:10, fontWeight:700 }}>{h.action}</span></td>
-                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11, color:h.rsi>70?C.red:h.rsi<30?C.green:C.text }}>{h.rsi||"—"}</td>
-                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11, color:h.tq>50?C.green:h.tq<25?C.red:C.orange }}>{h.tq!=null?h.tq.toFixed(1):"—"}</td>
-                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11, color:h.zScore>2?C.red:h.zScore<-2?C.red:h.zScore>0?C.green:C.orange }}>{h.zScore!=null?(h.zScore>0?"+":"")+h.zScore.toFixed(2):"—"}</td>
-                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11, color:h.r6m>0?C.green:C.red }}>{h.r6m!=null?(h.r6m>0?"+":"")+h.r6m+"%":"—"}</td>
-                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11, fontWeight:700, color:C.text }}>{h.weight}%</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:C.textMid }}>{h.qty}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontWeight:600, fontSize:11 }}>{h.price!=null?h.price.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}):"—"}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:C.textDim }}>{h.ma50||"—"}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:C.textDim }}>{h.ma200||"—"}</td>
+                    <td style={tdS}><span style={{ color:trendColor(h.trend), fontWeight:600, fontSize:10 }}>{h.trend==="Bullish"?"↗ ":h.trend==="Bearish"?"↘ ":"— "}{h.trend}</span></td>
+                    <td style={{ ...tdS, fontSize:9, color:C.textMid }}>{h.phase}</td>
+                    <td style={tdS}><span style={{ background:actionBg(h.action), color:actionColor(h.action), padding:"2px 6px", borderRadius:3, fontSize:9, fontWeight:700 }}>{h.action}</span></td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:h.rsi>70?C.red:h.rsi<30?C.green:C.text }}>{h.rsi||"—"}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:h.tq>50?C.green:h.tq<25?C.red:C.orange }}>{h.tq!=null?h.tq.toFixed(1):"—"}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:h.zScore>2?C.red:h.zScore<-2?C.red:h.zScore>0?C.green:C.orange }}>{h.zScore!=null?(h.zScore>0?"+":"")+h.zScore.toFixed(2):"—"}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:h.r6m>0?C.green:C.red }}>{h.r6m!=null?(h.r6m>0?"+":"")+h.r6m+"%":"—"}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:h.pnlPct>0?C.green:h.pnlPct<0?C.red:C.textMid }}>{h.pnlPct?(h.pnlPct>0?"+":"")+h.pnlPct.toFixed(1)+"%":"—"}</td>
+                    <td style={{ ...tdS, fontSize:9, fontWeight:600, color:patColor }}>{h.pattern}</td>
+                    <td style={{ ...tdS, fontSize:9, color:lpColor }}>{h.lppls}</td>
+                    <td style={tdS}>
+                      <button onClick={function(){fetchAI(h.ticker)}} style={{ background:aiData[h.ticker]?C.purple+"33":C.cardAlt, border:"1px solid "+(aiData[h.ticker]?C.purple:C.border), borderRadius:3, color:aiData[h.ticker]?C.purple:C.textDim, fontSize:9, padding:"2px 5px", cursor:"pointer", fontWeight:700 }}>AI</button>
+                    </td>
                   </tr>
                 );
               })}
@@ -2524,6 +2623,31 @@ function PortfolioStage() {
         </div>
       </Card>
 
+      {/* AI ANALYSIS TOOLTIP */}
+      {aiHolding && (
+        <Card style={{ border:"1px solid "+C.purple+"44" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+            <div style={{ fontSize:13, fontWeight:700, color:C.purple }}>🧠 AI Analysis: {aiHolding}</div>
+            <button onClick={function(){setAiHolding(null)}} style={{ background:"transparent", border:"1px solid "+C.border, borderRadius:4, color:C.textDim, padding:"2px 8px", cursor:"pointer", fontSize:10 }}>✕ Close</button>
+          </div>
+          {aiData[aiHolding] ? (
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+              <div style={{ background:C.green+"10", border:"1px solid "+C.green+"30", borderRadius:6, padding:10 }}>
+                <div style={{ fontSize:10, color:C.green, fontWeight:700, marginBottom:6 }}>🐂 BULL CASE</div>
+                <div style={{ fontSize:11, color:C.textMid, lineHeight:1.5 }}>{aiData[aiHolding].bull}</div>
+              </div>
+              <div style={{ background:C.red+"10", border:"1px solid "+C.red+"30", borderRadius:6, padding:10 }}>
+                <div style={{ fontSize:10, color:C.red, fontWeight:700, marginBottom:6 }}>🐻 BEAR CASE</div>
+                <div style={{ fontSize:11, color:C.textMid, lineHeight:1.5 }}>{aiData[aiHolding].bear}</div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ textAlign:"center", padding:20, color:C.textDim }}><Spinner size={14} /> Generating AI analysis for {aiHolding}...</div>
+          )}
+        </Card>
+      )}
+
+      {/* PORTFOLIO BALANCE */}
       <Card>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
           <div style={{ fontSize:14, fontWeight:700, display:"flex", alignItems:"center", gap:8 }}>
@@ -2533,38 +2657,89 @@ function PortfolioStage() {
           </div>
         </div>
 
+        {/* Sleeve Allocation */}
         <div style={{ marginBottom:16 }}>
-          <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:8 }}>SECTOR WEIGHTS</div>
-          <div style={{ display:"grid", gridTemplateColumns:"130px 1fr 50px 50px", gap:"6px 8px", alignItems:"center" }}>
-            <div style={{ fontSize:9, color:C.textDim }}>Sector</div><div /><div style={{ fontSize:9, color:C.textDim, textAlign:"right" }}>Current</div><div style={{ fontSize:9, color:C.textDim, textAlign:"right" }}>Target</div>
-            {Object.entries(sectorWeights).sort(function(a,b){return b[1]-a[1]}).map(function(entry) {
-              var s=entry[0],wt=entry[1];
-              var targets={Technology:30,Energy:21,Healthcare:13,Materials:8,Commodities:5};
-              var target=targets[s]||5;
-              var diff=wt-target;
+          <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:8 }}>SLEEVE ALLOCATION</div>
+          <div style={{ display:"flex", gap:8, marginBottom:6 }}>
+            <div style={{ flex:sleeveWeights.Core, height:8, background:C.blue, borderRadius:"4px 0 0 4px" }} />
+            <div style={{ flex:sleeveWeights.Satellite, height:8, background:C.purple, borderRadius:"0 4px 4px 0" }} />
+          </div>
+          <div style={{ display:"flex", justifyContent:"space-between", fontSize:10 }}>
+            <span style={{ color:C.blue }}>● Core: {sleeveWeights.Core}%</span>
+            <span style={{ color:C.purple }}>● Satellite: {sleeveWeights.Satellite}%</span>
+            <span style={{ color:C.textDim }}>Target: 60/40</span>
+          </div>
+        </div>
+
+        {/* Asset Class Weights */}
+        <div style={{ marginBottom:16 }}>
+          <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:8 }}>ASSET CLASS WEIGHTS</div>
+          <div style={{ display:"grid", gridTemplateColumns:"100px 1fr 45px 45px 55px", gap:"5px 8px", alignItems:"center" }}>
+            <div style={{ fontSize:9, color:C.textDim }}>Class</div><div /><div style={{ fontSize:9, color:C.textDim, textAlign:"right" }}>Current</div><div style={{ fontSize:9, color:C.textDim, textAlign:"right" }}>Target</div><div style={{ fontSize:9, color:C.textDim, textAlign:"right" }}>Dev</div>
+            {[{name:"Equity",target:88},{name:"Gold",target:5},{name:"Commodities",target:5}].map(function(ac) {
+              var current = assetClassWeights[ac.name]||0;
+              var dev = current - ac.target;
               return [
-                <div key={s+"l"} style={{ fontSize:12, color:C.text }}>{s}</div>,
-                <div key={s+"b"} style={{ height:6, background:C.border, borderRadius:3 }}><div style={{ width:Math.min(100,wt*2)+"%", height:"100%", background:Math.abs(diff)>5?C.red:C.green, borderRadius:3, opacity:0.7 }} /></div>,
-                <span key={s+"c"} style={{ textAlign:"right", fontFamily:font, fontSize:12, fontWeight:700 }}>{wt}%</span>,
-                <span key={s+"t"} style={{ textAlign:"right", fontFamily:font, fontSize:11, color:C.textDim }}>{target}%</span>,
+                <div key={ac.name+"l"} style={{ fontSize:11, color:C.text }}>{ac.name}</div>,
+                <div key={ac.name+"b"} style={{ height:5, background:C.border, borderRadius:3 }}><div style={{ width:current+"%", height:"100%", background:Math.abs(dev)>5?C.orange:C.green, borderRadius:3, opacity:0.7 }} /></div>,
+                <span key={ac.name+"c"} style={{ textAlign:"right", fontFamily:font, fontSize:11, fontWeight:700 }}>{current}%</span>,
+                <span key={ac.name+"t"} style={{ textAlign:"right", fontFamily:font, fontSize:10, color:C.textDim }}>{ac.target}%</span>,
+                <span key={ac.name+"d"} style={{ textAlign:"right", fontFamily:font, fontSize:10, color:dev>0?C.green:dev<0?C.red:C.textMid }}>{dev>0?"+":""}{dev}pp</span>,
               ];
             })}
           </div>
         </div>
 
+        {/* Sector Weights */}
+        <div style={{ marginBottom:16 }}>
+          <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:8 }}>SECTOR WEIGHTS</div>
+          <div style={{ display:"grid", gridTemplateColumns:"100px 1fr 45px 45px 55px", gap:"5px 8px", alignItems:"center" }}>
+            <div style={{ fontSize:9, color:C.textDim }}>Sector</div><div /><div style={{ fontSize:9, color:C.textDim, textAlign:"right" }}>Current</div><div style={{ fontSize:9, color:C.textDim, textAlign:"right" }}>Target</div><div style={{ fontSize:9, color:C.textDim, textAlign:"right" }}>Dev</div>
+            {Object.entries(sectorWeights).sort(function(a,b){return b[1]-a[1]}).map(function(entry) {
+              var s=entry[0],wt=entry[1];
+              var targets={Technology:26,Energy:21,Healthcare:13,Materials:8,Commodities:5};
+              var target=targets[s]||5;
+              var diff=wt-target;
+              return [
+                <div key={s+"l"} style={{ fontSize:11, color:C.text }}>{s}</div>,
+                <div key={s+"b"} style={{ height:5, background:C.border, borderRadius:3 }}><div style={{ width:Math.min(100,wt*2)+"%", height:"100%", background:Math.abs(diff)>5?C.red:Math.abs(diff)>2?C.orange:C.green, borderRadius:3, opacity:0.7 }} /></div>,
+                <span key={s+"c"} style={{ textAlign:"right", fontFamily:font, fontSize:11, fontWeight:700 }}>{wt}%</span>,
+                <span key={s+"t"} style={{ textAlign:"right", fontFamily:font, fontSize:10, color:C.textDim }}>{target}%</span>,
+                <span key={s+"d"} style={{ textAlign:"right", fontFamily:font, fontSize:10, color:diff>0?C.green:diff<0?C.red:C.textMid }}>{diff>0?"+":""}{diff}pp</span>,
+              ];
+            })}
+          </div>
+        </div>
+
+        {/* Cap Size Distribution */}
+        <div style={{ marginBottom:16 }}>
+          <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:8 }}>CAP SIZE DISTRIBUTION</div>
+          <div style={{ display:"flex", gap:4, marginBottom:6 }}>
+            <div style={{ flex:capWeights.Large, height:8, background:C.blue, borderRadius:"4px 0 0 4px" }} />
+            <div style={{ flex:capWeights.Mid||1, height:8, background:C.orange }} />
+            <div style={{ flex:capWeights.Small||1, height:8, background:C.cyan, borderRadius:"0 4px 4px 0" }} />
+          </div>
+          <div style={{ display:"flex", justifyContent:"space-between", fontSize:10 }}>
+            <span style={{ color:C.blue }}>● Large Cap: {capWeights.Large}%</span>
+            <span style={{ color:C.orange }}>● Mid Cap: {capWeights.Mid}%</span>
+            <span style={{ color:C.cyan }}>● Small Cap: {capWeights.Small}%</span>
+          </div>
+        </div>
+
+        {/* Actions Required */}
         {(closeCount>0||scaleCount>0) && (
           <div style={{ borderTop:"1px solid "+C.border, paddingTop:12 }}>
             <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:8 }}>ACTIONS REQUIRED</div>
             {holdings.filter(function(h){return h.action==="Close"}).map(function(h) {
               return <div key={h.ticker} style={{ background:C.red+"12", border:"1px solid "+C.red+"30", borderRadius:6, padding:"8px 12px", marginBottom:6 }}>
                 <span style={{ color:C.red, fontWeight:700, fontSize:12 }}>✕ {h.ticker}</span>
-                <span style={{ color:C.textMid, fontSize:11, marginLeft:8 }}>{h.phase} — {h.trend} trend. Consider closing.</span>
+                <span style={{ color:C.textMid, fontSize:11, marginLeft:8 }}>{h.phase} — {h.trend} trend, below key MAs. Consider closing.</span>
               </div>;
             })}
             {holdings.filter(function(h){return h.action==="Scale Out"}).map(function(h) {
               return <div key={h.ticker} style={{ background:C.orange+"12", border:"1px solid "+C.orange+"30", borderRadius:6, padding:"8px 12px", marginBottom:6 }}>
                 <span style={{ color:C.orange, fontWeight:700, fontSize:12 }}>△ {h.ticker}</span>
-                <span style={{ color:C.textMid, fontSize:11, marginLeft:8 }}>Z-Score {h.zScore>0?"+":""}{h.zScore} — extended. RSI {h.rsi}. Consider trimming.</span>
+                <span style={{ color:C.textMid, fontSize:11, marginLeft:8 }}>Z-Score {h.zScore>0?"+":""}{h.zScore} — extended rally, RSI {h.rsi}. Consider trimming.</span>
               </div>;
             })}
           </div>
