@@ -2442,7 +2442,8 @@ function TradingViewChart({ ticker }) {
       studies: [
         "RSI@tv-basicstudies",
         "MASimple@tv-basicstudies|50",
-        "MASimple@tv-basicstudies|200"
+        "MASimple@tv-basicstudies|200",
+        "Momentum@tv-basicstudies|10"
       ],
       overrides: {
         "mainSeriesProperties.candleStyle.upColor": "#00e676",
