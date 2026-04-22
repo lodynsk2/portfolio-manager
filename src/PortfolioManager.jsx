@@ -1159,7 +1159,8 @@ try {
 
         {stage===1 && <MacroStage d={d} />}
         {stage===2 && <PortfolioStage />}
-        {stage!==1 && stage!==2 && (
+        {stage===3 && <ScreenerStage />}
+        {stage!==1 && stage!==2 && stage!==3 && (
           <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:400 }}>
             <div style={{ fontSize:28, opacity:0.2, marginBottom:8 }}>🚧</div>
             <div style={{ color:C.textDim, fontSize:14 }}>Stage {stage} — coming soon</div>
@@ -2870,6 +2871,454 @@ function PortfolioStage() {
       </Card>
 
       {error && <div style={{ background:"#2b0d10", border:"1px solid "+C.red+"44", borderRadius:8, padding:"7px 13px", fontSize:12, color:C.red }}>⚠ {error}</div>}
+    </div>
+  );
+}
+
+/* ─── ASSET SCREENER (Stage 3) ─────────────────────────────────── */
+function ScreenerStage() {
+  var _c = useState([]);
+  var candidates = _c[0], setCandidates = _c[1];
+  var _l = useState(true);
+  var loading = _l[0], setLoading = _l[1];
+  var _st = useState(null);
+  var selectedTicker = _st[0], setSelectedTicker = _st[1];
+  var _sc = useState("score");
+  var sortCol = _sc[0], setSortCol = _sc[1];
+  var _sd = useState(-1);
+  var sortDir = _sd[0], setSortDir = _sd[1];
+  var _tab = useState("shares");
+  var tab = _tab[0], setTab = _tab[1];
+  var _search = useState("");
+  var search = _search[0], setSearch = _search[1];
+  var _manual = useState([]);
+  var manualTickers = _manual[0], setManualTickers = _manual[1];
+  var _status = useState("");
+  var status = _status[0], setStatus = _status[1];
+  var _err = useState(null);
+  var err = _err[0], setErr = _err[1];
+
+  var regime = "Summer";
+
+  useEffect(function() {
+    (async function() {
+      setLoading(true);
+      setStatus("Asking AI for macro-aligned candidates...");
+      try {
+        // Step 1: Ask AI for tickers based on regime
+        var aiRes = await fetch(CLAUDE_URL, {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({max_tokens:800,messages:[{role:"user",content:
+            "You are a professional equity screener. The current macro regime is "+regime+" (Inflationary Boom — mid cycle). Energy, Materials, Industrials, and commodity-linked sectors are favored. "+
+            "Generate a list of 30 high-momentum stocks and 10 ETFs that align with this regime. Focus on: strong 6-month momentum, sector alignment with "+regime+", mid-to-large cap, US-listed. "+
+            "Return ONLY valid JSON array, no markdown, no backticks, no other text. Each item: {\"ticker\":\"SYMBOL\",\"name\":\"Company Name\",\"sector\":\"Sector\",\"type\":\"share\"} or type:\"etf\". "+
+            "Example: [{\"ticker\":\"XLE\",\"name\":\"Energy Select Sector SPDR\",\"sector\":\"Energy\",\"type\":\"etf\"},{\"ticker\":\"POWL\",\"name\":\"Powell Industries\",\"sector\":\"Energy\",\"type\":\"share\"}]"}]})
+        });
+        var aiJson = await aiRes.json();
+        var aiText = (aiJson.content||[]).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("");
+        var clean = aiText.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
+        var tickerList = null;
+        try { tickerList = JSON.parse(clean); } catch(e) {
+          // Try to find array in text
+          var arrStart = clean.indexOf("[");
+          var arrEnd = clean.lastIndexOf("]");
+          if (arrStart >= 0 && arrEnd > arrStart) {
+            try { tickerList = JSON.parse(clean.slice(arrStart, arrEnd+1)); } catch(e2) {}
+          }
+        }
+        if (!tickerList || !Array.isArray(tickerList)) {
+          setErr("AI returned unexpected format. Using default screener list.");
+          tickerList = [
+            {ticker:"POWL",name:"Powell Industries",sector:"Energy",type:"share"},
+            {ticker:"JBL",name:"Jabil",sector:"Technology",type:"share"},
+            {ticker:"AMAT",name:"Applied Materials",sector:"Technology",type:"share"},
+            {ticker:"CW",name:"Curtiss-Wright",sector:"Industrials",type:"share"},
+            {ticker:"XPO",name:"XPO Inc.",sector:"Industrials",type:"share"},
+            {ticker:"MU",name:"Micron Technology",sector:"Technology",type:"share"},
+            {ticker:"FCX",name:"Freeport-McMoRan",sector:"Materials",type:"share"},
+            {ticker:"CF",name:"CF Industries",sector:"Materials",type:"share"},
+            {ticker:"RIG",name:"Transocean Ltd",sector:"Energy",type:"share"},
+            {ticker:"SWBI",name:"Smith & Wesson",sector:"Industrials",type:"share"},
+            {ticker:"BHE",name:"Benchmark Electronics",sector:"Technology",type:"share"},
+            {ticker:"FIVE",name:"Five Below",sector:"Consumer Discretionary",type:"share"},
+            {ticker:"LNTH",name:"Lantheus Holdings",sector:"Healthcare",type:"share"},
+            {ticker:"ESLT",name:"Elbit Systems",sector:"Industrials",type:"share"},
+            {ticker:"POWI",name:"Power Integrations",sector:"Technology",type:"share"},
+            {ticker:"DCO",name:"Ducommun",sector:"Industrials",type:"share"},
+            {ticker:"KOP",name:"Koppers Holdings",sector:"Materials",type:"share"},
+            {ticker:"FN",name:"Fabrinet",sector:"Technology",type:"share"},
+            {ticker:"TTMI",name:"TTM Technologies",sector:"Technology",type:"share"},
+            {ticker:"UNFI",name:"United Natural Foods",sector:"Consumer Discretionary",type:"share"},
+            {ticker:"XLE",name:"Energy Select Sector SPDR",sector:"Energy",type:"etf"},
+            {ticker:"XLB",name:"Materials Select Sector SPDR",sector:"Materials",type:"etf"},
+            {ticker:"XLI",name:"Industrial Select Sector SPDR",sector:"Industrials",type:"etf"},
+            {ticker:"PAVE",name:"Global X US Infrastructure",sector:"Industrials",type:"etf"},
+            {ticker:"XME",name:"SPDR S&P Metals & Mining",sector:"Materials",type:"etf"},
+            {ticker:"ITA",name:"iShares US Aerospace & Defense",sector:"Industrials",type:"etf"},
+            {ticker:"OIH",name:"VanEck Oil Services",sector:"Energy",type:"etf"},
+            {ticker:"GDX",name:"VanEck Gold Miners",sector:"Materials",type:"etf"},
+            {ticker:"COPX",name:"Global X Copper Miners",sector:"Materials",type:"etf"},
+            {ticker:"URA",name:"Global X Uranium",sector:"Energy",type:"etf"},
+          ];
+        }
+
+        // Step 2: Fetch technicals from proxy
+        setStatus("Enriching " + tickerList.length + " candidates with technicals...");
+        var tickers = tickerList.map(function(t){return t.ticker}).join(",");
+        var techRes = await fetch(PORTFOLIO_URL + "?tickers=" + tickers);
+        var techJson = await techRes.json();
+
+        // Step 3: Merge and score
+        var merged = tickerList.map(function(item, idx) {
+          var d = techJson.holdings && techJson.holdings[item.ticker];
+          if (!d || d.error) return { ...item, rank:idx+1, price:null, r6m:null, tq:null, trend:"—", rsi:null, score:0, rr:"—", pattern:"—", zScore:null, ma50:null, ma200:null, mktCap:"—", fcfRank:null };
+          // Compute score (0-100 composite)
+          var trendScore = d.trend==="Bullish"?40:d.trend==="Neutral"?20:0;
+          var momScore = Math.min(30, Math.max(0, (d.r6m||0) * 0.5));
+          var tqScore = Math.min(20, (d.tq||0) * 0.2);
+          var rsiPenalty = d.rsi > 80 ? -10 : d.rsi < 30 ? 10 : 0;
+          var score = Math.round(Math.max(0, Math.min(100, trendScore + momScore + tqScore + rsiPenalty)));
+          // R:R estimate from support/resistance
+          var support = d.ma200 || (d.ma50 ? d.ma50 * 0.95 : null);
+          var resistance = d.price && d.zScore ? d.price * (1 + Math.abs(d.zScore) * 0.05) : null;
+          var rr = "—";
+          if (support && resistance && d.price && d.price > support) {
+            var risk = d.price - support;
+            var reward = resistance - d.price;
+            if (risk > 0 && reward > 0) rr = (reward/risk).toFixed(1) + ":1";
+          }
+          var pattern = "—";
+          if (d.ma50 && d.ma200) {
+            if (d.price > d.ma50 && d.price > d.ma200 && d.zScore > 1.5 && d.rsi > 65) pattern = "Dbl Top";
+            else if (d.price < d.ma50 && d.price < d.ma200 && d.zScore < -1.5) pattern = "Dbl Bot";
+            else if (d.price < d.ma50 && d.price > d.ma200 && d.rsi > 40) pattern = "Inv H&S";
+            else if (d.price > d.ma50 && d.price > d.ma200 && d.zScore > 2) pattern = "Rise Wedge";
+            else if (d.price > d.ma50 && d.maDev > 0 && d.maDev < 5) pattern = "Cup&Handle";
+            else if (d.trend === "Bullish") pattern = "Dbl Top";
+            else pattern = "H&S";
+          }
+          return { ...item, rank:idx+1, ...d, score:score, rr:rr, pattern:pattern };
+        });
+        // Sort by score
+        merged.sort(function(a,b){return (b.score||0)-(a.score||0)});
+        merged.forEach(function(m,i){m.rank=i+1});
+        setCandidates(merged);
+        setStatus("");
+      } catch(e) {
+        setErr("Screener error: " + e.message);
+        setStatus("");
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  // Intelligence Seeds — staging area for manually added tickers
+  var _seeds = useState([]);
+  var seeds = _seeds[0], setSeeds = _seeds[1];
+  var _seedLoading = useState({});
+  var seedLoading = _seedLoading[0], setSeedLoading = _seedLoading[1];
+
+  // Add ticker to seeds (pre-screen)
+  function addSeed(ticker) {
+    ticker = ticker.toUpperCase().trim();
+    if (!ticker || seeds.find(function(s){return s.ticker===ticker}) || candidates.find(function(c){return c.ticker===ticker})) return;
+    setManualTickers(function(prev){return prev.concat([ticker])});
+    setSearch("");
+
+    // Quick pre-screen via proxy
+    var newSeed = { ticker:ticker, source:"manual", pimScore:null, strategy:"—", rsi:null, piotroski:null, regimeFit:null, confidence:"—", loading:true };
+    setSeeds(function(prev){return prev.concat([newSeed])});
+
+    // Fetch technicals
+    fetch(PORTFOLIO_URL + "?tickers=" + ticker).then(function(r){return r.json()}).then(function(json){
+      var d = json.holdings && json.holdings[ticker];
+      setSeeds(function(prev){return prev.map(function(s){
+        if (s.ticker !== ticker) return s;
+        if (!d) return { ...s, loading:false, pimScore:0, confidence:"LOW" };
+        // PIM Score: composite of trend + momentum + RSI health
+        var trendPts = d.trend==="Bullish"?15:d.trend==="Neutral"?8:0;
+        var momPts = Math.min(10, Math.max(0, (d.r6m||0) * 0.15));
+        var rsiPts = (d.rsi && d.rsi > 30 && d.rsi < 70) ? 5 : 0;
+        var tqPts = Math.min(5, (d.tq||0) * 0.05);
+        var pim = Math.round(trendPts + momPts + rsiPts + tqPts);
+        // Strategy
+        var strat = d.r6m > 20 ? "Momentum" : d.r6m > 0 ? "Accum." : "Contrarian";
+        // Piotroski F-Score estimate (simplified: 0-9 based on trend health)
+        var pio = 5;
+        if (d.trend === "Bullish") pio += 2;
+        if (d.rsi > 40 && d.rsi < 70) pio += 1;
+        if (d.r6m > 0) pio += 1;
+        pio = Math.min(9, pio);
+        // Regime fit
+        var regimeFit = 0.5;
+        var summerSectors = ["Energy","Materials","Industrials","Technology"];
+        // We don't have sector info for manual adds, so estimate from momentum
+        if (d.r6m > 15) regimeFit = 0.8;
+        if (d.trend === "Bullish" && d.r6m > 25) regimeFit = 0.9;
+        // Confidence
+        var conf = regimeFit > 0.7 ? "HIGH" : regimeFit > 0.4 ? "MEDIUM" : "LOW";
+        return { ...s, loading:false, pimScore:pim, strategy:strat, rsi:d.rsi, piotroski:pio, regimeFit:regimeFit.toFixed(2), confidence:conf, _techData:d };
+      })});
+    }).catch(function(){
+      setSeeds(function(prev){return prev.map(function(s){
+        if (s.ticker !== ticker) return s;
+        return { ...s, loading:false, pimScore:0, confidence:"LOW" };
+      })});
+    });
+
+    // Also try to get name/sector from AI
+    fetch(CLAUDE_URL, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({max_tokens:100,messages:[{role:"user",content:"What company is the stock ticker "+ticker+"? Return ONLY JSON: {\"name\":\"Company Name\",\"sector\":\"Sector\"}"}]})
+    }).then(function(r){return r.json()}).then(function(j){
+      var txt = (j.content||[]).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("");
+      var clean = txt.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
+      try {
+        var info = JSON.parse(clean);
+        setSeeds(function(prev){return prev.map(function(s){
+          if (s.ticker !== ticker) return s;
+          return { ...s, name:info.name, sector:info.sector, source:"manual" };
+        })});
+      } catch(e){}
+    }).catch(function(){});
+  }
+
+  // Enrich & Add — move seed(s) to main candidates table
+  function enrichAndAdd() {
+    seeds.forEach(function(seed) {
+      if (seed.loading) return;
+      var d = seed._techData;
+      var newItem = {
+        ticker:seed.ticker, name:seed.name||seed.ticker, sector:seed.sector||"—", type:"share",
+        rank:candidates.length+1, price:d?d.price:null, r6m:d?d.r6m:null, tq:d?d.tq:null,
+        trend:d?d.trend:"—", rsi:d?d.rsi:null, zScore:d?d.zScore:null,
+        ma50:d?d.ma50:null, ma200:d?d.ma200:null, maDev:d?d.maDev:null,
+        pattern:"—", rr:"—", score:seed.pimScore||0,
+      };
+      // Compute pattern + R:R
+      if (d && d.ma50 && d.ma200) {
+        if (d.price > d.ma50 && d.price > d.ma200 && d.zScore > 1.5) newItem.pattern = "Dbl Top";
+        else if (d.price < d.ma50 && d.price > d.ma200 && d.rsi > 40) newItem.pattern = "Inv H&S";
+        else if (d.trend === "Bullish" && d.maDev > 0 && d.maDev < 5) newItem.pattern = "Cup&Handle";
+        var support = d.ma200 || (d.ma50 ? d.ma50 * 0.95 : null);
+        var resistance = d.price && d.zScore ? d.price * (1 + Math.abs(d.zScore) * 0.05) : null;
+        if (support && resistance && d.price > support) {
+          var risk = d.price - support;
+          var reward = resistance - d.price;
+          if (risk > 0 && reward > 0) newItem.rr = (reward/risk).toFixed(1) + ":1";
+        }
+      }
+      // Score
+      var trendScore = (d&&d.trend==="Bullish")?40:(d&&d.trend==="Neutral")?20:0;
+      var momScore = Math.min(30, Math.max(0, ((d&&d.r6m)||0)*0.5));
+      var tqScore = Math.min(20, ((d&&d.tq)||0)*0.2);
+      newItem.score = Math.round(Math.max(0, Math.min(100, trendScore + momScore + tqScore)));
+      setCandidates(function(prev){return prev.concat([newItem])});
+    });
+    setSeeds([]);
+    setManualTickers([]);
+  }
+
+  function removeSeed(ticker) {
+    setSeeds(function(prev){return prev.filter(function(s){return s.ticker!==ticker})});
+    setManualTickers(function(prev){return prev.filter(function(t){return t!==ticker})});
+  }
+
+  // Original manual add kept as direct add
+  function addTicker(ticker) {
+    addSeed(ticker);
+  }
+
+  function doSort(col) {
+    if (sortCol===col) setSortDir(function(d){return d*-1});
+    else { setSortCol(col); setSortDir(-1); }
+  }
+
+  var filtered = candidates.filter(function(c) {
+    if (tab==="shares" && c.type==="etf") return false;
+    if (tab==="etfs" && c.type!=="etf") return false;
+    return true;
+  });
+
+  var sorted = filtered.slice().sort(function(a,b) {
+    var va=a[sortCol],vb=b[sortCol];
+    if(va==null)return 1;if(vb==null)return -1;
+    if(typeof va==="string")return va.localeCompare(vb)*sortDir;
+    return(va-vb)*sortDir;
+  });
+
+  var sharesCount = candidates.filter(function(c){return c.type!=="etf"}).length;
+  var etfCount = candidates.filter(function(c){return c.type==="etf"}).length;
+
+  var thS = { textAlign:"left", padding:"8px 6px", color:C.textDim, fontSize:9, fontWeight:700, letterSpacing:1, textTransform:"uppercase", cursor:"pointer", userSelect:"none", borderBottom:"1px solid "+C.border, whiteSpace:"nowrap", position:"sticky", top:0, background:C.card, zIndex:1 };
+  var tdS = { padding:"7px 6px", fontSize:11, borderBottom:"1px solid "+C.border, whiteSpace:"nowrap" };
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+      {/* HEADER */}
+      <Card>
+        <div style={{ fontSize:16, fontWeight:700, marginBottom:4 }}>🔍 Asset Screener Results</div>
+        <div style={{ fontSize:11, color:C.textMid, marginBottom:12 }}>{candidates.length} candidates screened and ranked across {sharesCount > 0 && etfCount > 0 ? "2" : "1"} asset categories based on current macro regime.</div>
+
+        {/* Manual add */}
+        <div style={{ marginBottom:12 }}>
+          <div style={{ fontSize:10, color:C.textDim, marginBottom:4 }}>+ Add tickers manually</div>
+          <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+            <div style={{ flex:1, display:"flex", alignItems:"center", gap:4, flexWrap:"wrap", background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"4px 8px", minHeight:32 }}>
+              {manualTickers.map(function(t){
+                return <span key={t} style={{ background:C.blue+"22", color:C.blueLight, border:"1px solid "+C.blue+"44", borderRadius:4, padding:"2px 6px", fontSize:10, display:"flex", alignItems:"center", gap:4 }}>
+                  {t}
+                  <span onClick={function(){removeSeed(t)}} style={{ cursor:"pointer", opacity:0.6 }}>×</span>
+                </span>;
+              })}
+              <input
+                value={search}
+                onChange={function(e){setSearch(e.target.value)}}
+                onKeyDown={function(e){if(e.key==="Enter"&&search.trim()){addSeed(search);e.preventDefault()}}}
+                placeholder="Search by ticker or name..."
+                style={{ background:"transparent", border:"none", outline:"none", color:C.text, fontSize:11, flex:1, minWidth:150, fontFamily:sans }}
+              />
+            </div>
+            <button onClick={function(){if(search.trim())addSeed(search)}} style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, color:C.textMid, padding:"8px 14px", fontSize:11, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>+ Add</button>
+          </div>
+        </div>
+
+        {/* Intelligence Seeds */}
+        {seeds.length > 0 && (
+          <div style={{ marginBottom:12 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+              <div style={{ fontSize:13, fontWeight:700, display:"flex", alignItems:"center", gap:6 }}>
+                <span>🧩</span> Intelligence Seeds
+              </div>
+              <div style={{ fontSize:10, color:C.textMid }}>{seeds.filter(function(s){return !s.loading}).length} accepted from manual input</div>
+            </div>
+            <div style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:8, overflow:"hidden" }}>
+              <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                <thead>
+                  <tr style={{ borderBottom:"1px solid "+C.border }}>
+                    {["TICKER","SOURCE","PIM SCORE","STRATEGY","RSI","PIOTROSKI","REGIME FIT","CONFIDENCE",""].map(function(h){
+                      return <th key={h} style={{ textAlign:["PIM SCORE","RSI","PIOTROSKI","REGIME FIT"].indexOf(h)>=0?"center":"left", padding:"8px 10px", color:C.textDim, fontSize:9, fontWeight:700, letterSpacing:1 }}>{h}</th>;
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  {seeds.map(function(seed) {
+                    var pimColor = seed.pimScore >= 25 ? C.green : seed.pimScore >= 15 ? C.orange : C.red;
+                    var confColor = seed.confidence==="HIGH"?C.green:seed.confidence==="MEDIUM"?C.orange:C.red;
+                    var confBg = seed.confidence==="HIGH"?C.green+"22":seed.confidence==="MEDIUM"?C.orange+"22":C.red+"22";
+                    return (
+                      <tr key={seed.ticker} style={{ borderBottom:"1px solid "+C.border }}>
+                        <td style={{ padding:"10px", fontWeight:700, fontFamily:font, color:C.cyan, fontSize:12 }}>{seed.ticker}</td>
+                        <td style={{ padding:"10px", fontSize:10, color:C.textDim }}>{seed.source}</td>
+                        <td style={{ padding:"10px", textAlign:"center" }}>
+                          {seed.loading ? <Spinner size={12} /> : <span style={{ color:pimColor, fontWeight:700, fontFamily:font, fontSize:14 }}>{seed.pimScore}</span>}
+                        </td>
+                        <td style={{ padding:"10px", fontSize:11, color:C.textMid }}>{seed.strategy}</td>
+                        <td style={{ padding:"10px", textAlign:"center", fontFamily:font, fontSize:11, color:seed.rsi>70?C.red:seed.rsi<30?C.green:C.text }}>{seed.rsi||"—"}</td>
+                        <td style={{ padding:"10px", textAlign:"center", fontFamily:font, fontSize:11, color:C.text }}>{seed.piotroski||"—"}</td>
+                        <td style={{ padding:"10px", textAlign:"center", fontFamily:font, fontSize:11, color:C.text }}>{seed.regimeFit||"—"}</td>
+                        <td style={{ padding:"10px", textAlign:"center" }}>
+                          {seed.loading ? <Spinner size={12} /> : <span style={{ background:confBg, color:confColor, padding:"2px 8px", borderRadius:4, fontSize:9, fontWeight:700 }}>{seed.confidence}</span>}
+                        </td>
+                        <td style={{ padding:"10px" }}>
+                          <button onClick={enrichAndAdd} style={{ background:C.blue, border:"none", borderRadius:4, color:C.text, padding:"4px 10px", fontSize:10, fontWeight:600, cursor:"pointer" }}>Enrich & Add</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ fontSize:9, color:C.textDim, marginTop:4 }}>Seeds accepted in the Intelligence view. "Enrich & Add" runs the full screener enrichment pipeline and merges the ticker into the category tables above.</div>
+          </div>
+        )}
+
+        {/* Tabs */}
+        <div style={{ display:"flex", gap:8 }}>
+          <button onClick={function(){setTab("shares")}} style={{ background:tab==="shares"?C.red:C.cardAlt, border:"1px solid "+(tab==="shares"?C.red:C.border), borderRadius:6, color:C.text, padding:"6px 14px", fontSize:11, fontWeight:700, cursor:"pointer" }}>📊 Shares {sharesCount}</button>
+          <button onClick={function(){setTab("etfs")}} style={{ background:tab==="etfs"?C.cardAlt:C.cardAlt, border:"1px solid "+(tab==="etfs"?C.green:C.border), borderRadius:6, color:C.text, padding:"6px 14px", fontSize:11, fontWeight:700, cursor:"pointer" }}>📈 ETFs {etfCount}</button>
+        </div>
+      </Card>
+
+      {/* RESULTS TABLE */}
+      <Card style={{ padding:"10px 12px" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+          <div style={{ fontSize:13, fontWeight:700 }}>📈 Top Macro-Aligned {tab==="shares"?"Shares":"ETFs"}</div>
+          <div style={{ fontSize:10, color:C.textMid }}>{sorted.length} candidates</div>
+        </div>
+        <div style={{ overflowX:"auto", maxHeight:600, overflowY:"auto" }}>
+          <table style={{ width:"100%", borderCollapse:"collapse", minWidth:1100 }}>
+            <thead>
+              <tr>
+                {[
+                  {key:"rank",label:"#",w:30},{key:"ticker",label:"TICKER",w:65},{key:"name",label:"NAME",w:160},
+                  {key:"sector",label:"SECTOR",w:90},{key:"r6m",label:"6M%",w:55},{key:"tq",label:"TQ",w:40},
+                  {key:"trend",label:"TREND",w:65},{key:"score",label:"SCORE",w:55},{key:"rr",label:"R:R",w:45},
+                  {key:"rsi",label:"RSI",w:38},{key:"pattern",label:"PATTERN",w:70},{key:"zScore",label:"Z-SCORE",w:55},
+                  {key:"price",label:"PRICE",w:65},
+                ].map(function(col) {
+                  return <th key={col.key} onClick={function(){doSort(col.key)}} style={{ ...thS, width:col.w, textAlign:["r6m","tq","score","rsi","zScore","price","rank"].indexOf(col.key)>=0?"right":"left" }}>{col.label}{sortCol===col.key?(sortDir>0?" ↑":" ↓"):""}</th>;
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={13} style={{ padding:40, textAlign:"center", color:C.textDim }}><Spinner size={16} /> {status || "Loading screener..."}</td></tr>
+              ) : sorted.length === 0 ? (
+                <tr><td colSpan={13} style={{ padding:40, textAlign:"center", color:C.textDim }}>No candidates found</td></tr>
+              ) : sorted.map(function(c, i) {
+                var scoreColor = c.score>=70?C.green:c.score>=40?C.orange:C.red;
+                return (
+                  <tr key={c.ticker} onClick={function(){setSelectedTicker(selectedTicker===c.ticker?null:c.ticker)}} style={{ background:selectedTicker===c.ticker?C.blue+"18":i%2===0?"transparent":C.cardAlt+"33", cursor:"pointer" }}>
+                    <td style={{ ...tdS, textAlign:"right", color:c.rank<=3?C.gold:C.textDim, fontWeight:c.rank<=3?700:400 }}>
+                      {c.rank<=3 ? "🏆" : ""} {c.rank}
+                    </td>
+                    <td style={{ ...tdS, fontWeight:700, color:C.cyan, fontFamily:font, fontSize:11 }}>{c.ticker}</td>
+                    <td style={{ ...tdS, color:C.textMid, fontSize:10, maxWidth:160, overflow:"hidden", textOverflow:"ellipsis" }}>{c.name}</td>
+                    <td style={tdS}><span style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:3, padding:"2px 6px", fontSize:9, color:C.textMid }}>{c.sector}</span></td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11, color:c.r6m>0?C.green:c.r6m<0?C.red:C.textMid }}>
+                      {c.r6m!=null?(c.r6m>0?"↑ +":"↓ ")+c.r6m+"%":"—"}
+                    </td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11, color:C.text }}>{c.tq!=null?c.tq.toFixed(2):"—"}</td>
+                    <td style={tdS}><span style={{ color:c.trend==="Bullish"?C.green:c.trend==="Bearish"?C.red:C.textMid, fontWeight:600, fontSize:10 }}>{c.trend}</span></td>
+                    <td style={{ ...tdS, textAlign:"right" }}>
+                      <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", gap:4 }}>
+                        <div style={{ width:30, height:4, background:C.border, borderRadius:2, overflow:"hidden" }}>
+                          <div style={{ width:(c.score||0)+"%", height:"100%", background:scoreColor, borderRadius:2 }} />
+                        </div>
+                        <span style={{ fontFamily:font, fontSize:10, color:scoreColor }}>{c.score}</span>
+                      </div>
+                    </td>
+                    <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.textMid }}>{c.rr}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:c.rsi>70?C.red:c.rsi<30?C.green:C.text }}>{c.rsi||"—"}</td>
+                    <td style={{ ...tdS, fontSize:9, fontWeight:600, color:c.pattern==="Inv H&S"||c.pattern==="Cup&Handle"||c.pattern==="Dbl Bot"?C.green:c.pattern==="Dbl Top"||c.pattern==="Rise Wedge"?C.orange:C.textDim }}>{c.pattern}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:C.textMid }}>{c.zScore!=null?(c.zScore>0?"+":"")+c.zScore.toFixed(2):"—"}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11, fontWeight:600 }}>{c.price!=null?"$"+c.price.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}):"—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {/* TRADINGVIEW CHART */}
+      {selectedTicker && (
+        <Card style={{ padding:0, overflow:"hidden" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px 0" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:13 }}>📈</span>
+              <span style={{ fontSize:13, fontWeight:700, color:C.cyan, fontFamily:font }}>{selectedTicker}</span>
+              <span style={{ fontSize:11, color:C.textMid }}>{(candidates.find(function(x){return x.ticker===selectedTicker})||{}).name}</span>
+              <Badge label="TradingView" color={C.blue} />
+            </div>
+            <button onClick={function(){setSelectedTicker(null)}} style={{ background:"transparent", border:"1px solid "+C.border, borderRadius:4, color:C.textDim, padding:"2px 8px", cursor:"pointer", fontSize:10 }}>✕ Close</button>
+          </div>
+          <TradingViewChart ticker={selectedTicker} />
+        </Card>
+      )}
+
+      {err && <div style={{ background:"#2b0d10", border:"1px solid "+C.red+"44", borderRadius:8, padding:"7px 13px", fontSize:12, color:C.red }}>⚠ {err}</div>}
     </div>
   );
 }
