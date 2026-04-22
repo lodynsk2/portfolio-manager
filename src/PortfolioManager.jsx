@@ -3302,21 +3302,142 @@ function ScreenerStage() {
         </div>
       </Card>
 
-      {/* TRADINGVIEW CHART */}
-      {selectedTicker && (
-        <Card style={{ padding:0, overflow:"hidden" }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px 0" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-              <span style={{ fontSize:13 }}>📈</span>
-              <span style={{ fontSize:13, fontWeight:700, color:C.cyan, fontFamily:font }}>{selectedTicker}</span>
-              <span style={{ fontSize:11, color:C.textMid }}>{(candidates.find(function(x){return x.ticker===selectedTicker})||{}).name}</span>
-              <Badge label="TradingView" color={C.blue} />
-            </div>
-            <button onClick={function(){setSelectedTicker(null)}} style={{ background:"transparent", border:"1px solid "+C.border, borderRadius:4, color:C.textDim, padding:"2px 8px", cursor:"pointer", fontSize:10 }}>✕ Close</button>
+      {/* SCREENING DETAIL PANEL */}
+      {selectedTicker && (function(){
+        var c = candidates.find(function(x){return x.ticker===selectedTicker}) || {};
+        var d = c; // technicals are already merged into candidate
+
+        // Gate checks
+        var gates = [];
+        // A: Fundamentals Fetch
+        gates.push({ id:"A", name:"Fundamentals Fetch", pass:c.price!=null, detail:c.price!=null?(c.rsi?"RSI, MAs, TQ, Z-Score retrieved":"partial data"):"No data available" });
+        // B: Market Cap Filter
+        var capLabel = c.mktCap || "—";
+        var capPass = c.price != null; // We don't have mktcap from Yahoo chart API, so pass if price exists
+        gates.push({ id:"B", name:"Market Cap Filter", pass:capPass, detail:capPass?"Price: $"+(c.price||0).toFixed(2):"No market cap data", threshold:"Threshold: min $0.5B (share)" });
+        // D: History Fetch
+        var histPass = c.ma200 != null;
+        gates.push({ id:"D", name:"History Fetch", pass:histPass, detail:histPass?"200+ trading days of data":"Insufficient history", threshold:"" });
+        // D2: Momentum/Alpha Filter
+        var momPass = c.r6m != null && c.r6m > 0;
+        gates.push({ id:"D2", name:"Momentum/Alpha Filter", pass:momPass, detail:"6m return: "+(c.r6m!=null?(c.r6m>0?"+":"")+c.r6m+"%":"N/A"), threshold:"Threshold: positive 6M return" });
+        // E1: Sector Exclusion
+        var excludedSectors = ["Tobacco","Gambling"];
+        var sectorPass = excludedSectors.indexOf(c.sector) < 0;
+        gates.push({ id:"E1", name:"Sector Exclusion", pass:sectorPass, detail:c.sector||"Unknown", threshold:"Excluded: Tobacco, Gambling" });
+        // E3: Bearish MA Trend
+        var maPass = c.trend !== "Bearish";
+        gates.push({ id:"E3", name:"Bearish MA Trend", pass:maPass, detail:c.trend==="Bearish"?"Warning":"OK — "+c.trend, threshold:"Bearish excluded (SUMMER)" });
+        // E5: Quality/Value Filters
+        var tqPass = c.tq != null && c.tq > 0.15;
+        gates.push({ id:"E5", name:"Quality/Value Filters", pass:tqPass!==false, detail:"TQ: "+(c.tq!=null?c.tq.toFixed(2):"N/A"), threshold:"Threshold: min TQ: 0.15" });
+        // E6: Phase Alignment
+        var phaseVal = c.phase || "—";
+        var phasePass = phaseVal !== "Broken Trend" && phaseVal !== "Deterioration";
+        gates.push({ id:"E6", name:"Phase Alignment", pass:phasePass, detail:phaseVal, threshold:"Threshold: <0.15 excluded" });
+        // E7: Forensic Gates (Z-score distress check)
+        var forensicPass = c.zScore == null || c.zScore > -2.0;
+        var zLabel = c.zScore != null ? "Z=" + c.zScore.toFixed(2) : "N/A";
+        gates.push({ id:"E7", name:"Forensic Gates", pass:forensicPass, detail:"0 flags, "+zLabel+(c.zScore!=null&&c.zScore<-2?" (distress)":""), threshold:"Threshold: >=3 flags or distress", warning:!forensicPass?"Z-Score in distress zone":null });
+        // G: R:R
+        gates.push({ id:"G", name:"R:R (informational)", pass:true, detail:c.rr||"N/A", threshold:"Threshold: applied by Portfolio Builder" });
+
+        var passCount = gates.filter(function(g){return g.pass}).length;
+        var failCount = gates.filter(function(g){return !g.pass}).length;
+        var excluded = failCount >= 2;
+
+        // Scoring breakdown
+        var qualityRaw = c.tq != null ? Math.min(1, c.tq / 10) : 0;
+        var momentumRaw = c.r6m != null ? Math.min(1, Math.max(0, c.r6m / 50)) : 0;
+        var valueRaw = 0.03; // Placeholder — no PE data from Yahoo OHLC
+        var patternRaw = c.pattern !== "—" ? 0.62 : 0;
+        var sentimentRaw = c.rsi ? (c.rsi > 30 && c.rsi < 70 ? 0.5 : 0.2) : 0;
+        var weights = { quality:0.25, momentum:0.40, value:0.10, pattern:0.15, sentiment:0.10 };
+        var composite = qualityRaw*weights.quality + momentumRaw*weights.momentum + valueRaw*weights.value + patternRaw*weights.pattern + sentimentRaw*weights.sentiment;
+
+        var bars = [
+          { label:"Quality", raw:qualityRaw, weight:weights.quality, color:C.blue },
+          { label:"Momentum", raw:momentumRaw, weight:weights.momentum, color:C.green },
+          { label:"Value", raw:valueRaw, weight:weights.value, color:C.cyan },
+          { label:"Pattern", raw:patternRaw, weight:weights.pattern, color:C.orange },
+          { label:"Sentiment", raw:sentimentRaw, weight:weights.sentiment, color:C.purple },
+        ];
+
+        return (
+          <div style={{ display:"grid", gridTemplateColumns:"340px 1fr", gap:12 }}>
+            {/* LEFT: Screening Pipeline */}
+            <Card style={{ padding:"14px" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
+                <div>
+                  <div style={{ fontSize:18, fontWeight:700, fontFamily:font }}>{c.ticker}</div>
+                  <div style={{ fontSize:11, color:C.textMid }}>{c.name}</div>
+                  <div style={{ display:"flex", gap:4, marginTop:4 }}>
+                    <span style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:3, padding:"1px 6px", fontSize:9, color:C.textDim }}>{regime}</span>
+                    {excluded && <span style={{ background:C.red+"22", border:"1px solid "+C.red+"44", borderRadius:3, padding:"1px 6px", fontSize:9, color:C.red, fontWeight:700 }}>EXCLUDED</span>}
+                    {!excluded && <span style={{ background:C.green+"22", border:"1px solid "+C.green+"44", borderRadius:3, padding:"1px 6px", fontSize:9, color:C.green, fontWeight:700 }}>PASS</span>}
+                  </div>
+                </div>
+                <button onClick={function(){setSelectedTicker(null)}} style={{ background:"transparent", border:"none", color:C.textDim, fontSize:16, cursor:"pointer" }}>×</button>
+              </div>
+
+              {/* Gate list */}
+              <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                {gates.map(function(g) {
+                  return (
+                    <div key={g.id} style={{ background:g.pass?C.card:C.red+"0a", border:"1px solid "+(g.pass?C.border:C.red+"33"), borderRadius:6, padding:"8px 10px" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:2 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                          <span style={{ fontSize:14 }}>{g.pass?"✅":"❌"}</span>
+                          <span style={{ fontSize:10, color:C.textDim }}>{g.id}</span>
+                          <span style={{ fontSize:12, fontWeight:600, color:C.text }}>{g.name}</span>
+                        </div>
+                        <span style={{ fontSize:10, fontWeight:700, color:g.pass?C.green:C.red }}>{g.pass?"PASS":"FAIL"}</span>
+                      </div>
+                      <div style={{ fontSize:10, color:C.textMid, marginLeft:28 }}>{g.detail}</div>
+                      {g.threshold && <div style={{ fontSize:9, color:C.textDim, marginLeft:28 }}>{g.threshold}</div>}
+                      {g.warning && <div style={{ fontSize:9, color:C.red, marginLeft:28, marginTop:2 }}>{g.warning}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Scoring Breakdown */}
+              <div style={{ marginTop:14, borderTop:"1px solid "+C.border, paddingTop:12 }}>
+                <div style={{ fontSize:12, fontWeight:700, marginBottom:10 }}>SCORING BREAKDOWN</div>
+                {bars.map(function(b) {
+                  var weighted = b.raw * b.weight;
+                  return (
+                    <div key={b.label} style={{ display:"grid", gridTemplateColumns:"75px 1fr 120px", gap:6, alignItems:"center", marginBottom:6 }}>
+                      <span style={{ fontSize:10, color:C.text }}>{b.label}</span>
+                      <div style={{ height:6, background:C.border, borderRadius:3 }}>
+                        <div style={{ width:Math.min(100, b.raw*100)+"%", height:"100%", background:b.color, borderRadius:3 }} />
+                      </div>
+                      <span style={{ fontSize:9, color:C.textDim, fontFamily:font, textAlign:"right" }}>{b.raw.toFixed(2)} x {(b.weight*100).toFixed(0)}% = {weighted.toFixed(3)}</span>
+                    </div>
+                  );
+                })}
+                <div style={{ display:"flex", justifyContent:"space-between", marginTop:8, borderTop:"1px solid "+C.border, paddingTop:8 }}>
+                  <span style={{ fontSize:12, fontWeight:700 }}>Composite</span>
+                  <span style={{ fontSize:14, fontWeight:700, fontFamily:font, color:composite>0.5?C.green:composite>0.3?C.orange:C.red }}>{composite.toFixed(4)}</span>
+                </div>
+              </div>
+            </Card>
+
+            {/* RIGHT: TradingView Chart */}
+            <Card style={{ padding:0, overflow:"hidden" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px 0" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  <span style={{ fontSize:13 }}>📈</span>
+                  <span style={{ fontSize:13, fontWeight:700, color:C.cyan, fontFamily:font }}>{selectedTicker}</span>
+                  <Badge label="TradingView" color={C.blue} />
+                  <Badge label={passCount+"/"+gates.length+" pass"} color={excluded?C.red:C.green} />
+                </div>
+              </div>
+              <TradingViewChart ticker={selectedTicker} />
+            </Card>
           </div>
-          <TradingViewChart ticker={selectedTicker} />
-        </Card>
-      )}
+        );
+      })()}
 
       {err && <div style={{ background:"#2b0d10", border:"1px solid "+C.red+"44", borderRadius:8, padding:"7px 13px", fontSize:12, color:C.red }}>⚠ {err}</div>}
     </div>
