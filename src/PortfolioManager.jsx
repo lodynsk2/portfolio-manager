@@ -2876,6 +2876,95 @@ function PortfolioStage() {
 }
 
 /* ─── ASSET SCREENER (Stage 3) ─────────────────────────────────── */
+
+/* ─── ASSET SCREENER (Stage 3) — Enhanced ──────────────────────── */
+var SCREENER_FALLBACK_SHARES = [
+  {ticker:"POWL",name:"Powell Industries",sector:"Energy",type:"share",theme:"AI Power"},
+  {ticker:"JBL",name:"Jabil Inc.",sector:"Technology",type:"share",theme:"AI & Digital Infra"},
+  {ticker:"AMAT",name:"Applied Materials",sector:"Technology",type:"share",theme:"AI & Digital Infra"},
+  {ticker:"CW",name:"Curtiss-Wright",sector:"Industrials",type:"share",theme:"Defense"},
+  {ticker:"XPO",name:"XPO Inc.",sector:"Industrials",type:"share",theme:"Logistics"},
+  {ticker:"MU",name:"Micron Technology",sector:"Technology",type:"share",theme:"AI & Digital Infra"},
+  {ticker:"FCX",name:"Freeport-McMoRan",sector:"Materials",type:"share",theme:"Copper / EV Metals"},
+  {ticker:"CF",name:"CF Industries",sector:"Materials",type:"share",theme:"Energy Transition"},
+  {ticker:"RIG",name:"Transocean Ltd",sector:"Energy",type:"share",theme:"Oil & Gas"},
+  {ticker:"SWBI",name:"Smith & Wesson",sector:"Industrials",type:"share",theme:"Defense"},
+  {ticker:"BHE",name:"Benchmark Electronics",sector:"Technology",type:"share",theme:""},
+  {ticker:"FIVE",name:"Five Below",sector:"Consumer Discretionary",type:"share",theme:""},
+  {ticker:"LNTH",name:"Lantheus Holdings",sector:"Healthcare",type:"share",theme:""},
+  {ticker:"ESLT",name:"Elbit Systems",sector:"Industrials",type:"share",theme:"Defense"},
+  {ticker:"POWI",name:"Power Integrations",sector:"Technology",type:"share",theme:"Energy Transition"},
+  {ticker:"DCO",name:"Ducommun Inc.",sector:"Industrials",type:"share",theme:"Aerospace"},
+  {ticker:"KOP",name:"Koppers Holdings",sector:"Materials",type:"share",theme:""},
+  {ticker:"FN",name:"Fabrinet",sector:"Technology",type:"share",theme:""},
+  {ticker:"TTMI",name:"TTM Technologies",sector:"Technology",type:"share",theme:""},
+  {ticker:"UNFI",name:"United Natural Foods",sector:"Consumer Discretionary",type:"share",theme:""},
+  {ticker:"PLPC",name:"Preformed Line Products",sector:"Industrials",type:"share",theme:""},
+  {ticker:"LXU",name:"LSB Industries",sector:"Materials",type:"share",theme:""},
+  {ticker:"CEIX",name:"CONSOL Energy",sector:"Energy",type:"share",theme:""},
+  {ticker:"CLF",name:"Cleveland-Cliffs",sector:"Materials",type:"share",theme:"Steel"},
+  {ticker:"BTU",name:"Peabody Energy",sector:"Energy",type:"share",theme:""},
+  {ticker:"ARCH",name:"Arch Resources",sector:"Energy",type:"share",theme:""},
+  {ticker:"NUE",name:"Nucor Corp.",sector:"Materials",type:"share",theme:"Steel"},
+  {ticker:"STLD",name:"Steel Dynamics",sector:"Materials",type:"share",theme:"Steel"},
+  {ticker:"HAL",name:"Halliburton",sector:"Energy",type:"share",theme:"Oil & Gas"},
+  {ticker:"SLB",name:"Schlumberger",sector:"Energy",type:"share",theme:"Oil & Gas"},
+];
+var SCREENER_FALLBACK_ETFS = [
+  {ticker:"XLE",name:"Energy Select Sector SPDR",sector:"Energy",type:"etf",theme:""},
+  {ticker:"XLB",name:"Materials Select Sector SPDR",sector:"Materials",type:"etf",theme:""},
+  {ticker:"XLI",name:"Industrial Select Sector SPDR",sector:"Industrials",type:"etf",theme:""},
+  {ticker:"PAVE",name:"Global X US Infrastructure",sector:"Industrials",type:"etf",theme:"Infrastructure"},
+  {ticker:"XME",name:"SPDR S&P Metals & Mining",sector:"Materials",type:"etf",theme:"Mining"},
+  {ticker:"ITA",name:"iShares US Aerospace & Defense",sector:"Industrials",type:"etf",theme:"Defense"},
+  {ticker:"OIH",name:"VanEck Oil Services",sector:"Energy",type:"etf",theme:"Oil & Gas"},
+  {ticker:"GDX",name:"VanEck Gold Miners",sector:"Materials",type:"etf",theme:"Gold"},
+  {ticker:"COPX",name:"Global X Copper Miners",sector:"Materials",type:"etf",theme:"Copper"},
+  {ticker:"URA",name:"Global X Uranium",sector:"Energy",type:"etf",theme:"Nuclear"},
+];
+
+function computeScreenerScore(d) {
+  if (!d || !d.price) return { score:0, quality:0, momentum:0, value:0, pattern:0, sentiment:0 };
+  var quality = d.tq != null ? Math.min(1, Math.abs(d.tq) / 80) : 0;
+  var momentum = d.r6m != null ? Math.min(1, Math.max(0, d.r6m / 60)) : 0;
+  var value = 0.03;
+  var patternVal = 0;
+  if (d.pattern && d.pattern !== "—") patternVal = 0.62;
+  var sentiment = 0;
+  if (d.rsi && d.rsi > 30 && d.rsi < 70) sentiment = 0.5;
+  else if (d.rsi && d.rsi >= 70) sentiment = 0.3;
+  else if (d.rsi && d.rsi <= 30) sentiment = 0.7;
+  var w = { quality:0.25, momentum:0.40, value:0.10, pattern:0.15, sentiment:0.10 };
+  var composite = quality*w.quality + momentum*w.momentum + value*w.value + patternVal*w.pattern + sentiment*w.sentiment;
+  var score = Math.round(composite * 100);
+  return { score:score, quality:quality, momentum:momentum, value:value, pattern:patternVal, sentiment:sentiment, composite:composite };
+}
+
+function computeRR(d) {
+  if (!d || !d.price || !d.ma200) return "—";
+  var support = d.ma200;
+  if (d.ma50 && d.ma50 < d.price) support = Math.max(support, d.ma50 * 0.97);
+  var atrEst = d.price * 0.02;
+  var stopLoss = support - atrEst;
+  var risk = d.price - stopLoss;
+  var target = d.price * (1 + (d.zScore ? Math.max(0.03, Math.abs(d.zScore) * 0.04) : 0.06));
+  var reward = target - d.price;
+  if (risk <= 0 || reward <= 0) return "—";
+  return (reward / risk).toFixed(1) + ":1";
+}
+
+function detectScreenerPattern(d) {
+  if (!d || !d.ma50 || !d.ma200 || !d.price) return "—";
+  var abv50 = d.price > d.ma50, abv200 = d.price > d.ma200;
+  if (abv50 && abv200 && d.zScore > 2.0 && d.rsi > 70) return "Dbl Top";
+  if (!abv50 && !abv200 && d.zScore < -1.5 && d.rsi < 35) return "Dbl Bot";
+  if (!abv50 && abv200 && d.rsi > 40 && d.rsi < 60) return "Inv H&S";
+  if (abv50 && abv200 && d.zScore > 1.5 && d.rsi > 60) return "Rise Wedge";
+  if (abv50 && d.maDev > 0 && d.maDev < 5 && d.rsi > 45) return "Cup&Handle";
+  if (abv50 && abv200 && d.ma50 > d.ma200) return "H&S";
+  return "—";
+}
+
 function ScreenerStage() {
   var _c = useState([]);
   var candidates = _c[0], setCandidates = _c[1];
@@ -2897,112 +2986,63 @@ function ScreenerStage() {
   var status = _status[0], setStatus = _status[1];
   var _err = useState(null);
   var err = _err[0], setErr = _err[1];
+  var _seeds = useState([]);
+  var seeds = _seeds[0], setSeeds = _seeds[1];
+  var _showFilters = useState(false);
+  var showFilters = _showFilters[0], setShowFilters = _showFilters[1];
+  var _filters = useState({ minScore:0, minMom:null, trendFilter:"all", sectorFilter:"all" });
+  var filters = _filters[0], setFilters = _filters[1];
+  var _lastRefresh = useState(null);
+  var lastRefresh = _lastRefresh[0], setLastRefresh = _lastRefresh[1];
 
   var regime = "Summer";
 
-  useEffect(function() {
+  function runScreener() {
     (async function() {
-      setLoading(true);
+      setLoading(true); setErr(null);
       setStatus("Asking AI for macro-aligned candidates...");
       try {
-        // Step 1: Ask AI for tickers based on regime
         var aiRes = await fetch(CLAUDE_URL, {
           method:"POST", headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({max_tokens:800,messages:[{role:"user",content:
-            "You are a professional equity screener. The current macro regime is "+regime+" (Inflationary Boom — mid cycle). Energy, Materials, Industrials, and commodity-linked sectors are favored. "+
-            "Generate a list of 30 high-momentum stocks and 10 ETFs that align with this regime. Focus on: strong 6-month momentum, sector alignment with "+regime+", mid-to-large cap, US-listed. "+
-            "Return ONLY valid JSON array, no markdown, no backticks, no other text. Each item: {\"ticker\":\"SYMBOL\",\"name\":\"Company Name\",\"sector\":\"Sector\",\"type\":\"share\"} or type:\"etf\". "+
-            "Example: [{\"ticker\":\"XLE\",\"name\":\"Energy Select Sector SPDR\",\"sector\":\"Energy\",\"type\":\"etf\"},{\"ticker\":\"POWL\",\"name\":\"Powell Industries\",\"sector\":\"Energy\",\"type\":\"share\"}]"}]})
+          body:JSON.stringify({max_tokens:1200,messages:[{role:"user",content:
+            "You are a professional equity screener. Current macro regime: "+regime+" (Inflationary Boom — mid cycle). "+
+            "Sectors favored: Energy, Materials, Industrials, commodity-linked, nuclear, defense, infrastructure. "+
+            "Generate 30 high-momentum US-listed stocks and 10 sector/thematic ETFs aligned with this regime. "+
+            "Include a mix of large cap ($10B+), mid cap ($2-10B), and small cap (<$2B). "+
+            "For each include a theme tag (e.g. 'AI Power', 'Nuclear', 'Gold Mining', 'Defense', 'Oil & Gas', 'Copper / EV Metals', 'Steel', 'Infrastructure', 'Energy Transition', 'AI & Digital Infra'). "+
+            "Return ONLY a valid JSON array. No markdown, no backticks. Each item: {\"ticker\":\"SYM\",\"name\":\"Full Name\",\"sector\":\"Sector\",\"type\":\"share\",\"theme\":\"Theme Tag\",\"cap\":\"L\"} where cap is L/M/S. ETFs use type:\"etf\"."}]})
         });
         var aiJson = await aiRes.json();
         var aiText = (aiJson.content||[]).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("");
         var clean = aiText.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
         var tickerList = null;
         try { tickerList = JSON.parse(clean); } catch(e) {
-          // Try to find array in text
-          var arrStart = clean.indexOf("[");
-          var arrEnd = clean.lastIndexOf("]");
-          if (arrStart >= 0 && arrEnd > arrStart) {
-            try { tickerList = JSON.parse(clean.slice(arrStart, arrEnd+1)); } catch(e2) {}
-          }
+          var s1 = clean.indexOf("["), s2 = clean.lastIndexOf("]");
+          if (s1>=0 && s2>s1) try { tickerList = JSON.parse(clean.slice(s1,s2+1)); } catch(e2) {}
         }
-        if (!tickerList || !Array.isArray(tickerList)) {
-          setErr("AI returned unexpected format. Using default screener list.");
-          tickerList = [
-            {ticker:"POWL",name:"Powell Industries",sector:"Energy",type:"share"},
-            {ticker:"JBL",name:"Jabil",sector:"Technology",type:"share"},
-            {ticker:"AMAT",name:"Applied Materials",sector:"Technology",type:"share"},
-            {ticker:"CW",name:"Curtiss-Wright",sector:"Industrials",type:"share"},
-            {ticker:"XPO",name:"XPO Inc.",sector:"Industrials",type:"share"},
-            {ticker:"MU",name:"Micron Technology",sector:"Technology",type:"share"},
-            {ticker:"FCX",name:"Freeport-McMoRan",sector:"Materials",type:"share"},
-            {ticker:"CF",name:"CF Industries",sector:"Materials",type:"share"},
-            {ticker:"RIG",name:"Transocean Ltd",sector:"Energy",type:"share"},
-            {ticker:"SWBI",name:"Smith & Wesson",sector:"Industrials",type:"share"},
-            {ticker:"BHE",name:"Benchmark Electronics",sector:"Technology",type:"share"},
-            {ticker:"FIVE",name:"Five Below",sector:"Consumer Discretionary",type:"share"},
-            {ticker:"LNTH",name:"Lantheus Holdings",sector:"Healthcare",type:"share"},
-            {ticker:"ESLT",name:"Elbit Systems",sector:"Industrials",type:"share"},
-            {ticker:"POWI",name:"Power Integrations",sector:"Technology",type:"share"},
-            {ticker:"DCO",name:"Ducommun",sector:"Industrials",type:"share"},
-            {ticker:"KOP",name:"Koppers Holdings",sector:"Materials",type:"share"},
-            {ticker:"FN",name:"Fabrinet",sector:"Technology",type:"share"},
-            {ticker:"TTMI",name:"TTM Technologies",sector:"Technology",type:"share"},
-            {ticker:"UNFI",name:"United Natural Foods",sector:"Consumer Discretionary",type:"share"},
-            {ticker:"XLE",name:"Energy Select Sector SPDR",sector:"Energy",type:"etf"},
-            {ticker:"XLB",name:"Materials Select Sector SPDR",sector:"Materials",type:"etf"},
-            {ticker:"XLI",name:"Industrial Select Sector SPDR",sector:"Industrials",type:"etf"},
-            {ticker:"PAVE",name:"Global X US Infrastructure",sector:"Industrials",type:"etf"},
-            {ticker:"XME",name:"SPDR S&P Metals & Mining",sector:"Materials",type:"etf"},
-            {ticker:"ITA",name:"iShares US Aerospace & Defense",sector:"Industrials",type:"etf"},
-            {ticker:"OIH",name:"VanEck Oil Services",sector:"Energy",type:"etf"},
-            {ticker:"GDX",name:"VanEck Gold Miners",sector:"Materials",type:"etf"},
-            {ticker:"COPX",name:"Global X Copper Miners",sector:"Materials",type:"etf"},
-            {ticker:"URA",name:"Global X Uranium",sector:"Energy",type:"etf"},
-          ];
+        if (!tickerList || !Array.isArray(tickerList) || tickerList.length < 5) {
+          setErr("AI returned unexpected format. Using curated fallback list.");
+          tickerList = SCREENER_FALLBACK_SHARES.concat(SCREENER_FALLBACK_ETFS);
         }
 
-        // Step 2: Fetch technicals from proxy
-        setStatus("Enriching " + tickerList.length + " candidates with technicals...");
+        setStatus("Enriching " + tickerList.length + " candidates...");
         var tickers = tickerList.map(function(t){return t.ticker}).join(",");
         var techRes = await fetch(PORTFOLIO_URL + "?tickers=" + tickers);
         var techJson = await techRes.json();
 
-        // Step 3: Merge and score
-        var merged = tickerList.map(function(item, idx) {
+        setStatus("Scoring and ranking...");
+        var merged = tickerList.map(function(item) {
           var d = techJson.holdings && techJson.holdings[item.ticker];
-          if (!d || d.error) return { ...item, rank:idx+1, price:null, r6m:null, tq:null, trend:"—", rsi:null, score:0, rr:"—", pattern:"—", zScore:null, ma50:null, ma200:null, mktCap:"—", fcfRank:null };
-          // Compute score (0-100 composite)
-          var trendScore = d.trend==="Bullish"?40:d.trend==="Neutral"?20:0;
-          var momScore = Math.min(30, Math.max(0, (d.r6m||0) * 0.5));
-          var tqScore = Math.min(20, (d.tq||0) * 0.2);
-          var rsiPenalty = d.rsi > 80 ? -10 : d.rsi < 30 ? 10 : 0;
-          var score = Math.round(Math.max(0, Math.min(100, trendScore + momScore + tqScore + rsiPenalty)));
-          // R:R estimate from support/resistance
-          var support = d.ma200 || (d.ma50 ? d.ma50 * 0.95 : null);
-          var resistance = d.price && d.zScore ? d.price * (1 + Math.abs(d.zScore) * 0.05) : null;
-          var rr = "—";
-          if (support && resistance && d.price && d.price > support) {
-            var risk = d.price - support;
-            var reward = resistance - d.price;
-            if (risk > 0 && reward > 0) rr = (reward/risk).toFixed(1) + ":1";
-          }
-          var pattern = "—";
-          if (d.ma50 && d.ma200) {
-            if (d.price > d.ma50 && d.price > d.ma200 && d.zScore > 1.5 && d.rsi > 65) pattern = "Dbl Top";
-            else if (d.price < d.ma50 && d.price < d.ma200 && d.zScore < -1.5) pattern = "Dbl Bot";
-            else if (d.price < d.ma50 && d.price > d.ma200 && d.rsi > 40) pattern = "Inv H&S";
-            else if (d.price > d.ma50 && d.price > d.ma200 && d.zScore > 2) pattern = "Rise Wedge";
-            else if (d.price > d.ma50 && d.maDev > 0 && d.maDev < 5) pattern = "Cup&Handle";
-            else if (d.trend === "Bullish") pattern = "Dbl Top";
-            else pattern = "H&S";
-          }
-          return { ...item, rank:idx+1, ...d, score:score, rr:rr, pattern:pattern };
+          if (!d || d.error) return { ...item, price:null, r6m:null, tq:null, trend:"—", rsi:null, score:0, rr:"—", pattern:"—", zScore:null, ma50:null, ma200:null, maDev:null, scoreData:{} };
+          var pat = detectScreenerPattern(d);
+          var rr = computeRR(d);
+          var scoreData = computeScreenerScore({ ...d, pattern:pat });
+          return { ...item, ...d, pattern:pat, rr:rr, score:scoreData.score, scoreData:scoreData };
         });
-        // Sort by score
         merged.sort(function(a,b){return (b.score||0)-(a.score||0)});
         merged.forEach(function(m,i){m.rank=i+1});
         setCandidates(merged);
+        setLastRefresh(new Date().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"}));
         setStatus("");
       } catch(e) {
         setErr("Screener error: " + e.message);
@@ -3010,235 +3050,193 @@ function ScreenerStage() {
       }
       setLoading(false);
     })();
-  }, []);
+  }
 
-  // Intelligence Seeds — staging area for manually added tickers
-  var _seeds = useState([]);
-  var seeds = _seeds[0], setSeeds = _seeds[1];
-  var _seedLoading = useState({});
-  var seedLoading = _seedLoading[0], setSeedLoading = _seedLoading[1];
+  useEffect(function(){ runScreener(); }, []);
 
-  // Add ticker to seeds (pre-screen)
+  // Intelligence Seeds
   function addSeed(ticker) {
     ticker = ticker.toUpperCase().trim();
     if (!ticker || seeds.find(function(s){return s.ticker===ticker}) || candidates.find(function(c){return c.ticker===ticker})) return;
     setManualTickers(function(prev){return prev.concat([ticker])});
     setSearch("");
-
-    // Quick pre-screen via proxy
     var newSeed = { ticker:ticker, source:"manual", pimScore:null, strategy:"—", rsi:null, piotroski:null, regimeFit:null, confidence:"—", loading:true };
     setSeeds(function(prev){return prev.concat([newSeed])});
-
-    // Fetch technicals
     fetch(PORTFOLIO_URL + "?tickers=" + ticker).then(function(r){return r.json()}).then(function(json){
       var d = json.holdings && json.holdings[ticker];
       setSeeds(function(prev){return prev.map(function(s){
         if (s.ticker !== ticker) return s;
         if (!d) return { ...s, loading:false, pimScore:0, confidence:"LOW" };
-        // PIM Score: composite of trend + momentum + RSI health
         var trendPts = d.trend==="Bullish"?15:d.trend==="Neutral"?8:0;
         var momPts = Math.min(10, Math.max(0, (d.r6m||0) * 0.15));
         var rsiPts = (d.rsi && d.rsi > 30 && d.rsi < 70) ? 5 : 0;
         var tqPts = Math.min(5, (d.tq||0) * 0.05);
         var pim = Math.round(trendPts + momPts + rsiPts + tqPts);
-        // Strategy
         var strat = d.r6m > 20 ? "Momentum" : d.r6m > 0 ? "Accum." : "Contrarian";
-        // Piotroski F-Score estimate (simplified: 0-9 based on trend health)
-        var pio = 5;
-        if (d.trend === "Bullish") pio += 2;
-        if (d.rsi > 40 && d.rsi < 70) pio += 1;
-        if (d.r6m > 0) pio += 1;
-        pio = Math.min(9, pio);
-        // Regime fit
-        var regimeFit = 0.5;
-        var summerSectors = ["Energy","Materials","Industrials","Technology"];
-        // We don't have sector info for manual adds, so estimate from momentum
-        if (d.r6m > 15) regimeFit = 0.8;
-        if (d.trend === "Bullish" && d.r6m > 25) regimeFit = 0.9;
-        // Confidence
-        var conf = regimeFit > 0.7 ? "HIGH" : regimeFit > 0.4 ? "MEDIUM" : "LOW";
+        var pio = Math.min(9, 5 + (d.trend==="Bullish"?2:0) + (d.rsi>40&&d.rsi<70?1:0) + (d.r6m>0?1:0));
+        var regimeFit = d.r6m>25?0.9:d.r6m>15?0.8:d.trend==="Bullish"?0.6:0.4;
+        var conf = regimeFit>0.7?"HIGH":regimeFit>0.4?"MEDIUM":"LOW";
         return { ...s, loading:false, pimScore:pim, strategy:strat, rsi:d.rsi, piotroski:pio, regimeFit:regimeFit.toFixed(2), confidence:conf, _techData:d };
       })});
-    }).catch(function(){
-      setSeeds(function(prev){return prev.map(function(s){
-        if (s.ticker !== ticker) return s;
-        return { ...s, loading:false, pimScore:0, confidence:"LOW" };
-      })});
-    });
-
-    // Also try to get name/sector from AI
-    fetch(CLAUDE_URL, {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({max_tokens:100,messages:[{role:"user",content:"What company is the stock ticker "+ticker+"? Return ONLY JSON: {\"name\":\"Company Name\",\"sector\":\"Sector\"}"}]})
-    }).then(function(r){return r.json()}).then(function(j){
-      var txt = (j.content||[]).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("");
-      var clean = txt.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
-      try {
-        var info = JSON.parse(clean);
-        setSeeds(function(prev){return prev.map(function(s){
-          if (s.ticker !== ticker) return s;
-          return { ...s, name:info.name, sector:info.sector, source:"manual" };
-        })});
-      } catch(e){}
+    }).catch(function(){ setSeeds(function(prev){return prev.map(function(s){ return s.ticker!==ticker?s:{...s,loading:false,pimScore:0,confidence:"LOW"}; })}); });
+    fetch(CLAUDE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({max_tokens:100,messages:[{role:"user",content:"What company is ticker "+ticker+"? Return ONLY JSON: {\"name\":\"Name\",\"sector\":\"Sector\",\"theme\":\"Theme\"}"}]})}).then(function(r){return r.json()}).then(function(j){
+      var txt=(j.content||[]).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("");
+      try{var info=JSON.parse(txt.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim());setSeeds(function(prev){return prev.map(function(s){return s.ticker!==ticker?s:{...s,name:info.name,sector:info.sector,theme:info.theme}})});}catch(e){}
     }).catch(function(){});
   }
-
-  // Enrich & Add — move seed(s) to main candidates table
   function enrichAndAdd() {
     seeds.forEach(function(seed) {
       if (seed.loading) return;
       var d = seed._techData;
-      var newItem = {
-        ticker:seed.ticker, name:seed.name||seed.ticker, sector:seed.sector||"—", type:"share",
-        rank:candidates.length+1, price:d?d.price:null, r6m:d?d.r6m:null, tq:d?d.tq:null,
-        trend:d?d.trend:"—", rsi:d?d.rsi:null, zScore:d?d.zScore:null,
-        ma50:d?d.ma50:null, ma200:d?d.ma200:null, maDev:d?d.maDev:null,
-        pattern:"—", rr:"—", score:seed.pimScore||0,
-      };
-      // Compute pattern + R:R
-      if (d && d.ma50 && d.ma200) {
-        if (d.price > d.ma50 && d.price > d.ma200 && d.zScore > 1.5) newItem.pattern = "Dbl Top";
-        else if (d.price < d.ma50 && d.price > d.ma200 && d.rsi > 40) newItem.pattern = "Inv H&S";
-        else if (d.trend === "Bullish" && d.maDev > 0 && d.maDev < 5) newItem.pattern = "Cup&Handle";
-        var support = d.ma200 || (d.ma50 ? d.ma50 * 0.95 : null);
-        var resistance = d.price && d.zScore ? d.price * (1 + Math.abs(d.zScore) * 0.05) : null;
-        if (support && resistance && d.price > support) {
-          var risk = d.price - support;
-          var reward = resistance - d.price;
-          if (risk > 0 && reward > 0) newItem.rr = (reward/risk).toFixed(1) + ":1";
-        }
-      }
-      // Score
-      var trendScore = (d&&d.trend==="Bullish")?40:(d&&d.trend==="Neutral")?20:0;
-      var momScore = Math.min(30, Math.max(0, ((d&&d.r6m)||0)*0.5));
-      var tqScore = Math.min(20, ((d&&d.tq)||0)*0.2);
-      newItem.score = Math.round(Math.max(0, Math.min(100, trendScore + momScore + tqScore)));
-      setCandidates(function(prev){return prev.concat([newItem])});
+      var pat = d ? detectScreenerPattern(d) : "—";
+      var rr = d ? computeRR(d) : "—";
+      var scoreData = d ? computeScreenerScore({...d, pattern:pat}) : {score:0};
+      setCandidates(function(prev){
+        var newItem = { ticker:seed.ticker, name:seed.name||seed.ticker, sector:seed.sector||"—", type:"share", theme:seed.theme||"", rank:prev.length+1, price:d?d.price:null, r6m:d?d.r6m:null, tq:d?d.tq:null, trend:d?d.trend:"—", rsi:d?d.rsi:null, zScore:d?d.zScore:null, ma50:d?d.ma50:null, ma200:d?d.ma200:null, maDev:d?d.maDev:null, pattern:pat, rr:rr, score:scoreData.score, scoreData:scoreData, cap:seed.cap||"—" };
+        var updated = prev.concat([newItem]);
+        updated.sort(function(a,b){return(b.score||0)-(a.score||0)});
+        updated.forEach(function(m,i){m.rank=i+1});
+        return updated;
+      });
     });
-    setSeeds([]);
-    setManualTickers([]);
+    setSeeds([]); setManualTickers([]);
   }
+  function removeSeed(t) { setSeeds(function(p){return p.filter(function(s){return s.ticker!==t})}); setManualTickers(function(p){return p.filter(function(x){return x!==t})}); }
 
-  function removeSeed(ticker) {
-    setSeeds(function(prev){return prev.filter(function(s){return s.ticker!==ticker})});
-    setManualTickers(function(prev){return prev.filter(function(t){return t!==ticker})});
-  }
+  function doSort(col) { if(sortCol===col)setSortDir(function(d){return d*-1});else{setSortCol(col);setSortDir(-1);} }
 
-  // Original manual add kept as direct add
-  function addTicker(ticker) {
-    addSeed(ticker);
-  }
-
-  function doSort(col) {
-    if (sortCol===col) setSortDir(function(d){return d*-1});
-    else { setSortCol(col); setSortDir(-1); }
-  }
-
+  // Filtering
   var filtered = candidates.filter(function(c) {
     if (tab==="shares" && c.type==="etf") return false;
     if (tab==="etfs" && c.type!=="etf") return false;
+    if (filters.minScore && c.score < filters.minScore) return false;
+    if (filters.minMom && (c.r6m==null || c.r6m < filters.minMom)) return false;
+    if (filters.trendFilter!=="all" && c.trend!==filters.trendFilter) return false;
+    if (filters.sectorFilter!=="all" && c.sector!==filters.sectorFilter) return false;
     return true;
   });
-
-  var sorted = filtered.slice().sort(function(a,b) {
-    var va=a[sortCol],vb=b[sortCol];
-    if(va==null)return 1;if(vb==null)return -1;
-    if(typeof va==="string")return va.localeCompare(vb)*sortDir;
-    return(va-vb)*sortDir;
-  });
-
+  var sorted = filtered.slice().sort(function(a,b){ var va=a[sortCol],vb=b[sortCol]; if(va==null)return 1;if(vb==null)return -1; if(typeof va==="string")return va.localeCompare(vb)*sortDir; return(va-vb)*sortDir; });
   var sharesCount = candidates.filter(function(c){return c.type!=="etf"}).length;
   var etfCount = candidates.filter(function(c){return c.type==="etf"}).length;
+  var sectors = [];
+  candidates.forEach(function(c){if(c.sector&&c.sector!=="—"&&sectors.indexOf(c.sector)<0)sectors.push(c.sector)});
+  sectors.sort();
 
-  var thS = { textAlign:"left", padding:"8px 6px", color:C.textDim, fontSize:9, fontWeight:700, letterSpacing:1, textTransform:"uppercase", cursor:"pointer", userSelect:"none", borderBottom:"1px solid "+C.border, whiteSpace:"nowrap", position:"sticky", top:0, background:C.card, zIndex:1 };
-  var tdS = { padding:"7px 6px", fontSize:11, borderBottom:"1px solid "+C.border, whiteSpace:"nowrap" };
+  var thS = { textAlign:"left", padding:"7px 5px", color:C.textDim, fontSize:8, fontWeight:700, letterSpacing:1, textTransform:"uppercase", cursor:"pointer", userSelect:"none", borderBottom:"1px solid "+C.border, whiteSpace:"nowrap", position:"sticky", top:0, background:C.card, zIndex:1 };
+  var tdS = { padding:"6px 5px", fontSize:11, borderBottom:"1px solid "+C.border, whiteSpace:"nowrap" };
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
       {/* HEADER */}
       <Card>
-        <div style={{ fontSize:16, fontWeight:700, marginBottom:4 }}>🔍 Asset Screener Results</div>
-        <div style={{ fontSize:11, color:C.textMid, marginBottom:12 }}>{candidates.length} candidates screened and ranked across {sharesCount > 0 && etfCount > 0 ? "2" : "1"} asset categories based on current macro regime.</div>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8 }}>
+          <div>
+            <div style={{ fontSize:16, fontWeight:700, marginBottom:4 }}>🔍 Asset Screener Results</div>
+            <div style={{ fontSize:11, color:C.textMid }}>{candidates.length} candidates screened and ranked across {sharesCount>0&&etfCount>0?"2":"1"} asset categories based on current macro regime.</div>
+          </div>
+          <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+            {lastRefresh && <span style={{ fontSize:10, color:C.green }}>● Last refreshed: {lastRefresh}</span>}
+            <button onClick={runScreener} disabled={loading} style={{ background:loading?C.border:C.blue, border:"none", borderRadius:6, color:loading?C.textMid:C.text, padding:"6px 12px", fontSize:11, fontWeight:700, cursor:loading?"wait":"pointer" }}>{loading?"Screening...":"⚡ Re-screen"}</button>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div style={{ marginBottom:10 }}>
+          <div onClick={function(){setShowFilters(!showFilters)}} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", cursor:"pointer", padding:"6px 10px", background:C.cardAlt, borderRadius:6, border:"1px solid "+C.border }}>
+            <span style={{ fontSize:11, color:C.textMid }}>▷ Screener Filters</span>
+            <span style={{ fontSize:10, color:C.textDim }}>{sharesCount+etfCount} per cat · all caps</span>
+          </div>
+          {showFilters && (
+            <div style={{ display:"flex", gap:12, padding:"10px", background:C.cardAlt, borderRadius:"0 0 6px 6px", borderTop:"none", flexWrap:"wrap" }}>
+              <div>
+                <div style={{ fontSize:9, color:C.textDim, marginBottom:3 }}>Min Score</div>
+                <select value={filters.minScore||0} onChange={function(e){setFilters(function(f){return{...f,minScore:parseInt(e.target.value)}})}} style={{ background:C.card, color:C.text, border:"1px solid "+C.border, borderRadius:4, padding:"3px 6px", fontSize:10 }}>
+                  <option value={0}>Any</option><option value={20}>20+</option><option value={40}>40+</option><option value={60}>60+</option><option value={80}>80+</option>
+                </select>
+              </div>
+              <div>
+                <div style={{ fontSize:9, color:C.textDim, marginBottom:3 }}>Min 6M%</div>
+                <select value={filters.minMom||""} onChange={function(e){setFilters(function(f){return{...f,minMom:e.target.value?parseInt(e.target.value):null}})}} style={{ background:C.card, color:C.text, border:"1px solid "+C.border, borderRadius:4, padding:"3px 6px", fontSize:10 }}>
+                  <option value="">Any</option><option value={10}>10%+</option><option value={25}>25%+</option><option value={50}>50%+</option>
+                </select>
+              </div>
+              <div>
+                <div style={{ fontSize:9, color:C.textDim, marginBottom:3 }}>Trend</div>
+                <select value={filters.trendFilter} onChange={function(e){setFilters(function(f){return{...f,trendFilter:e.target.value}})}} style={{ background:C.card, color:C.text, border:"1px solid "+C.border, borderRadius:4, padding:"3px 6px", fontSize:10 }}>
+                  <option value="all">All</option><option value="Bullish">Bullish</option><option value="Neutral">Neutral</option><option value="Bearish">Bearish</option>
+                </select>
+              </div>
+              <div>
+                <div style={{ fontSize:9, color:C.textDim, marginBottom:3 }}>Sector</div>
+                <select value={filters.sectorFilter} onChange={function(e){setFilters(function(f){return{...f,sectorFilter:e.target.value}})}} style={{ background:C.card, color:C.text, border:"1px solid "+C.border, borderRadius:4, padding:"3px 6px", fontSize:10 }}>
+                  <option value="all">All Sectors</option>
+                  {sectors.map(function(s){return <option key={s} value={s}>{s}</option>})}
+                </select>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Manual add */}
-        <div style={{ marginBottom:12 }}>
+        <div style={{ marginBottom:10 }}>
           <div style={{ fontSize:10, color:C.textDim, marginBottom:4 }}>+ Add tickers manually</div>
           <div style={{ display:"flex", gap:8, alignItems:"center" }}>
             <div style={{ flex:1, display:"flex", alignItems:"center", gap:4, flexWrap:"wrap", background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"4px 8px", minHeight:32 }}>
-              {manualTickers.map(function(t){
-                return <span key={t} style={{ background:C.blue+"22", color:C.blueLight, border:"1px solid "+C.blue+"44", borderRadius:4, padding:"2px 6px", fontSize:10, display:"flex", alignItems:"center", gap:4 }}>
-                  {t}
-                  <span onClick={function(){removeSeed(t)}} style={{ cursor:"pointer", opacity:0.6 }}>×</span>
-                </span>;
-              })}
-              <input
-                value={search}
-                onChange={function(e){setSearch(e.target.value)}}
-                onKeyDown={function(e){if(e.key==="Enter"&&search.trim()){addSeed(search);e.preventDefault()}}}
-                placeholder="Search by ticker or name..."
-                style={{ background:"transparent", border:"none", outline:"none", color:C.text, fontSize:11, flex:1, minWidth:150, fontFamily:sans }}
-              />
+              {manualTickers.map(function(t){ return <span key={t} style={{ background:C.blue+"22", color:C.blueLight, border:"1px solid "+C.blue+"44", borderRadius:4, padding:"2px 6px", fontSize:10, display:"flex", alignItems:"center", gap:4 }}>{t}<span onClick={function(){removeSeed(t)}} style={{ cursor:"pointer", opacity:0.6 }}>×</span></span>; })}
+              <input value={search} onChange={function(e){setSearch(e.target.value)}} onKeyDown={function(e){if(e.key==="Enter"&&search.trim()){addSeed(search);e.preventDefault()}}} placeholder="Search by ticker or name..." style={{ background:"transparent", border:"none", outline:"none", color:C.text, fontSize:11, flex:1, minWidth:150, fontFamily:sans }} />
             </div>
-            <button onClick={function(){if(search.trim())addSeed(search)}} style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, color:C.textMid, padding:"8px 14px", fontSize:11, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>+ Add</button>
+            <button onClick={function(){if(search.trim())addSeed(search)}} style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, color:C.textMid, padding:"8px 14px", fontSize:11, fontWeight:700, cursor:"pointer" }}>+ Add</button>
           </div>
         </div>
 
         {/* Intelligence Seeds */}
         {seeds.length > 0 && (
-          <div style={{ marginBottom:12 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-              <div style={{ fontSize:13, fontWeight:700, display:"flex", alignItems:"center", gap:6 }}>
-                <span>🧩</span> Intelligence Seeds
+          <div style={{ marginBottom:10 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+              <div style={{ fontSize:13, fontWeight:700 }}>🧩 Intelligence Seeds</div>
+              <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                <span style={{ fontSize:10, color:C.textMid }}>{seeds.filter(function(s){return !s.loading}).length} ready</span>
+                <button onClick={enrichAndAdd} style={{ background:C.blue, border:"none", borderRadius:4, color:C.text, padding:"5px 12px", fontSize:10, fontWeight:700, cursor:"pointer" }}>+ Enrich & Add ({seeds.length})</button>
               </div>
-              <div style={{ fontSize:10, color:C.textMid }}>{seeds.filter(function(s){return !s.loading}).length} accepted from manual input</div>
             </div>
-            <div style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:8, overflow:"hidden" }}>
+            <div style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, overflow:"hidden" }}>
               <table style={{ width:"100%", borderCollapse:"collapse" }}>
-                <thead>
-                  <tr style={{ borderBottom:"1px solid "+C.border }}>
-                    {["TICKER","SOURCE","PIM SCORE","STRATEGY","RSI","PIOTROSKI","REGIME FIT","CONFIDENCE",""].map(function(h){
-                      return <th key={h} style={{ textAlign:["PIM SCORE","RSI","PIOTROSKI","REGIME FIT"].indexOf(h)>=0?"center":"left", padding:"8px 10px", color:C.textDim, fontSize:9, fontWeight:700, letterSpacing:1 }}>{h}</th>;
-                    })}
-                  </tr>
-                </thead>
+                <thead><tr style={{ borderBottom:"1px solid "+C.border }}>
+                  {["TICKER","SOURCE","PIM SCORE","STRATEGY","RSI","PIOTROSKI","REGIME FIT","CONFIDENCE"].map(function(h){ return <th key={h} style={{ textAlign:["PIM SCORE","RSI","PIOTROSKI","REGIME FIT"].indexOf(h)>=0?"center":"left", padding:"6px 8px", color:C.textDim, fontSize:8, fontWeight:700, letterSpacing:1 }}>{h}</th>; })}
+                </tr></thead>
                 <tbody>
                   {seeds.map(function(seed) {
-                    var pimColor = seed.pimScore >= 25 ? C.green : seed.pimScore >= 15 ? C.orange : C.red;
-                    var confColor = seed.confidence==="HIGH"?C.green:seed.confidence==="MEDIUM"?C.orange:C.red;
-                    var confBg = seed.confidence==="HIGH"?C.green+"22":seed.confidence==="MEDIUM"?C.orange+"22":C.red+"22";
-                    return (
-                      <tr key={seed.ticker} style={{ borderBottom:"1px solid "+C.border }}>
-                        <td style={{ padding:"10px", fontWeight:700, fontFamily:font, color:C.cyan, fontSize:12 }}>{seed.ticker}</td>
-                        <td style={{ padding:"10px", fontSize:10, color:C.textDim }}>{seed.source}</td>
-                        <td style={{ padding:"10px", textAlign:"center" }}>
-                          {seed.loading ? <Spinner size={12} /> : <span style={{ color:pimColor, fontWeight:700, fontFamily:font, fontSize:14 }}>{seed.pimScore}</span>}
-                        </td>
-                        <td style={{ padding:"10px", fontSize:11, color:C.textMid }}>{seed.strategy}</td>
-                        <td style={{ padding:"10px", textAlign:"center", fontFamily:font, fontSize:11, color:seed.rsi>70?C.red:seed.rsi<30?C.green:C.text }}>{seed.rsi||"—"}</td>
-                        <td style={{ padding:"10px", textAlign:"center", fontFamily:font, fontSize:11, color:C.text }}>{seed.piotroski||"—"}</td>
-                        <td style={{ padding:"10px", textAlign:"center", fontFamily:font, fontSize:11, color:C.text }}>{seed.regimeFit||"—"}</td>
-                        <td style={{ padding:"10px", textAlign:"center" }}>
-                          {seed.loading ? <Spinner size={12} /> : <span style={{ background:confBg, color:confColor, padding:"2px 8px", borderRadius:4, fontSize:9, fontWeight:700 }}>{seed.confidence}</span>}
-                        </td>
-                        <td style={{ padding:"10px" }}>
-                          <button onClick={enrichAndAdd} style={{ background:C.blue, border:"none", borderRadius:4, color:C.text, padding:"4px 10px", fontSize:10, fontWeight:600, cursor:"pointer" }}>Enrich & Add</button>
-                        </td>
-                      </tr>
-                    );
+                    var pc=seed.pimScore>=25?C.green:seed.pimScore>=15?C.orange:C.red;
+                    var cc=seed.confidence==="HIGH"?C.green:seed.confidence==="MEDIUM"?C.orange:C.red;
+                    return <tr key={seed.ticker} style={{ borderBottom:"1px solid "+C.border }}>
+                      <td style={{ padding:"8px", fontWeight:700, fontFamily:font, color:C.cyan, fontSize:11 }}>{seed.ticker}</td>
+                      <td style={{ padding:"8px", fontSize:9, color:C.textDim }}>{seed.source}</td>
+                      <td style={{ padding:"8px", textAlign:"center" }}>{seed.loading?<Spinner size={10}/>:<span style={{ color:pc, fontWeight:700, fontFamily:font }}>{seed.pimScore}</span>}</td>
+                      <td style={{ padding:"8px", fontSize:10, color:C.textMid }}>{seed.strategy}</td>
+                      <td style={{ padding:"8px", textAlign:"center", fontFamily:font, fontSize:10 }}>{seed.rsi||"—"}</td>
+                      <td style={{ padding:"8px", textAlign:"center", fontFamily:font, fontSize:10 }}>{seed.piotroski||"—"}</td>
+                      <td style={{ padding:"8px", textAlign:"center", fontFamily:font, fontSize:10 }}>{seed.regimeFit||"—"}</td>
+                      <td style={{ padding:"8px", textAlign:"center" }}>{seed.loading?<Spinner size={10}/>:<span style={{ background:cc+"22", color:cc, padding:"1px 6px", borderRadius:3, fontSize:8, fontWeight:700 }}>{seed.confidence}</span>}</td>
+                    </tr>;
                   })}
                 </tbody>
               </table>
             </div>
-            <div style={{ fontSize:9, color:C.textDim, marginTop:4 }}>Seeds accepted in the Intelligence view. "Enrich & Add" runs the full screener enrichment pipeline and merges the ticker into the category tables above.</div>
+            <div style={{ fontSize:8, color:C.textDim, marginTop:3 }}>Seeds pre-screened. "Enrich & Add" runs the full pipeline and merges into the tables above.</div>
           </div>
         )}
 
         {/* Tabs */}
         <div style={{ display:"flex", gap:8 }}>
           <button onClick={function(){setTab("shares")}} style={{ background:tab==="shares"?C.red:C.cardAlt, border:"1px solid "+(tab==="shares"?C.red:C.border), borderRadius:6, color:C.text, padding:"6px 14px", fontSize:11, fontWeight:700, cursor:"pointer" }}>📊 Shares {sharesCount}</button>
-          <button onClick={function(){setTab("etfs")}} style={{ background:tab==="etfs"?C.cardAlt:C.cardAlt, border:"1px solid "+(tab==="etfs"?C.green:C.border), borderRadius:6, color:C.text, padding:"6px 14px", fontSize:11, fontWeight:700, cursor:"pointer" }}>📈 ETFs {etfCount}</button>
+          <button onClick={function(){setTab("etfs")}} style={{ background:tab==="etfs"?C.green+"22":C.cardAlt, border:"1px solid "+(tab==="etfs"?C.green:C.border), borderRadius:6, color:C.text, padding:"6px 14px", fontSize:11, fontWeight:700, cursor:"pointer" }}>📈 ETFs {etfCount}</button>
         </div>
       </Card>
+
+      {/* COLUMN LEGEND */}
+      <div style={{ background:C.green+"0a", border:"1px solid "+C.green+"22", borderRadius:8, padding:"8px 12px", fontSize:9, color:C.textDim, lineHeight:1.6 }}>
+        Default order: composite score (quality + momentum + value with regime/R:R/pattern/AI adjustments). Click column headers to sort. Cap = L(arge ≥$10B) / M(id $2-10B) / S(mall &lt;$2B). TQ = Trend Quality (R² of linear regression). R:R = Reward-to-Risk (target vs support/ATR stop). Pattern = algorithmic chart pattern detection. Score = weighted composite (0-100). Z-Score = price deviation from 63-day mean (&gt;+2 extended, &lt;-2 depressed).
+      </div>
 
       {/* RESULTS TABLE */}
       <Card style={{ padding:"10px 12px" }}>
@@ -3246,54 +3244,51 @@ function ScreenerStage() {
           <div style={{ fontSize:13, fontWeight:700 }}>📈 Top Macro-Aligned {tab==="shares"?"Shares":"ETFs"}</div>
           <div style={{ fontSize:10, color:C.textMid }}>{sorted.length} candidates</div>
         </div>
+        {status && <div style={{ textAlign:"center", padding:12, color:C.cyan, fontSize:11 }}><Spinner size={12} /> {status}</div>}
         <div style={{ overflowX:"auto", maxHeight:600, overflowY:"auto" }}>
-          <table style={{ width:"100%", borderCollapse:"collapse", minWidth:1100 }}>
+          <table style={{ width:"100%", borderCollapse:"collapse", minWidth:1300 }}>
             <thead>
               <tr>
                 {[
-                  {key:"rank",label:"#",w:30},{key:"ticker",label:"TICKER",w:65},{key:"name",label:"NAME",w:160},
-                  {key:"sector",label:"SECTOR",w:90},{key:"r6m",label:"6M%",w:55},{key:"tq",label:"TQ",w:40},
-                  {key:"trend",label:"TREND",w:65},{key:"score",label:"SCORE",w:55},{key:"rr",label:"R:R",w:45},
-                  {key:"rsi",label:"RSI",w:38},{key:"pattern",label:"PATTERN",w:70},{key:"zScore",label:"Z-SCORE",w:55},
-                  {key:"price",label:"PRICE",w:65},
+                  {key:"rank",label:"#",w:30},{key:"ticker",label:"TICKER",w:65},{key:"name",label:"NAME",w:150},
+                  {key:"sector",label:"SECTOR",w:85},{key:"theme",label:"THEME",w:110},
+                  {key:"cap",label:"CAP",w:30},{key:"price",label:"PRICE",w:65},{key:"r6m",label:"6M%",w:55},
+                  {key:"tq",label:"TQ",w:40},{key:"trend",label:"TREND",w:60},{key:"score",label:"SCORE",w:60},
+                  {key:"rr",label:"R:R",w:45},{key:"rsi",label:"RSI",w:38},{key:"pattern",label:"PATTERN",w:70},
+                  {key:"zScore",label:"Z-SCORE",w:55},
                 ].map(function(col) {
-                  return <th key={col.key} onClick={function(){doSort(col.key)}} style={{ ...thS, width:col.w, textAlign:["r6m","tq","score","rsi","zScore","price","rank"].indexOf(col.key)>=0?"right":"left" }}>{col.label}{sortCol===col.key?(sortDir>0?" ↑":" ↓"):""}</th>;
+                  var isRight = ["r6m","tq","score","rsi","zScore","price","rank"].indexOf(col.key)>=0;
+                  return <th key={col.key} onClick={function(){doSort(col.key)}} style={{ ...thS, width:col.w, textAlign:isRight?"right":"left" }}>{col.label}{sortCol===col.key?(sortDir>0?" ↑":" ↓"):""}</th>;
                 })}
               </tr>
             </thead>
             <tbody>
-              {loading ? (
-                <tr><td colSpan={13} style={{ padding:40, textAlign:"center", color:C.textDim }}><Spinner size={16} /> {status || "Loading screener..."}</td></tr>
-              ) : sorted.length === 0 ? (
-                <tr><td colSpan={13} style={{ padding:40, textAlign:"center", color:C.textDim }}>No candidates found</td></tr>
-              ) : sorted.map(function(c, i) {
-                var scoreColor = c.score>=70?C.green:c.score>=40?C.orange:C.red;
+              {!loading && sorted.map(function(c, i) {
+                var sc=c.score>=70?C.green:c.score>=40?C.orange:c.score>=20?C.yellow:C.red;
+                var pc=c.pattern==="Inv H&S"||c.pattern==="Cup&Handle"||c.pattern==="Dbl Bot"?C.green:c.pattern==="Dbl Top"||c.pattern==="Rise Wedge"?C.orange:C.textDim;
+                var trendW = c.trend==="Bullish"&&c.tq>3?"Warning":null;
                 return (
                   <tr key={c.ticker} onClick={function(){setSelectedTicker(selectedTicker===c.ticker?null:c.ticker)}} style={{ background:selectedTicker===c.ticker?C.blue+"18":i%2===0?"transparent":C.cardAlt+"33", cursor:"pointer" }}>
-                    <td style={{ ...tdS, textAlign:"right", color:c.rank<=3?C.gold:C.textDim, fontWeight:c.rank<=3?700:400 }}>
-                      {c.rank<=3 ? "🏆" : ""} {c.rank}
-                    </td>
+                    <td style={{ ...tdS, textAlign:"right", color:c.rank<=3?C.gold:C.textDim, fontWeight:c.rank<=3?700:400, fontSize:10 }}>{c.rank<=3?"🏆":""} {c.rank}</td>
                     <td style={{ ...tdS, fontWeight:700, color:C.cyan, fontFamily:font, fontSize:11 }}>{c.ticker}</td>
-                    <td style={{ ...tdS, color:C.textMid, fontSize:10, maxWidth:160, overflow:"hidden", textOverflow:"ellipsis" }}>{c.name}</td>
-                    <td style={tdS}><span style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:3, padding:"2px 6px", fontSize:9, color:C.textMid }}>{c.sector}</span></td>
-                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11, color:c.r6m>0?C.green:c.r6m<0?C.red:C.textMid }}>
-                      {c.r6m!=null?(c.r6m>0?"↑ +":"↓ ")+c.r6m+"%":"—"}
-                    </td>
-                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11, color:C.text }}>{c.tq!=null?c.tq.toFixed(2):"—"}</td>
-                    <td style={tdS}><span style={{ color:c.trend==="Bullish"?C.green:c.trend==="Bearish"?C.red:C.textMid, fontWeight:600, fontSize:10 }}>{c.trend}</span></td>
+                    <td style={{ ...tdS, color:C.textMid, fontSize:10, maxWidth:150, overflow:"hidden", textOverflow:"ellipsis" }}>{c.name}</td>
+                    <td style={tdS}><span style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:3, padding:"1px 5px", fontSize:8, color:C.textMid }}>{c.sector}</span></td>
+                    <td style={tdS}>{c.theme?<span style={{ background:C.purple+"22", color:C.purple, border:"1px solid "+C.purple+"33", borderRadius:3, padding:"1px 5px", fontSize:8 }}>{c.theme}</span>:"—"}</td>
+                    <td style={{ ...tdS, textAlign:"center", fontSize:9, color:C.textDim }}>{c.cap||"—"}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, fontWeight:600 }}>{c.price!=null?"$"+c.price.toLocaleString(undefined,{maximumFractionDigits:2}):"—"}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:c.r6m>0?C.green:C.red }}>{c.r6m!=null?(c.r6m>0?"↑+":"↓")+c.r6m+"%":"—"}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10 }}>{c.tq!=null?c.tq.toFixed(2):"—"}</td>
+                    <td style={tdS}><span style={{ color:c.trend==="Bullish"?C.green:c.trend==="Bearish"?C.red:C.textMid, fontWeight:600, fontSize:10 }}>{trendW||c.trend}</span></td>
                     <td style={{ ...tdS, textAlign:"right" }}>
                       <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", gap:4 }}>
-                        <div style={{ width:30, height:4, background:C.border, borderRadius:2, overflow:"hidden" }}>
-                          <div style={{ width:(c.score||0)+"%", height:"100%", background:scoreColor, borderRadius:2 }} />
-                        </div>
-                        <span style={{ fontFamily:font, fontSize:10, color:scoreColor }}>{c.score}</span>
+                        <div style={{ width:32, height:4, background:C.border, borderRadius:2, overflow:"hidden" }}><div style={{ width:(c.score||0)+"%", height:"100%", background:sc, borderRadius:2 }} /></div>
+                        <span style={{ fontFamily:font, fontSize:10, color:sc, fontWeight:700 }}>{c.score}</span>
                       </div>
                     </td>
                     <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.textMid }}>{c.rr}</td>
                     <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:c.rsi>70?C.red:c.rsi<30?C.green:C.text }}>{c.rsi||"—"}</td>
-                    <td style={{ ...tdS, fontSize:9, fontWeight:600, color:c.pattern==="Inv H&S"||c.pattern==="Cup&Handle"||c.pattern==="Dbl Bot"?C.green:c.pattern==="Dbl Top"||c.pattern==="Rise Wedge"?C.orange:C.textDim }}>{c.pattern}</td>
+                    <td style={{ ...tdS, fontSize:9, fontWeight:600, color:pc }}>{c.pattern}</td>
                     <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:C.textMid }}>{c.zScore!=null?(c.zScore>0?"+":"")+c.zScore.toFixed(2):"—"}</td>
-                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:11, fontWeight:600 }}>{c.price!=null?"$"+c.price.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}):"—"}</td>
                   </tr>
                 );
               })}
@@ -3302,135 +3297,74 @@ function ScreenerStage() {
         </div>
       </Card>
 
-      {/* SCREENING DETAIL PANEL */}
+      {/* DETAIL PANEL */}
       {selectedTicker && (function(){
         var c = candidates.find(function(x){return x.ticker===selectedTicker}) || {};
-        var d = c; // technicals are already merged into candidate
-
-        // Gate checks
-        var gates = [];
-        // A: Fundamentals Fetch
-        gates.push({ id:"A", name:"Fundamentals Fetch", pass:c.price!=null, detail:c.price!=null?(c.rsi?"RSI, MAs, TQ, Z-Score retrieved":"partial data"):"No data available" });
-        // B: Market Cap Filter
-        var capLabel = c.mktCap || "—";
-        var capPass = c.price != null; // We don't have mktcap from Yahoo chart API, so pass if price exists
-        gates.push({ id:"B", name:"Market Cap Filter", pass:capPass, detail:capPass?"Price: $"+(c.price||0).toFixed(2):"No market cap data", threshold:"Threshold: min $0.5B (share)" });
-        // D: History Fetch
-        var histPass = c.ma200 != null;
-        gates.push({ id:"D", name:"History Fetch", pass:histPass, detail:histPass?"200+ trading days of data":"Insufficient history", threshold:"" });
-        // D2: Momentum/Alpha Filter
-        var momPass = c.r6m != null && c.r6m > 0;
-        gates.push({ id:"D2", name:"Momentum/Alpha Filter", pass:momPass, detail:"6m return: "+(c.r6m!=null?(c.r6m>0?"+":"")+c.r6m+"%":"N/A"), threshold:"Threshold: positive 6M return" });
-        // E1: Sector Exclusion
-        var excludedSectors = ["Tobacco","Gambling"];
-        var sectorPass = excludedSectors.indexOf(c.sector) < 0;
-        gates.push({ id:"E1", name:"Sector Exclusion", pass:sectorPass, detail:c.sector||"Unknown", threshold:"Excluded: Tobacco, Gambling" });
-        // E3: Bearish MA Trend
-        var maPass = c.trend !== "Bearish";
-        gates.push({ id:"E3", name:"Bearish MA Trend", pass:maPass, detail:c.trend==="Bearish"?"Warning":"OK — "+c.trend, threshold:"Bearish excluded (SUMMER)" });
-        // E5: Quality/Value Filters
-        var tqPass = c.tq != null && c.tq > 0.15;
-        gates.push({ id:"E5", name:"Quality/Value Filters", pass:tqPass!==false, detail:"TQ: "+(c.tq!=null?c.tq.toFixed(2):"N/A"), threshold:"Threshold: min TQ: 0.15" });
-        // E6: Phase Alignment
-        var phaseVal = c.phase || "—";
-        var phasePass = phaseVal !== "Broken Trend" && phaseVal !== "Deterioration";
-        gates.push({ id:"E6", name:"Phase Alignment", pass:phasePass, detail:phaseVal, threshold:"Threshold: <0.15 excluded" });
-        // E7: Forensic Gates (Z-score distress check)
-        var forensicPass = c.zScore == null || c.zScore > -2.0;
-        var zLabel = c.zScore != null ? "Z=" + c.zScore.toFixed(2) : "N/A";
-        gates.push({ id:"E7", name:"Forensic Gates", pass:forensicPass, detail:"0 flags, "+zLabel+(c.zScore!=null&&c.zScore<-2?" (distress)":""), threshold:"Threshold: >=3 flags or distress", warning:!forensicPass?"Z-Score in distress zone":null });
-        // G: R:R
-        gates.push({ id:"G", name:"R:R (informational)", pass:true, detail:c.rr||"N/A", threshold:"Threshold: applied by Portfolio Builder" });
-
-        var passCount = gates.filter(function(g){return g.pass}).length;
-        var failCount = gates.filter(function(g){return !g.pass}).length;
-        var excluded = failCount >= 2;
-
-        // Scoring breakdown
-        var qualityRaw = c.tq != null ? Math.min(1, c.tq / 10) : 0;
-        var momentumRaw = c.r6m != null ? Math.min(1, Math.max(0, c.r6m / 50)) : 0;
-        var valueRaw = 0.03; // Placeholder — no PE data from Yahoo OHLC
-        var patternRaw = c.pattern !== "—" ? 0.62 : 0;
-        var sentimentRaw = c.rsi ? (c.rsi > 30 && c.rsi < 70 ? 0.5 : 0.2) : 0;
-        var weights = { quality:0.25, momentum:0.40, value:0.10, pattern:0.15, sentiment:0.10 };
-        var composite = qualityRaw*weights.quality + momentumRaw*weights.momentum + valueRaw*weights.value + patternRaw*weights.pattern + sentimentRaw*weights.sentiment;
-
-        var bars = [
-          { label:"Quality", raw:qualityRaw, weight:weights.quality, color:C.blue },
-          { label:"Momentum", raw:momentumRaw, weight:weights.momentum, color:C.green },
-          { label:"Value", raw:valueRaw, weight:weights.value, color:C.cyan },
-          { label:"Pattern", raw:patternRaw, weight:weights.pattern, color:C.orange },
-          { label:"Sentiment", raw:sentimentRaw, weight:weights.sentiment, color:C.purple },
+        var gates = [
+          {id:"A",name:"Fundamentals Fetch",pass:c.price!=null,detail:c.price!=null?"Price, RSI, MAs, TQ, Z-Score":"No data",threshold:""},
+          {id:"B",name:"Market Cap Filter",pass:c.price!=null,detail:c.price?"$"+(c.price).toFixed(2):"N/A",threshold:"Min $0.5B (share)"},
+          {id:"D",name:"History Fetch",pass:c.ma200!=null,detail:c.ma200!=null?"200+ trading days":"Insufficient",threshold:""},
+          {id:"D2",name:"Momentum/Alpha Filter",pass:c.r6m!=null&&c.r6m>0,detail:"6m: "+(c.r6m!=null?(c.r6m>0?"+":"")+c.r6m+"%":"N/A"),threshold:"Positive 6M return"},
+          {id:"E1",name:"Sector Exclusion",pass:true,detail:c.sector||"?",threshold:"Excluded: Tobacco, Gambling"},
+          {id:"E3",name:"Bearish MA Trend",pass:c.trend!=="Bearish",detail:c.trend==="Bearish"?"Warning":"OK",threshold:"Bearish excluded ("+regime+")"},
+          {id:"E5",name:"Quality/Value Filters",pass:c.tq!=null&&c.tq>0.15,detail:"TQ: "+(c.tq!=null?c.tq.toFixed(2):"N/A"),threshold:"Min TQ: 0.15"},
+          {id:"E6",name:"Phase Alignment",pass:c.phase!=="Broken Trend"&&c.phase!=="Deterioration",detail:c.phase||"—",threshold:"<0.15 excluded"},
+          {id:"E7",name:"Forensic Gates",pass:c.zScore==null||c.zScore>-2,detail:"Z="+(c.zScore!=null?c.zScore.toFixed(2):"N/A"),threshold:"≥3 flags or distress",warning:c.zScore!=null&&c.zScore<-2?"Z-Score in distress zone":null},
+          {id:"G",name:"R:R (informational)",pass:true,detail:c.rr||"N/A",threshold:"Applied by Portfolio Builder"},
         ];
-
+        var passCount=gates.filter(function(g){return g.pass}).length;
+        var excluded=gates.filter(function(g){return !g.pass}).length>=2;
+        var sd=c.scoreData||computeScreenerScore(c);
+        var bars=[{label:"Quality",raw:sd.quality||0,w:0.25,color:C.blue},{label:"Momentum",raw:sd.momentum||0,w:0.40,color:C.green},{label:"Value",raw:sd.value||0,w:0.10,color:C.cyan},{label:"Pattern",raw:sd.pattern||0,w:0.15,color:C.orange},{label:"Sentiment",raw:sd.sentiment||0,w:0.10,color:C.purple}];
         return (
-          <div style={{ display:"grid", gridTemplateColumns:"340px 1fr", gap:12 }}>
-            {/* LEFT: Screening Pipeline */}
-            <Card style={{ padding:"14px" }}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
+          <div style={{ display:"grid", gridTemplateColumns:"320px 1fr", gap:12 }}>
+            <Card style={{ padding:"12px" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", marginBottom:10 }}>
                 <div>
-                  <div style={{ fontSize:18, fontWeight:700, fontFamily:font }}>{c.ticker}</div>
-                  <div style={{ fontSize:11, color:C.textMid }}>{c.name}</div>
+                  <div style={{ fontSize:16, fontWeight:700, fontFamily:font }}>{c.ticker}</div>
+                  <div style={{ fontSize:10, color:C.textMid }}>{c.name}</div>
                   <div style={{ display:"flex", gap:4, marginTop:4 }}>
-                    <span style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:3, padding:"1px 6px", fontSize:9, color:C.textDim }}>{regime}</span>
-                    {excluded && <span style={{ background:C.red+"22", border:"1px solid "+C.red+"44", borderRadius:3, padding:"1px 6px", fontSize:9, color:C.red, fontWeight:700 }}>EXCLUDED</span>}
-                    {!excluded && <span style={{ background:C.green+"22", border:"1px solid "+C.green+"44", borderRadius:3, padding:"1px 6px", fontSize:9, color:C.green, fontWeight:700 }}>PASS</span>}
+                    <span style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:3, padding:"1px 5px", fontSize:8, color:C.textDim }}>{regime}</span>
+                    {excluded?<span style={{ background:C.red+"22", border:"1px solid "+C.red+"44", borderRadius:3, padding:"1px 5px", fontSize:8, color:C.red, fontWeight:700 }}>EXCLUDED</span>:<span style={{ background:C.green+"22", border:"1px solid "+C.green+"44", borderRadius:3, padding:"1px 5px", fontSize:8, color:C.green, fontWeight:700 }}>PASS</span>}
                   </div>
                 </div>
-                <button onClick={function(){setSelectedTicker(null)}} style={{ background:"transparent", border:"none", color:C.textDim, fontSize:16, cursor:"pointer" }}>×</button>
+                <button onClick={function(){setSelectedTicker(null)}} style={{ background:"transparent", border:"none", color:C.textDim, fontSize:14, cursor:"pointer" }}>×</button>
               </div>
-
-              {/* Gate list */}
-              <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-                {gates.map(function(g) {
-                  return (
-                    <div key={g.id} style={{ background:g.pass?C.card:C.red+"0a", border:"1px solid "+(g.pass?C.border:C.red+"33"), borderRadius:6, padding:"8px 10px" }}>
-                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:2 }}>
-                        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                          <span style={{ fontSize:14 }}>{g.pass?"✅":"❌"}</span>
-                          <span style={{ fontSize:10, color:C.textDim }}>{g.id}</span>
-                          <span style={{ fontSize:12, fontWeight:600, color:C.text }}>{g.name}</span>
-                        </div>
-                        <span style={{ fontSize:10, fontWeight:700, color:g.pass?C.green:C.red }}>{g.pass?"PASS":"FAIL"}</span>
-                      </div>
-                      <div style={{ fontSize:10, color:C.textMid, marginLeft:28 }}>{g.detail}</div>
-                      {g.threshold && <div style={{ fontSize:9, color:C.textDim, marginLeft:28 }}>{g.threshold}</div>}
-                      {g.warning && <div style={{ fontSize:9, color:C.red, marginLeft:28, marginTop:2 }}>{g.warning}</div>}
+              <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                {gates.map(function(g){ return <div key={g.id} style={{ background:g.pass?C.card:C.red+"0a", border:"1px solid "+(g.pass?C.border:C.red+"33"), borderRadius:5, padding:"6px 8px" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                      <span style={{ fontSize:12 }}>{g.pass?"✅":"❌"}</span>
+                      <span style={{ fontSize:9, color:C.textDim }}>{g.id}</span>
+                      <span style={{ fontSize:11, fontWeight:600 }}>{g.name}</span>
                     </div>
-                  );
-                })}
+                    <span style={{ fontSize:9, fontWeight:700, color:g.pass?C.green:C.red }}>{g.pass?"PASS":"FAIL"}</span>
+                  </div>
+                  <div style={{ fontSize:9, color:C.textMid, marginLeft:24 }}>{g.detail}</div>
+                  {g.threshold&&<div style={{ fontSize:8, color:C.textDim, marginLeft:24 }}>{g.threshold}</div>}
+                  {g.warning&&<div style={{ fontSize:8, color:C.red, marginLeft:24 }}>{g.warning}</div>}
+                </div>; })}
               </div>
-
-              {/* Scoring Breakdown */}
-              <div style={{ marginTop:14, borderTop:"1px solid "+C.border, paddingTop:12 }}>
-                <div style={{ fontSize:12, fontWeight:700, marginBottom:10 }}>SCORING BREAKDOWN</div>
-                {bars.map(function(b) {
-                  var weighted = b.raw * b.weight;
-                  return (
-                    <div key={b.label} style={{ display:"grid", gridTemplateColumns:"75px 1fr 120px", gap:6, alignItems:"center", marginBottom:6 }}>
-                      <span style={{ fontSize:10, color:C.text }}>{b.label}</span>
-                      <div style={{ height:6, background:C.border, borderRadius:3 }}>
-                        <div style={{ width:Math.min(100, b.raw*100)+"%", height:"100%", background:b.color, borderRadius:3 }} />
-                      </div>
-                      <span style={{ fontSize:9, color:C.textDim, fontFamily:font, textAlign:"right" }}>{b.raw.toFixed(2)} x {(b.weight*100).toFixed(0)}% = {weighted.toFixed(3)}</span>
-                    </div>
-                  );
-                })}
-                <div style={{ display:"flex", justifyContent:"space-between", marginTop:8, borderTop:"1px solid "+C.border, paddingTop:8 }}>
-                  <span style={{ fontSize:12, fontWeight:700 }}>Composite</span>
-                  <span style={{ fontSize:14, fontWeight:700, fontFamily:font, color:composite>0.5?C.green:composite>0.3?C.orange:C.red }}>{composite.toFixed(4)}</span>
+              <div style={{ marginTop:10, borderTop:"1px solid "+C.border, paddingTop:8 }}>
+                <div style={{ fontSize:11, fontWeight:700, marginBottom:6 }}>SCORING BREAKDOWN</div>
+                {bars.map(function(b){ var wt=b.raw*b.w; return <div key={b.label} style={{ display:"grid", gridTemplateColumns:"65px 1fr 100px", gap:4, alignItems:"center", marginBottom:4 }}>
+                  <span style={{ fontSize:9 }}>{b.label}</span>
+                  <div style={{ height:5, background:C.border, borderRadius:3 }}><div style={{ width:Math.min(100,b.raw*100)+"%", height:"100%", background:b.color, borderRadius:3 }} /></div>
+                  <span style={{ fontSize:8, color:C.textDim, fontFamily:font, textAlign:"right" }}>{b.raw.toFixed(2)} x {(b.w*100).toFixed(0)}% = {wt.toFixed(3)}</span>
+                </div>; })}
+                <div style={{ display:"flex", justifyContent:"space-between", marginTop:6, borderTop:"1px solid "+C.border, paddingTop:6 }}>
+                  <span style={{ fontSize:11, fontWeight:700 }}>Composite</span>
+                  <span style={{ fontSize:13, fontWeight:700, fontFamily:font, color:(sd.composite||0)>0.5?C.green:(sd.composite||0)>0.3?C.orange:C.red }}>{(sd.composite||0).toFixed(4)}</span>
                 </div>
               </div>
             </Card>
-
-            {/* RIGHT: TradingView Chart */}
             <Card style={{ padding:0, overflow:"hidden" }}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px 0" }}>
-                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                  <span style={{ fontSize:13 }}>📈</span>
-                  <span style={{ fontSize:13, fontWeight:700, color:C.cyan, fontFamily:font }}>{selectedTicker}</span>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 12px 0" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                  <span style={{ fontSize:12 }}>📈</span>
+                  <span style={{ fontSize:12, fontWeight:700, color:C.cyan, fontFamily:font }}>{selectedTicker}</span>
                   <Badge label="TradingView" color={C.blue} />
-                  <Badge label={passCount+"/"+gates.length+" pass"} color={excluded?C.red:C.green} />
+                  <Badge label={passCount+"/"+gates.length} color={excluded?C.red:C.green} />
                 </div>
               </div>
               <TradingViewChart ticker={selectedTicker} />
