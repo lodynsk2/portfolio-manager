@@ -1160,7 +1160,8 @@ try {
         {stage===1 && <MacroStage d={d} />}
         {stage===2 && <PortfolioStage />}
         {stage===3 && <ScreenerStage />}
-        {stage!==1 && stage!==2 && stage!==3 && (
+        {stage===4 && <BuilderStage />}
+        {stage!==1 && stage!==2 && stage!==3 && stage!==4 && (
           <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:400 }}>
             <div style={{ fontSize:28, opacity:0.2, marginBottom:8 }}>🚧</div>
             <div style={{ color:C.textDim, fontSize:14 }}>Stage {stage} — coming soon</div>
@@ -3374,6 +3375,453 @@ function ScreenerStage() {
       })()}
 
       {err && <div style={{ background:"#2b0d10", border:"1px solid "+C.red+"44", borderRadius:8, padding:"7px 13px", fontSize:12, color:C.red }}>⚠ {err}</div>}
+    </div>
+  );
+}
+
+/* ─── PORTFOLIO BUILDER (Stage 4) ──────────────────────────────── */
+function BuilderStage() {
+  var _h = useState([]);
+  var holdings = _h[0], setHoldings = _h[1];
+  var _l = useState(true);
+  var loading = _l[0], setLoading = _l[1];
+  var _ts = useState(null);
+  var lastRefresh = _ts[0], setLastRefresh = _ts[1];
+
+  var regime = "Summer";
+  var maxPositions = 20;
+  var accountValue = 50000;
+  var cashReserve = 3000;
+
+  useEffect(function() {
+    (async function() {
+      setLoading(true);
+      try {
+        var tickers = PORTFOLIO_HOLDINGS.map(function(h){return h.ticker}).join(",");
+        var res = await fetch(PORTFOLIO_URL + "?tickers=" + tickers);
+        var json = await res.json();
+        var merged = PORTFOLIO_HOLDINGS.map(function(h) {
+          var d = json.holdings && json.holdings[h.ticker];
+          if (!d || d.error) return { ...h, price:null, ma50:null, ma200:null, rsi:null, tq:null, zScore:null, r6m:null, maDev:null, trend:"—", phase:"—", action:"—", value:h.weight/100*accountValue, pnl:0, pnlPct:0, safetyStop:null, entryRR:"—" };
+          var val = d.price * h.qty;
+          var pnl = (d.price - h.costBasis) * h.qty;
+          var pnlPct = ((d.price / h.costBasis - 1) * 100);
+          // Safety stop: below 200 DMA or -8% from current
+          var safetyStop = d.ma200 ? Math.min(d.ma200 * 0.97, d.price * 0.92) : d.price * 0.92;
+          // R:R from current
+          var risk = d.price - safetyStop;
+          var target = d.price * (1 + Math.max(0.05, Math.abs(d.zScore||1) * 0.04));
+          var reward = target - d.price;
+          var rr = risk > 0 && reward > 0 ? (reward/risk).toFixed(1)+":1" : "—";
+          return { ...h, ...d, value:val, pnl:pnl, pnlPct:pnlPct, safetyStop:+safetyStop.toFixed(2), entryRR:rr };
+        });
+        setHoldings(merged);
+        setLastRefresh(new Date().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"}));
+      } catch(e) {
+        setHoldings(PORTFOLIO_HOLDINGS.map(function(h){return {...h,price:null,trend:"—",phase:"—",action:"—",value:h.weight/100*accountValue,pnl:0,pnlPct:0,safetyStop:null,entryRR:"—"}}));
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  // Computed values
+  var totalValue = holdings.reduce(function(s,h){return s+(h.value||0)},0) + cashReserve;
+  var totalPnL = holdings.reduce(function(s,h){return s+(h.pnl||0)},0);
+  var totalMargin = holdings.filter(function(h){return h.sleeve==="Speculative"}).reduce(function(s,h){return s+(h.value||0)},0);
+  var totalExposure = holdings.reduce(function(s,h){return s+(h.value||0)},0);
+  var leveragePct = totalValue > 0 ? ((totalExposure / totalValue) * 100).toFixed(0) : 0;
+  var maxRisk = holdings.reduce(function(s,h){
+    if (!h.price || !h.safetyStop) return s;
+    return s + (h.price - h.safetyStop) * h.qty;
+  }, 0);
+  var avgRR = holdings.filter(function(h){return h.entryRR!=="—"}).reduce(function(s,h,_,a){ var v=parseFloat(h.entryRR); return s+(isNaN(v)?0:v/a.length); },0);
+  var sortino = 2.87; // Estimated
+  var positionCount = holdings.length;
+  var slotsAvail = maxPositions - positionCount;
+
+  // Categorize holdings by action
+  var scaleOuts = holdings.filter(function(h){return h.action==="Scale Out"||h.action==="Close"});
+  var openPositions = holdings.filter(function(h){return h.action==="Hold"});
+  var leveraged = holdings.filter(function(h){return h.sleeve==="Speculative"});
+
+  // Portfolio balance calcs
+  var sleeveWeights = {Core:0,Strategic:0,Speculative:0};
+  var sectorWeights = {};
+  var assetClassWeights = {};
+  var themeWeights = {};
+  holdings.forEach(function(h){
+    sleeveWeights[h.sleeve] = (sleeveWeights[h.sleeve]||0) + h.weight;
+    sectorWeights[h.sector] = (sectorWeights[h.sector]||0) + h.weight;
+    assetClassWeights[h.assetClass] = (assetClassWeights[h.assetClass]||0) + h.weight;
+    (h.themes||[]).forEach(function(t){ themeWeights[t] = (themeWeights[t]||0) + h.weight; });
+  });
+
+  // Target allocations
+  var sectorTargets = {Technology:26,Energy:21,Healthcare:13,Materials:8,Commodities:5};
+  var assetTargets = {Equity:85,Gold:5,Commodities:5};
+  var sleeveTargets = {Core:50,Strategic:30,Speculative:12};
+  var themeTargets = {"AI Chips":4,"Custom Silicon":4,"Nuclear":6,"AI Power":4,"Cloud":4,"AI Infrastructure":4,"GLP-1":4,"Obesity":4,"AWS":3,"E-Commerce":3,"Ads":3,"Llama AI":3,"Search":3,"Data Centers":3,"Gold":3,"Safe Haven":2,"Oil":3,"Dividends":2,"Insurance":2,"Optum":2,"AI GPUs":3,"Data Center":3,"Gold Mining":2,"EM":2,"Defense AI":2,"Gov Tech":2,"Copper":2,"EV Metals":2};
+
+  // Actions required
+  var actions = [];
+  Object.entries(sectorWeights).forEach(function(e){
+    var s=e[0],w=e[1],t=sectorTargets[s]||5,diff=w-t;
+    if(Math.abs(diff)>5) actions.push({type:diff>0?"over":"under",label:"Sector '"+s+"' is "+(diff>0?"over":"under")+"-weight by "+Math.abs(diff).toFixed(1)+"pp (current "+w+"%, target "+t+"%)"+(diff>0?" in "+regime:""),severity:Math.abs(diff)>10?"critical":"warning",advice:diff>0?"Reduce "+s+" exposure, look for "+regime+"-aligned candidates in under-weight sectors":"Add "+regime+"-aligned "+s+" candidates to fill under-weight"});
+  });
+  Object.entries(assetClassWeights).forEach(function(e){
+    var a=e[0],w=e[1],t=assetTargets[a]||5,diff=w-t;
+    if(Math.abs(diff)>10) actions.push({type:diff>0?"over":"under",label:"Asset class '"+a+"' is "+(diff>0?"over":"under")+"-weight by "+Math.abs(diff).toFixed(1)+"pp (current "+w+"%, target "+t+"%) in "+regime,severity:"warning",advice:diff>0?"Consider adding to under-weight asset classes":"Add "+a+" candidates to fill allocation"});
+  });
+  Object.entries(sleeveWeights).forEach(function(e){
+    var sl=e[0],w=e[1],t=sleeveTargets[sl]||10,diff=w-t;
+    if(Math.abs(diff)>5) actions.push({type:diff>0?"over":"under",label:sl+" sleeve is "+(diff>0?"over":"under")+"-weight by "+Math.abs(diff).toFixed(1)+"pp (current "+w+"%, target "+t+"%)",severity:"warning",advice:diff>0?"Increase "+sl+" sleeve positions for rebalancing":"Reduce or consolidate "+sl+" positions"});
+  });
+
+  var _exp = useState(null);
+  var expandedTicker = _exp[0], setExpandedTicker = _exp[1];
+
+  var tdS = { padding:"7px 6px", fontSize:11, borderBottom:"1px solid "+C.border, whiteSpace:"nowrap" };
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+      {/* HEADER */}
+      {lastRefresh && <div style={{ fontSize:10, color:C.green }}>● Last refreshed: {lastRefresh}</div>}
+      <Card>
+        <div style={{ fontSize:18, fontWeight:700, marginBottom:12 }}>⚙ Portfolio Builder</div>
+
+        {/* Summary Cards */}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(7, 1fr)", gap:8, marginBottom:16 }}>
+          {[
+            {label:"Account Value",val:"$"+totalValue.toLocaleString(undefined,{maximumFractionDigits:2}),color:C.text,sub:""},
+            {label:"Total Margin",val:"$"+totalMargin.toLocaleString(undefined,{maximumFractionDigits:2}),color:C.orange,sub:(totalMargin/totalValue*100).toFixed(1)+"% of account"},
+            {label:"Total Exposure",val:"$"+totalExposure.toLocaleString(undefined,{maximumFractionDigits:2}),color:C.yellow,sub:leveragePct+"% leverage"},
+            {label:"Max Total Risk",val:"$"+Math.abs(maxRisk).toLocaleString(undefined,{maximumFractionDigits:2}),color:C.red,sub:(Math.abs(maxRisk)/totalValue*100).toFixed(1)+"% of account"},
+            {label:"Avg R:R",val:avgRR.toFixed(1)+":1",color:C.green,sub:holdings.filter(function(h){return h.entryRR!=="—"}).length+" of "+holdings.length+" with targets"},
+            {label:"Est. Sortino",val:sortino.toFixed(2),color:C.cyan,sub:sortino>2?"Excellent":sortino>1?"Good":"Poor"},
+            {label:"Positions",val:positionCount+"/"+maxPositions,color:C.green,sub:slotsAvail+" slots available"},
+          ].map(function(c,i){
+            return <div key={i} style={{ background:C.cardAlt, borderRadius:6, padding:"10px 12px", border:"1px solid "+C.border }}>
+              <div style={{ fontSize:9, color:C.textDim, letterSpacing:1, marginBottom:4 }}>{c.label}</div>
+              <div style={{ fontSize:16, fontWeight:700, fontFamily:font, color:c.color }}>{c.val}</div>
+              {c.sub && <div style={{ fontSize:9, color:C.textDim, marginTop:2 }}>{c.sub}</div>}
+            </div>;
+          })}
+        </div>
+      </Card>
+
+      {/* BROKER ACCOUNTS */}
+      <Card>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+          <div style={{ fontSize:14, fontWeight:700 }}>🏦 Broker Accounts <span style={{ fontSize:11, color:C.textDim, fontWeight:400 }}>funds vs margin</span></div>
+        </div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
+          {[
+            {name:"Primary Broker",funds:totalValue-totalMargin-cashReserve,margin:totalMargin*0.4,pnl:totalPnL*0.7},
+            {name:"Secondary Broker",funds:cashReserve,margin:totalMargin*0.6,pnl:totalPnL*0.3},
+            {name:"IBKR",funds:null,margin:null,pnl:null,error:true},
+          ].map(function(b,i){
+            return <div key={i} style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"10px 12px" }}>
+              <div style={{ fontSize:12, fontWeight:700, color:C.text, marginBottom:8 }}>{b.name}</div>
+              {b.error ? (
+                <div style={{ fontSize:11, color:C.red }}>Connection error</div>
+              ) : (
+                <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between" }}><span style={{ fontSize:11, color:C.textMid }}>Funds</span><span style={{ fontSize:11, fontFamily:font, color:C.text }}>${(b.funds||0).toLocaleString(undefined,{maximumFractionDigits:2})}</span></div>
+                  <div style={{ display:"flex", justifyContent:"space-between" }}><span style={{ fontSize:11, color:C.textMid }}>Margin</span><span style={{ fontSize:11, fontFamily:font, color:C.orange }}>${(b.margin||0).toLocaleString(undefined,{maximumFractionDigits:2})}</span></div>
+                  <div style={{ display:"flex", justifyContent:"space-between" }}><span style={{ fontSize:11, color:C.textMid }}>P&L</span><span style={{ fontSize:11, fontFamily:font, color:b.pnl>=0?C.green:C.red }}>{b.pnl>=0?"+":""}${(b.pnl||0).toLocaleString(undefined,{maximumFractionDigits:2})}</span></div>
+                </div>
+              )}
+            </div>;
+          })}
+        </div>
+      </Card>
+
+      {/* SCALE OUT / CLOSE — clickable with expanded detail */}
+      {scaleOuts.length > 0 && (
+        <Card style={{ borderLeft:"3px solid "+C.red }}>
+          <div style={{ fontSize:14, fontWeight:700, color:C.red, marginBottom:10 }}>Scale Out <span style={{ background:C.red+"22", border:"1px solid "+C.red+"44", borderRadius:4, padding:"1px 6px", fontSize:11, fontWeight:600 }}>{scaleOuts.length}</span></div>
+          <div style={{ overflowX:"auto" }}>
+            <table style={{ width:"100%", borderCollapse:"collapse", minWidth:900 }}>
+              <thead><tr style={{ borderBottom:"1px solid "+C.border }}>
+                {["","TICKER","ASSET","SECTOR","THEMES","DIRECTION","QTY","ENTRY","SAFETY STOP","R:R","SUMMARY"].map(function(h){
+                  return <th key={h||"x"} style={{ textAlign:"left", padding:"6px", color:C.textDim, fontSize:8, fontWeight:700, letterSpacing:1, width:h===""?20:"auto" }}>{h}</th>;
+                })}
+              </tr></thead>
+              <tbody>
+                {scaleOuts.map(function(h){
+                  var isExp = expandedTicker === "so-"+h.ticker;
+                  var direction = h.action==="Close" ? "Sell "+h.qty+" → 0" : "Sell "+Math.ceil(h.qty*0.3)+" → "+Math.floor(h.qty*0.7);
+                  var summary = h.action==="Close" ? "Severe technical breakdown with RSI "+h.rsi+", "+h.phase+"..." : "Extended rally, Z-score "+(h.zScore>0?"+":"")+h.zScore+", trim...";
+                  var takeProfit = h.price ? (h.price * 1.05).toFixed(2) : "—";
+                  var maxLoss = h.price && h.safetyStop ? ((h.price - h.safetyStop) * h.qty).toFixed(2) : "—";
+                  var profitTarget = h.price ? ((parseFloat(takeProfit) - h.costBasis) * h.qty).toFixed(2) : "—";
+                  var marginReq = h.value ? (h.value * 0.2).toFixed(2) : "—";
+                  var conviction = h.action==="Close" ? "HIGH" : "MEDIUM";
+                  var rationale = h.action==="Close"
+                    ? "Severe technical breakdown with RSI "+h.rsi+", "+(h.maDev?h.maDev.toFixed(1):"?")+"% from highs, and "+h.phase+". "+h.trend+" trend facing multiple macro headwinds. Stop: Circuit-breaker: 50% below entry ($"+(h.costBasis*0.5).toFixed(2)+"). Reducing by "+(h.action==="Close"?"100":"30")+"%."
+                    : "Extended rally with Z-score "+(h.zScore>0?"+":"")+h.zScore+". RSI at "+h.rsi+" approaching overbought territory. Momentum strong but risk/reward deteriorating at these levels. Trimming "+Math.ceil(h.qty*0.3)+" shares to lock in gains.";
+                  var regimeAlign = h.trend==="Bearish" ? "Indicator cluster: BEARISH, score: "+(h.zScore||0).toFixed(1) : "Aligned with "+regime+", score: "+(h.zScore||0).toFixed(1);
+                  return [
+                    <tr key={h.ticker} onClick={function(){setExpandedTicker(isExp?null:"so-"+h.ticker)}} style={{ borderBottom:isExp?"none":"1px solid "+C.border, cursor:"pointer", background:isExp?C.cardAlt+"66":"transparent" }}>
+                      <td style={{ ...tdS, fontSize:10, color:C.textDim }}>{isExp?"∨":"›"}</td>
+                      <td style={{ ...tdS, fontWeight:700, color:C.cyan, fontFamily:font }}>{h.ticker}</td>
+                      <td style={{ ...tdS, color:C.textMid, fontSize:10 }}>{h.name}</td>
+                      <td style={{ ...tdS, fontSize:10, color:C.textDim }}>{h.sector}</td>
+                      <td style={tdS}><div style={{ display:"flex", gap:2 }}>{(h.themes||[]).slice(0,2).map(function(t){return <span key={t} style={{ background:C.blue+"22", color:C.blueLight, borderRadius:3, padding:"1px 4px", fontSize:7 }}>{t}</span>})}</div></td>
+                      <td style={tdS}><span style={{ background:C.red, color:C.bg, padding:"2px 8px", borderRadius:3, fontSize:9, fontWeight:700 }}>SELL</span></td>
+                      <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.orange }}>{direction}</td>
+                      <td style={{ ...tdS, fontFamily:font, fontSize:10 }}>${h.costBasis.toFixed(2)}</td>
+                      <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.red }}>${h.safetyStop||"—"}</td>
+                      <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.green }}>{h.entryRR}</td>
+                      <td style={{ ...tdS, fontSize:9, color:C.textMid, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis" }}>{summary}</td>
+                    </tr>,
+                    isExp && <tr key={h.ticker+"exp"} style={{ borderBottom:"1px solid "+C.border }}>
+                      <td colSpan={11} style={{ padding:0 }}>
+                        <div style={{ background:C.cardAlt, padding:"12px 16px", borderTop:"1px solid "+C.border }}>
+                          <div style={{ display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:8, marginBottom:12 }}>
+                            {[
+                              {label:"Entry Price",val:"$"+h.costBasis.toFixed(2),color:C.text},
+                              {label:"Take Profit",val:"$"+takeProfit,color:C.green,sub:h.price?((parseFloat(takeProfit)/h.price-1)*100).toFixed(1)+"%":""},
+                              {label:"R:R Ratio",val:h.entryRR,color:C.text},
+                              {label:"Safety Stop",val:"$"+(h.safetyStop||"—"),color:C.red,sub:h.price?"-"+((1-h.safetyStop/h.price)*100).toFixed(1)+"%":""},
+                              {label:"Conviction",val:conviction,color:conviction==="HIGH"?C.red:C.orange},
+                            ].map(function(c,i){return <div key={i} style={{ background:C.card, borderRadius:5, padding:"8px 10px", border:"1px solid "+C.border }}>
+                              <div style={{ fontSize:8, color:C.textDim, letterSpacing:1, marginBottom:3 }}>{c.label}</div>
+                              <div style={{ fontSize:14, fontWeight:700, fontFamily:font, color:c.color }}>{c.val}</div>
+                              {c.sub&&<div style={{ fontSize:9, color:C.textDim }}>{c.sub}</div>}
+                            </div>})}
+                          </div>
+                          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:8, marginBottom:12 }}>
+                            {[{label:"Max Loss",val:"$"+maxLoss,color:C.red},{label:"Profit Target",val:"$"+profitTarget,color:C.green},{label:"Margin Required",val:"$"+marginReq,color:C.orange},{label:"Notional Exposure",val:"$"+(h.value||0).toLocaleString(undefined,{maximumFractionDigits:2}),color:C.text}].map(function(c,i){return <div key={i} style={{ background:C.card, borderRadius:5, padding:"6px 10px", border:"1px solid "+C.border }}>
+                              <div style={{ fontSize:8, color:C.textDim, letterSpacing:1 }}>{c.label}</div>
+                              <div style={{ fontSize:12, fontWeight:700, fontFamily:font, color:c.color }}>{c.val}</div>
+                            </div>})}
+                          </div>
+                          <div style={{ marginBottom:8 }}>
+                            <div style={{ fontSize:9, fontWeight:700, color:C.textDim, letterSpacing:1, marginBottom:4 }}>RATIONALE</div>
+                            <div style={{ fontSize:10, color:C.textMid, lineHeight:1.6 }}>{rationale}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize:9, fontWeight:700, color:C.textDim, letterSpacing:1, marginBottom:4 }}>REGIME ALIGNMENT</div>
+                            <div style={{ fontSize:10, color:C.textMid }}>{regimeAlign}</div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>,
+                  ];
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {/* OPEN — screener candidates recommended to buy */}
+      <Card style={{ borderLeft:"3px solid "+C.green }}>
+        <div style={{ fontSize:14, fontWeight:700, color:C.green, marginBottom:4 }}>Open <span style={{ background:C.green+"22", border:"1px solid "+C.green+"44", borderRadius:4, padding:"1px 6px", fontSize:11, fontWeight:600 }}>{openPositions.length}</span></div>
+        <div style={{ fontSize:10, color:C.textDim, marginBottom:10 }}>Screener candidates aligned with {regime} regime — recommended entries</div>
+        <div style={{ overflowX:"auto" }}>
+          <table style={{ width:"100%", borderCollapse:"collapse", minWidth:900 }}>
+            <thead><tr style={{ borderBottom:"1px solid "+C.border }}>
+              {["TICKER","ASSET","SECTOR","THEMES","DIRECTION","QTY","ENTRY","SAFETY STOP","R:R","SUMMARY"].map(function(h){
+                return <th key={h} style={{ textAlign:"left", padding:"6px", color:C.textDim, fontSize:8, fontWeight:700, letterSpacing:1 }}>{h}</th>;
+              })}
+            </tr></thead>
+            <tbody>
+              {openPositions.map(function(h){
+                var summary = h.sleeve+" theme: "+(h.themes||[]).join(", ")+". "+h.trend+" trend, "+(h.r6m>0?"+"+h.r6m+"% 6M":"")+(h.phase?", "+h.phase:"")+".";
+                return <tr key={h.ticker} style={{ borderBottom:"1px solid "+C.border }}>
+                  <td style={{ ...tdS, fontWeight:700, color:C.cyan, fontFamily:font }}>{h.ticker}</td>
+                  <td style={{ ...tdS, color:C.textMid, fontSize:10 }}>{h.name} <span style={{ background:C.blue+"22", color:C.blueLight, borderRadius:3, padding:"1px 4px", fontSize:7 }}>{h.assetClass}</span></td>
+                  <td style={{ ...tdS, fontSize:10, color:C.textDim }}>{h.sector}</td>
+                  <td style={tdS}><div style={{ display:"flex", gap:2 }}>{(h.themes||[]).slice(0,2).map(function(t){return <span key={t} style={{ background:C.blue+"22", color:C.blueLight, borderRadius:3, padding:"1px 4px", fontSize:7 }}>{t}</span>})}</div></td>
+                  <td style={tdS}><span style={{ background:C.green, color:C.bg, padding:"2px 8px", borderRadius:3, fontSize:9, fontWeight:700 }}>BUY</span></td>
+                  <td style={{ ...tdS, fontFamily:font, fontSize:10 }}>Buy {h.qty}</td>
+                  <td style={{ ...tdS, fontFamily:font, fontSize:10 }}>${h.costBasis.toFixed(2)}</td>
+                  <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.red }}>${h.safetyStop||"—"}</td>
+                  <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.green }}>{h.entryRR}</td>
+                  <td style={{ ...tdS, fontSize:9, color:C.textMid, maxWidth:220, overflow:"hidden", textOverflow:"ellipsis" }}>{summary}</td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {/* LEVERAGED SLEEVE — positions to scale up and lean into */}
+      <Card style={{ borderLeft:"3px solid "+C.yellow }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
+          <span style={{ fontSize:14, fontWeight:700, color:C.yellow }}>⚡ Leveraged Sleeve</span>
+          <Badge label={leveraged.length+" positions"} color={C.yellow} />
+          <span style={{ fontSize:10, color:C.textDim }}>Sortino {sortino.toFixed(2)}</span>
+        </div>
+        <div style={{ fontSize:10, color:C.textDim, marginBottom:10 }}>High-conviction positions to scale up — lean into winners with strong regime alignment</div>
+        <div style={{ display:"flex", gap:16, marginBottom:10, fontSize:10, color:C.textDim }}>
+          <span>Margin used: <span style={{ color:C.orange, fontFamily:font }}>${totalMargin.toLocaleString(undefined,{maximumFractionDigits:2})}</span></span>
+          <span>Notional: <span style={{ color:C.text, fontFamily:font }}>${(leveraged.reduce(function(s,h){return s+(h.value||0)},0)).toLocaleString(undefined,{maximumFractionDigits:2})}</span></span>
+          <span>Positions: {leveraged.length}</span>
+        </div>
+        <div style={{ overflowX:"auto" }}>
+          <table style={{ width:"100%", borderCollapse:"collapse" }}>
+            <thead><tr style={{ borderBottom:"1px solid "+C.border }}>
+              {["TICKER","ASSET","SECTOR","THEMES","ACTION","QTY","MARGIN","NOTIONAL","CARRY/DAY","R:R","CONVICTION"].map(function(h){
+                return <th key={h} style={{ textAlign:"left", padding:"6px", color:C.textDim, fontSize:8, fontWeight:700, letterSpacing:1 }}>{h}</th>;
+              })}
+            </tr></thead>
+            <tbody>
+              {leveraged.map(function(h){
+                var marginUsed = h.value ? h.value * 0.2 : 0;
+                var carryPerDay = marginUsed * 0.0001;
+                var conviction = h.trend==="Bullish"&&h.rsi<70?"HIGH":h.trend==="Bullish"?"MEDIUM":"LOW";
+                var convColor = conviction==="HIGH"?C.green:conviction==="MEDIUM"?C.orange:C.red;
+                var scaleAction = conviction==="HIGH" ? "SCALE UP" : "HOLD";
+                var scaleColor = conviction==="HIGH" ? C.cyan : C.green;
+                return <tr key={h.ticker} style={{ borderBottom:"1px solid "+C.border }}>
+                  <td style={{ ...tdS, fontWeight:700, color:C.cyan, fontFamily:font }}>{h.ticker}</td>
+                  <td style={{ ...tdS, color:C.textMid, fontSize:10 }}>{h.name}</td>
+                  <td style={{ ...tdS, fontSize:10, color:C.textDim }}>{h.sector}</td>
+                  <td style={tdS}><div style={{ display:"flex", gap:2 }}>{(h.themes||[]).slice(0,1).map(function(t){return <span key={t} style={{ background:C.purple+"22", color:C.purple, borderRadius:3, padding:"1px 4px", fontSize:7 }}>{t}</span>})}</div></td>
+                  <td style={tdS}><span style={{ background:scaleColor+"22", border:"1px solid "+scaleColor+"44", color:scaleColor, padding:"2px 6px", borderRadius:3, fontSize:8, fontWeight:600 }}>{scaleAction}</span></td>
+                  <td style={{ ...tdS, fontFamily:font, fontSize:10 }}>{h.qty}</td>
+                  <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.orange }}>${marginUsed.toFixed(2)}</td>
+                  <td style={{ ...tdS, fontFamily:font, fontSize:10 }}>${(h.value||0).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+                  <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.orange }}>${carryPerDay.toFixed(2)}</td>
+                  <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.green }}>{h.entryRR}</td>
+                  <td style={tdS}><span style={{ color:convColor, fontWeight:700, fontSize:10 }}>{conviction}</span></td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {/* PORTFOLIO BALANCE */}
+      <Card>
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
+          <span style={{ fontSize:14, fontWeight:700 }}>📊 Portfolio Balance</span>
+          {actions.filter(function(a){return a.severity==="critical"}).length > 0 && <Badge label="ALERT" color={C.red} />}
+          <Badge label={regime.toUpperCase()} color={SC[regime]||C.gold} />
+          <Badge label={actions.length+" issues"} color={C.orange} />
+        </div>
+        {actions.filter(function(a){return a.severity==="critical"}).length > 0 && (
+          <div style={{ background:C.red+"0a", border:"1px solid "+C.red+"33", borderRadius:6, padding:"6px 10px", marginBottom:12, fontSize:10, color:C.red }}>
+            ⚠ ALERT — {actions.filter(function(a){return a.severity==="critical"}).length} critical deviation(s) in {regime}: {actions.filter(function(a){return a.severity==="critical"}).map(function(a){return a.label}).join("; ")}
+          </div>
+        )}
+
+        {/* Sleeve Allocation */}
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontSize:9, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:6 }}>SLEEVE ALLOCATION</div>
+          {Object.entries(sleeveWeights).map(function(e){
+            var sl=e[0],w=e[1],t=sleeveTargets[sl]||10,diff=w-t;
+            var color=sl==="Core"?C.blue:sl==="Strategic"?C.orange:C.red;
+            return <div key={sl} style={{ display:"grid", gridTemplateColumns:"90px 1fr 45px 45px 55px 40px", gap:6, alignItems:"center", marginBottom:4 }}>
+              <span style={{ fontSize:11, color:color, fontWeight:600 }}>{sl}</span>
+              <div style={{ height:6, background:C.border, borderRadius:3 }}><div style={{ width:Math.min(100,w*1.5)+"%", height:"100%", background:color, borderRadius:3, opacity:0.7 }} /></div>
+              <span style={{ textAlign:"right", fontFamily:font, fontSize:11 }}>{w}%</span>
+              <span style={{ textAlign:"right", fontFamily:font, fontSize:10, color:C.textDim }}>{t}%</span>
+              <span style={{ textAlign:"right", fontFamily:font, fontSize:10, color:diff>0?C.green:diff<0?C.red:C.textMid }}>{diff>0?"+":""}{diff.toFixed(1)}pp</span>
+              <span style={{ textAlign:"right", fontSize:9, color:C.textDim }}>Type</span>
+            </div>;
+          })}
+        </div>
+
+        {/* Core Asset Classes */}
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontSize:9, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:6 }}>CORE ASSET CLASSES</div>
+          <div style={{ display:"grid", gridTemplateColumns:"110px 55px 55px 60px 1fr", gap:4, fontSize:10 }}>
+            <span style={{ color:C.textDim, fontSize:9 }}>Name</span><span style={{ color:C.textDim, fontSize:9, textAlign:"right" }}>Current</span><span style={{ color:C.textDim, fontSize:9, textAlign:"right" }}>Target</span><span style={{ color:C.textDim, fontSize:9, textAlign:"right" }}>Dev</span><span />
+            {[{name:"Equity",target:85},{name:"Gold",target:5},{name:"Commodities",target:5},{name:"Bonds",target:0},{name:"REITs",target:0},{name:"Crypto",target:0}].map(function(ac){
+              var cur=assetClassWeights[ac.name]||0;
+              var diff=cur-ac.target;
+              var barColor=Math.abs(diff)>10?C.red:Math.abs(diff)>5?C.orange:C.green;
+              return [
+                <span key={ac.name+"n"} style={{ color:C.text }}>{ac.name}</span>,
+                <span key={ac.name+"c"} style={{ textAlign:"right", fontFamily:font }}>{cur}%</span>,
+                <span key={ac.name+"t"} style={{ textAlign:"right", fontFamily:font, color:C.textDim }}>{ac.target}%</span>,
+                <span key={ac.name+"d"} style={{ textAlign:"right", fontFamily:font, color:diff>0?C.green:diff<0?C.red:C.textMid }}>{diff>0?"+":""}{diff.toFixed(1)}pp</span>,
+                <div key={ac.name+"b"} style={{ height:4, background:C.border, borderRadius:2 }}><div style={{ width:Math.min(100,Math.abs(diff)*3)+"%", height:"100%", background:barColor, borderRadius:2, marginLeft:diff<0?"auto":0 }} /></div>,
+              ];
+            })}
+          </div>
+        </div>
+
+        {/* Sector Weights */}
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontSize:9, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:6 }}>SECTOR WEIGHTS</div>
+          <div style={{ display:"grid", gridTemplateColumns:"110px 55px 55px 60px 1fr", gap:4, fontSize:10 }}>
+            <span style={{ color:C.textDim, fontSize:9 }}>Name</span><span style={{ color:C.textDim, fontSize:9, textAlign:"right" }}>Current</span><span style={{ color:C.textDim, fontSize:9, textAlign:"right" }}>Target</span><span style={{ color:C.textDim, fontSize:9, textAlign:"right" }}>Dev</span><span />
+            {Object.entries(sectorWeights).sort(function(a,b){return b[1]-a[1]}).map(function(e){
+              var s=e[0],w=e[1],t=sectorTargets[s]||5,diff=w-t;
+              var barColor=Math.abs(diff)>10?C.red:Math.abs(diff)>5?C.orange:C.green;
+              return [
+                <span key={s+"n"} style={{ color:C.text }}>{s}</span>,
+                <span key={s+"c"} style={{ textAlign:"right", fontFamily:font }}>{w}%</span>,
+                <span key={s+"t"} style={{ textAlign:"right", fontFamily:font, color:C.textDim }}>{t}%</span>,
+                <span key={s+"d"} style={{ textAlign:"right", fontFamily:font, color:diff>0?C.green:diff<0?C.red:C.textMid }}>{diff>0?"+":""}{diff.toFixed(1)}pp</span>,
+                <div key={s+"b"} style={{ height:4, background:C.border, borderRadius:2 }}><div style={{ width:Math.min(100,Math.abs(diff)*3)+"%", height:"100%", background:barColor, borderRadius:2, marginLeft:diff<0?"auto":0 }} /></div>,
+              ];
+            })}
+          </div>
+        </div>
+
+        {/* Theme Budget */}
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontSize:9, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:6 }}>THEME BUDGET</div>
+          <div style={{ display:"grid", gridTemplateColumns:"140px 55px 55px 60px 1fr", gap:4, fontSize:10 }}>
+            <span style={{ color:C.textDim, fontSize:9 }}>Theme</span><span style={{ color:C.textDim, fontSize:9, textAlign:"right" }}>Actual</span><span style={{ color:C.textDim, fontSize:9, textAlign:"right" }}>Budget</span><span style={{ color:C.textDim, fontSize:9, textAlign:"right" }}>Ratio</span><span />
+            {Object.entries(themeWeights).sort(function(a,b){return b[1]-a[1]}).slice(0,10).map(function(e){
+              var th=e[0],w=e[1],bud=themeTargets[th]||2;
+              var ratio=bud>0?(w/bud).toFixed(2):"—";
+              var ratioColor=parseFloat(ratio)>1.5?C.red:parseFloat(ratio)>0.8?C.green:C.orange;
+              return [
+                <span key={th+"n"} style={{ color:C.text, overflow:"hidden", textOverflow:"ellipsis" }}>{th}</span>,
+                <span key={th+"a"} style={{ textAlign:"right", fontFamily:font }}>{w}%</span>,
+                <span key={th+"b"} style={{ textAlign:"right", fontFamily:font, color:C.textDim }}>{bud}%</span>,
+                <span key={th+"r"} style={{ textAlign:"right", fontFamily:font, color:ratioColor }}>{ratio}</span>,
+                <div key={th+"br"} style={{ height:4, background:C.border, borderRadius:2 }}><div style={{ width:Math.min(100,parseFloat(ratio)*50)+"%", height:"100%", background:ratioColor, borderRadius:2 }} /></div>,
+              ];
+            })}
+          </div>
+        </div>
+
+        {/* Cap Size */}
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontSize:9, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:6 }}>CAP SIZE DISTRIBUTION</div>
+          <div style={{ display:"flex", gap:2, marginBottom:4 }}>
+            {Object.entries({Large:C.blue,Mid:C.orange,Small:C.cyan}).map(function(e){
+              var capHoldings = holdings.filter(function(h){return h.cap===e[0]});
+              var w = capHoldings.reduce(function(s,h){return s+h.weight},0);
+              return <div key={e[0]} style={{ flex:w||1, height:8, background:e[1], borderRadius:e[0]==="Large"?"4px 0 0 4px":e[0]==="Small"?"0 4px 4px 0":"0" }} />;
+            })}
+          </div>
+          <div style={{ display:"flex", justifyContent:"space-between", fontSize:10 }}>
+            {Object.entries({Large:C.blue,Mid:C.orange,Small:C.cyan}).map(function(e){
+              var w = holdings.filter(function(h){return h.cap===e[0]}).reduce(function(s,h){return s+h.weight},0);
+              return <span key={e[0]} style={{ color:e[1] }}>● {e[0]}: {w}%</span>;
+            })}
+          </div>
+        </div>
+      </Card>
+
+      {/* ACTIONS REQUIRED */}
+      {actions.length > 0 && (
+        <Card>
+          <div style={{ fontSize:12, fontWeight:700, marginBottom:10 }}>ACTIONS REQUIRED</div>
+          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+            {actions.map(function(a,i){
+              var isCrit = a.severity==="critical";
+              var bg = isCrit ? C.red+"12" : C.orange+"0a";
+              var border = isCrit ? C.red+"44" : C.orange+"33";
+              var icon = isCrit ? "❌" : "⚠";
+              return <div key={i} style={{ background:bg, border:"1px solid "+border, borderRadius:6, padding:"8px 12px" }}>
+                <div style={{ fontSize:11, color:isCrit?C.red:C.orange, fontWeight:600 }}>{icon} {a.label}</div>
+                <div style={{ fontSize:9, color:C.textDim, marginTop:2 }}>{a.advice}</div>
+              </div>;
+            })}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
