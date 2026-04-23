@@ -1104,6 +1104,8 @@ try {
 
   const stages = [{n:1,label:"Macro Analysis"},{n:2,label:"Portfolio Analy..."},{n:3,label:"Asset Screener"},{n:4,label:"Portfolio Builder"},{n:5,label:"Execution"}];
   const d = data;
+  var _topTab = useState("Analysis");
+  var topTab = _topTab[0], setTopTab = _topTab[1];
 
   return (
     <div style={{ display:"flex", height:"100vh", background:C.bg, fontFamily:sans, color:C.text, overflow:"hidden" }}>
@@ -1142,7 +1144,7 @@ try {
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
           <div style={{ display:"flex", gap:18 }}>
             {["Analysis","Portfolio","Themes","Active Trader","Intelligence"].map(t => (
-              <span key={t} style={{ fontSize:13, color:t==="Analysis"?C.text:C.textMid, fontWeight:t==="Analysis"?600:400, cursor:"pointer", borderBottom:t==="Analysis"?"2px solid " + C.blue:"none", paddingBottom:3 }}>{t}</span>
+              <span key={t} onClick={function(){setTopTab(t)}} style={{ fontSize:13, color:t===topTab?C.text:C.textMid, fontWeight:t===topTab?600:400, cursor:"pointer", borderBottom:t===topTab?"2px solid " + C.blue:"none", paddingBottom:3 }}>{t}</span>
             ))}
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -1157,14 +1159,20 @@ try {
 
         {err && <div style={{ background:"#2b0d10", border:"1px solid " + C.red + "44", borderRadius:8, padding:"7px 13px", marginBottom:11, fontSize:12, color:C.red }}>⚠ {err}</div>}
 
-        {stage===1 && <MacroStage d={d} />}
-        {stage===2 && <PortfolioStage />}
-        {stage===3 && <ScreenerStage />}
-        {stage===4 && <BuilderStage />}
-        {stage!==1 && stage!==2 && stage!==3 && stage!==4 && (
+        {topTab==="Analysis" && (
+          <div>
+            {stage===1 && <MacroStage d={d} />}
+            {stage===2 && <PortfolioStage />}
+            {stage===3 && <ScreenerStage />}
+            {stage===4 && <BuilderStage />}
+            {stage===5 && <ExecutionStage />}
+          </div>
+        )}
+        {topTab==="Portfolio" && <PortfolioTabView />}
+        {topTab!=="Analysis" && topTab!=="Portfolio" && (
           <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:400 }}>
             <div style={{ fontSize:28, opacity:0.2, marginBottom:8 }}>🚧</div>
-            <div style={{ color:C.textDim, fontSize:14 }}>Stage {stage} — coming soon</div>
+            <div style={{ color:C.textDim, fontSize:14 }}>{topTab} — coming soon</div>
           </div>
         )}
       </div>
@@ -3822,6 +3830,564 @@ function BuilderStage() {
           </div>
         </Card>
       )}
+    </div>
+  );
+}
+
+/* ─── EXECUTION STAGE (Stage 5) ────────────────────────────────── */
+function ExecutionStage() {
+  var _h = useState([]);
+  var holdings = _h[0], setHoldings = _h[1];
+  var _l = useState(true);
+  var loading = _l[0], setLoading = _l[1];
+  var _exp = useState(null);
+  var expandedTicker = _exp[0], setExpandedTicker = _exp[1];
+  var _orderStatus = useState({});
+  var orderStatus = _orderStatus[0], setOrderStatus = _orderStatus[1];
+
+  var regime = "Summer";
+
+  useEffect(function() {
+    (async function() {
+      setLoading(true);
+      try {
+        var tickers = PORTFOLIO_HOLDINGS.map(function(h){return h.ticker}).join(",");
+        var res = await fetch(PORTFOLIO_URL + "?tickers=" + tickers);
+        var json = await res.json();
+        var merged = PORTFOLIO_HOLDINGS.map(function(h) {
+          var d = json.holdings && json.holdings[h.ticker];
+          if (!d || d.error) return { ...h, price:null, trend:"—", phase:"—", action:"—", rsi:null, zScore:null, r6m:null, ma50:null, ma200:null, maDev:null, safetyStop:null };
+          var safetyStop = d.ma200 ? Math.min(d.ma200 * 0.97, d.price * 0.92) : d.price * 0.92;
+          return { ...h, ...d, safetyStop:+safetyStop.toFixed(2) };
+        });
+        setHoldings(merged);
+      } catch(e) {
+        setHoldings(PORTFOLIO_HOLDINGS.map(function(h){return {...h,price:null,trend:"—",action:"—",rsi:null}}));
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  // Execution timing signals
+  var fgScore = 20; // Would come from live data
+  var vixLevel = 25.0;
+  var sp500 = holdings.find(function(h){return h.ticker==="MSFT"});
+  var sp500Price = sp500 ? sp500.price : 0;
+  var pcrDex = 1.56;
+  var breadth50 = 50;
+
+  var fgLabel = fgScore<=25?"Extreme Fear":fgScore<=44?"Fear":fgScore<=55?"Neutral":fgScore<=75?"Greed":"Extreme Greed";
+  var vixLabel = vixLevel>35?"Extreme":vixLevel>25?"High":vixLevel>15?"Moderate":"Low";
+  var sp500Label = "Pullback"; // Simplified
+  var breadthLabel = breadth50>60?"Bullish":breadth50<40?"Bearish":"Neutral";
+
+  // Favorable for buys when fear is high (contrarian)
+  var buySignals = 0;
+  if (fgScore < 30) buySignals++;
+  if (vixLevel > 20) buySignals++;
+  if (pcrDex > 1.2) buySignals++;
+  if (breadth50 > 40) buySignals++;
+  buySignals++; // Base signal
+  var favorable = buySignals >= 3;
+
+  var scaleOuts = holdings.filter(function(h){return h.action==="Scale Out"||h.action==="Close"});
+  var openOrders = holdings.filter(function(h){return h.action==="Hold"});
+  var leveraged = holdings.filter(function(h){return h.sleeve==="Speculative"});
+  var totalOrders = scaleOuts.length + openOrders.length;
+  var sellCount = scaleOuts.length;
+  var buyCount = openOrders.length;
+  var adjustCount = leveraged.length;
+  var netMarginDelta = openOrders.reduce(function(s,h){return s+(h.value||0)*0.03},0) - scaleOuts.reduce(function(s,h){return s+(h.value||0)*0.02},0);
+  var completedCount = Object.keys(orderStatus).filter(function(k){return orderStatus[k]==="done"}).length;
+  var pendingCount = totalOrders - completedCount;
+
+  function markOrder(ticker, status) {
+    setOrderStatus(function(prev){var n={...prev};n[ticker]=status;return n});
+  }
+
+  var tdS = { padding:"7px 6px", fontSize:11, borderBottom:"1px solid "+C.border, whiteSpace:"nowrap" };
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+      {/* HEADER */}
+      <Card>
+        <div style={{ fontSize:18, fontWeight:700, marginBottom:4 }}>▶ Execution Plan</div>
+        <div style={{ fontSize:11, color:C.textMid, marginBottom:16 }}>Concrete orders for transitioning to the target portfolio. Mark each order as you execute it.</div>
+
+        {/* EXECUTION TIMING */}
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+          <div style={{ fontSize:13, fontWeight:700, display:"flex", alignItems:"center", gap:6 }}>🕐 EXECUTION TIMING</div>
+          <span style={{ background:favorable?C.green+"22":C.red+"22", border:"1px solid "+(favorable?C.green:C.red)+"44", borderRadius:6, padding:"4px 12px", fontSize:11, color:favorable?C.green:C.red, fontWeight:700 }}>
+            {favorable?"📈 Favorable for Buys":"⚠ Caution"} (+{buySignals})
+          </span>
+        </div>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:8, marginBottom:10 }}>
+          {[
+            {icon:"◌",label:"Fear & Greed",val:String(fgScore),sub:fgLabel,color:fgScore<25?C.red:fgScore<45?C.orange:C.green},
+            {icon:"◎",label:"VIX",val:vixLevel.toFixed(1),sub:vixLabel,color:vixLevel>25?C.red:vixLevel>15?C.orange:C.green},
+            {icon:"↘",label:"S&P 500",val:"6,583.82",sub:"MA50: 6,834.89\n"+sp500Label,color:C.orange},
+            {icon:"↗",label:"Options PCR",val:"DEX "+pcrDex.toFixed(2),sub:"Omega 1.11\nNeutral",color:C.textMid},
+            {icon:"▣",label:"Market Breadth",val:breadth50+"% > MA50",sub:"68% > MA200\n"+breadthLabel,color:breadth50>50?C.green:C.red},
+          ].map(function(s,i){
+            return <div key={i} style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"10px 12px" }}>
+              <div style={{ fontSize:9, color:C.textDim, marginBottom:4, display:"flex", alignItems:"center", gap:4 }}><span>{s.icon}</span> {s.label}</div>
+              <div style={{ fontSize:18, fontWeight:700, fontFamily:font, marginBottom:2 }}>{s.val}</div>
+              <div style={{ fontSize:10, color:s.color, whiteSpace:"pre-line" }}>{s.sub}</div>
+            </div>;
+          })}
+        </div>
+        <div style={{ fontSize:10, color:C.textDim, fontStyle:"italic" }}>
+          {favorable ? "Market in fear / elevated volatility — contrarian indicators favour opening or scaling into positions on pullbacks." : "Elevated greed — consider waiting for a pullback before adding new positions."}
+        </div>
+      </Card>
+
+      {/* ORDER SUMMARY */}
+      <Card>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:8, marginBottom:12 }}>
+          {[
+            {label:"Total Orders",val:String(totalOrders),color:C.text},
+            {label:"Sells",val:String(sellCount),color:C.red},
+            {label:"Buys",val:String(buyCount),color:C.green},
+            {label:"Adjustments",val:String(adjustCount),color:C.orange},
+            {label:"Net Margin Δ",val:(netMarginDelta>=0?"+$":"−$")+Math.abs(netMarginDelta).toLocaleString(undefined,{maximumFractionDigits:2}),color:netMarginDelta>=0?C.green:C.red},
+          ].map(function(c,i){return <div key={i} style={{ textAlign:"center" }}>
+            <div style={{ fontSize:9, color:C.textDim, letterSpacing:1 }}>{c.label}</div>
+            <div style={{ fontSize:22, fontWeight:700, fontFamily:font, color:c.color }}>{c.val}</div>
+          </div>})}
+        </div>
+        <div style={{ fontSize:10, fontWeight:700, color:C.textDim, letterSpacing:1, marginBottom:4 }}>EXECUTION PROGRESS</div>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <Badge label={pendingCount+"/"+totalOrders+" Pending"} color={C.orange} />
+          <div style={{ flex:1, height:4, background:C.border, borderRadius:2 }}>
+            <div style={{ width:(completedCount/Math.max(1,totalOrders)*100)+"%", height:"100%", background:C.green, borderRadius:2, transition:"width 0.3s" }} />
+          </div>
+          {completedCount>0 && <span style={{ fontSize:10, color:C.green }}>{completedCount} done</span>}
+        </div>
+      </Card>
+
+      {/* SCALE OUT ORDERS */}
+      {scaleOuts.length > 0 && (
+        <Card style={{ borderLeft:"3px solid "+C.red }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+            <div style={{ fontSize:14, fontWeight:700, color:C.red }}>Scale Out <span style={{ background:C.red+"22", border:"1px solid "+C.red+"44", borderRadius:4, padding:"1px 6px", fontSize:11 }}>{scaleOuts.length}</span></div>
+            <Badge label="⏳ WAIT" color={C.textDim} />
+          </div>
+          <table style={{ width:"100%", borderCollapse:"collapse" }}>
+            <thead><tr style={{ borderBottom:"1px solid "+C.border }}>
+              {["","TICKER","NAME","QUANTITY","ORDER TYPE","PRICE","STOP","MARGIN Δ","RATIONALE","STATUS / ACTION"].map(function(h){
+                return <th key={h||"x"} style={{ textAlign:"left", padding:"6px", color:C.textDim, fontSize:8, fontWeight:700, letterSpacing:1, width:h===""?16:"auto" }}>{h}</th>;
+              })}
+            </tr></thead>
+            <tbody>
+              {scaleOuts.map(function(h){
+                var qty = h.action==="Close"?"Sell "+h.qty+" → 0":"Sell "+Math.ceil(h.qty*0.3)+" → "+Math.floor(h.qty*0.7);
+                var marginDelta = -(h.value||0)*0.02;
+                var rationale = "SCALE_OUT ("+(h.action==="Close"?"100":"30")+"%) — "+(h.action==="Close"?"Severe technic...":"Extended rally...");
+                var isDone = orderStatus[h.ticker]==="done";
+                var isSkip = orderStatus[h.ticker]==="skip";
+                return <tr key={h.ticker} style={{ borderBottom:"1px solid "+C.border, opacity:isDone||isSkip?0.4:1 }}>
+                  <td style={{ ...tdS, cursor:"pointer", color:C.textDim }} onClick={function(){setExpandedTicker(expandedTicker==="ex-"+h.ticker?null:"ex-"+h.ticker)}}>∨</td>
+                  <td style={tdS}><div style={{ fontWeight:700, color:C.cyan, fontFamily:font, fontSize:11 }}>{h.ticker}</div><div style={{ fontSize:8, color:h.rsi<30?C.green:h.rsi>70?C.red:C.orange }}>RSI {h.rsi||"—"}</div></td>
+                  <td style={{ ...tdS, color:C.textMid, fontSize:10 }}>{h.name}</td>
+                  <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.orange }}>{qty}</td>
+                  <td style={tdS}><span style={{ background:C.orange+"22", border:"1px solid "+C.orange+"44", color:C.orange, padding:"2px 6px", borderRadius:3, fontSize:8, fontWeight:600 }}>Scale Out</span></td>
+                  <td style={{ ...tdS, fontFamily:font, fontSize:10 }}>${(h.costBasis||0).toFixed(2)}</td>
+                  <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.red }}>${h.safetyStop||"—"}</td>
+                  <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.red }}>${Math.abs(marginDelta).toFixed(2)}</td>
+                  <td style={{ ...tdS, fontSize:9, color:C.textMid, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis" }}>{rationale}</td>
+                  <td style={tdS}>
+                    <div style={{ display:"flex", gap:4 }}>
+                      <button onClick={function(){markOrder(h.ticker,"done")}} title="Mark done" style={{ background:isDone?C.green+"22":"transparent", border:"1px solid "+C.border, borderRadius:"50%", width:22, height:22, cursor:"pointer", color:isDone?C.green:C.textDim, fontSize:10 }}>✓</button>
+                      <button onClick={function(){markOrder(h.ticker,"skip")}} title="Skip" style={{ background:isSkip?C.orange+"22":"transparent", border:"1px solid "+C.border, borderRadius:"50%", width:22, height:22, cursor:"pointer", color:isSkip?C.orange:C.textDim, fontSize:10 }}>⊘</button>
+                      <button onClick={function(){markOrder(h.ticker,null)}} title="Cancel" style={{ background:"transparent", border:"1px solid "+C.border, borderRadius:"50%", width:22, height:22, cursor:"pointer", color:C.textDim, fontSize:10 }}>✕</button>
+                    </div>
+                  </td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </Card>
+      )}
+
+      {/* OPEN / BUY ORDERS */}
+      <Card style={{ borderLeft:"3px solid "+C.green }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <span style={{ fontSize:14, fontWeight:700, color:C.green }}>Open</span>
+            <Badge label={String(openOrders.length)} color={C.green} />
+            {leveraged.length>0 && <Badge label={"⚡ "+leveraged.length+" leveraged"} color={C.yellow} />}
+          </div>
+          <button style={{ background:C.green+"22", border:"1px solid "+C.green+"44", borderRadius:6, padding:"4px 12px", fontSize:10, color:C.green, fontWeight:700, cursor:"pointer" }}>⚡ ACTION NOW</button>
+        </div>
+        <table style={{ width:"100%", borderCollapse:"collapse" }}>
+          <thead><tr style={{ borderBottom:"1px solid "+C.border }}>
+            {["","TICKER","NAME","QUANTITY","ORDER TYPE","PRICE","STOP","MARGIN Δ","RATIONALE","STATUS / ACTION"].map(function(h){
+              return <th key={h||"x"} style={{ textAlign:"left", padding:"6px", color:C.textDim, fontSize:8, fontWeight:700, letterSpacing:1, width:h===""?16:"auto" }}>{h}</th>;
+            })}
+          </tr></thead>
+          <tbody>
+            {openOrders.map(function(h){
+              var marginDelta = (h.value||0)*0.03;
+              var isLev = h.sleeve==="Speculative";
+              var rationale = "OPEN — "+h.sleeve+" theme '"+(h.themes||[])[0]+"'...";
+              var isDone = orderStatus["buy-"+h.ticker]==="done";
+              return <tr key={h.ticker} style={{ borderBottom:"1px solid "+C.border, opacity:isDone?0.4:1 }}>
+                <td style={{ ...tdS, cursor:"pointer", color:C.textDim }}>∨</td>
+                <td style={tdS}>
+                  <div style={{ fontWeight:700, color:C.cyan, fontFamily:font, fontSize:11 }}>{h.ticker}</div>
+                  {isLev && <div style={{ background:C.yellow+"22", border:"1px solid "+C.yellow+"44", color:C.yellow, borderRadius:3, padding:"0 4px", fontSize:7, fontWeight:700, marginTop:2 }}>⚡LEVERAGED</div>}
+                </td>
+                <td style={{ ...tdS, color:C.textMid, fontSize:10 }}>{h.name}</td>
+                <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.green }}>Buy {h.qty}</td>
+                <td style={tdS}><span style={{ background:C.green+"22", border:"1px solid "+C.green+"44", color:C.green, padding:"2px 6px", borderRadius:3, fontSize:8, fontWeight:600 }}>Open</span></td>
+                <td style={{ ...tdS, fontFamily:font, fontSize:10 }}>${(h.price||0).toFixed(2)}</td>
+                <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.red }}>${h.safetyStop||"—"}</td>
+                <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.green }}>+${marginDelta.toFixed(2)}</td>
+                <td style={{ ...tdS, fontSize:9, color:C.textMid, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis" }}>{rationale}</td>
+                <td style={tdS}>
+                  <div style={{ display:"flex", gap:4 }}>
+                    <button onClick={function(){markOrder("buy-"+h.ticker,"done")}} style={{ background:isDone?C.green+"22":"transparent", border:"1px solid "+C.border, borderRadius:"50%", width:22, height:22, cursor:"pointer", color:isDone?C.green:C.textDim, fontSize:10 }}>✓</button>
+                    <button onClick={function(){markOrder("buy-"+h.ticker,"skip")}} style={{ background:"transparent", border:"1px solid "+C.border, borderRadius:"50%", width:22, height:22, cursor:"pointer", color:C.textDim, fontSize:10 }}>⊘</button>
+                    <button onClick={function(){markOrder("buy-"+h.ticker,null)}} style={{ background:"transparent", border:"1px solid "+C.border, borderRadius:"50%", width:22, height:22, cursor:"pointer", color:C.textDim, fontSize:10 }}>✕</button>
+                  </div>
+                </td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </Card>
+
+      {/* EXECUTION NOTES */}
+      <Card>
+        <div style={{ fontSize:12, fontWeight:700, marginBottom:6, display:"flex", alignItems:"center", gap:6 }}>📋 EXECUTION NOTES</div>
+        <div style={{ fontSize:11, color:C.textMid }}>
+          Resize {scaleOuts.length} existing position(s). Open {openOrders.length} new position(s). Net margin {netMarginDelta>=0?"increase":"decrease"}: ${Math.abs(netMarginDelta).toLocaleString(undefined,{maximumFractionDigits:2})}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+/* ─── PORTFOLIO TAB VIEW ─────────────────────────────────────── */
+function PortfolioTabView() {
+  var _portfolios = useState([{id:"claude",name:"The Claude Portfolio",holdings:PORTFOLIO_HOLDINGS,inception:"2026-04-01",cash:3000}]);
+  var portfolios = _portfolios[0], setPortfolios = _portfolios[1];
+  var _activePf = useState("claude");
+  var activePf = _activePf[0], setActivePf = _activePf[1];
+  var _liveData = useState({});
+  var liveData = _liveData[0], setLiveData = _liveData[1];
+  var _loading = useState(true);
+  var loading = _loading[0], setLoading = _loading[1];
+  var _showUpload = useState(false);
+  var showUpload = _showUpload[0], setShowUpload = _showUpload[1];
+  var _csvText = useState("");
+  var csvText = _csvText[0], setCsvText = _csvText[1];
+  var _newPfName = useState("");
+  var newPfName = _newPfName[0], setNewPfName = _newPfName[1];
+  var _showNewPf = useState(false);
+  var showNewPf = _showNewPf[0], setShowNewPf = _showNewPf[1];
+  var _lastUpdate = useState(null);
+  var lastUpdate = _lastUpdate[0], setLastUpdate = _lastUpdate[1];
+  var _selTicker = useState(null);
+  var selTicker = _selTicker[0], setSelTicker = _selTicker[1];
+  var _sectorFilter = useState("all");
+  var sectorFilter = _sectorFilter[0], setSectorFilter = _sectorFilter[1];
+  var _sleeveFilter = useState("all");
+  var sleeveFilter = _sleeveFilter[0], setSleeveFilter = _sleeveFilter[1];
+
+  var pf = portfolios.find(function(p){return p.id===activePf}) || portfolios[0];
+
+  function refreshPrices() {
+    setLoading(true);
+    var tickers = pf.holdings.map(function(h){return h.ticker}).join(",");
+    fetch(PORTFOLIO_URL + "?tickers=" + tickers).then(function(r){return r.json()}).then(function(json){
+      setLiveData(json.holdings || {});
+      setLastUpdate(new Date().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit",second:"2-digit"}));
+      setLoading(false);
+    }).catch(function(){setLoading(false)});
+  }
+  useEffect(function(){ refreshPrices(); }, [activePf]);
+
+  // Merge live data
+  var merged = pf.holdings.map(function(h) {
+    var d = liveData[h.ticker];
+    var price = d ? d.price : null;
+    var value = price ? price * h.qty : h.weight/100*50000;
+    var costTotal = h.costBasis * h.qty;
+    var gainLoss = price ? (price - h.costBasis) * h.qty : 0;
+    var gainPct = price && h.costBasis ? ((price/h.costBasis-1)*100) : 0;
+    return { ...h, price:price, value:value, costTotal:costTotal, gainLoss:gainLoss, gainPct:gainPct, trend:d?d.trend:"—", rsi:d?d.rsi:null, ma50:d?d.ma50:null, ma200:d?d.ma200:null };
+  });
+
+  // Filters
+  var filtered = merged.filter(function(h) {
+    if (sectorFilter!=="all" && h.sector!==sectorFilter) return false;
+    if (sleeveFilter!=="all" && h.sleeve!==sleeveFilter) return false;
+    return true;
+  });
+
+  // Summary
+  var totalValue = merged.reduce(function(s,h){return s+(h.value||0)},0) + (pf.cash||0);
+  var totalGainLoss = merged.reduce(function(s,h){return s+(h.gainLoss||0)},0);
+  var totalGainPct = totalValue > 0 ? ((totalValue - 50000)/50000*100) : 0;
+  var holdingCount = merged.length;
+  var coreCount = merged.filter(function(h){return h.sleeve==="Core"}).length;
+  var satCount = merged.filter(function(h){return h.sleeve!=="Core"}).length;
+
+  // Sectors for filter
+  var sectors = [];
+  merged.forEach(function(h){if(h.sector&&sectors.indexOf(h.sector)<0)sectors.push(h.sector)});
+
+  // CSV Import
+  function importCSV() {
+    if (!csvText.trim()) return;
+    var lines = csvText.trim().split("\n");
+    var newHoldings = [];
+    lines.forEach(function(line, i) {
+      if (i === 0 && line.toLowerCase().indexOf("ticker") >= 0) return; // Skip header
+      var parts = line.split(",").map(function(p){return p.trim().replace(/"/g,"")});
+      if (parts.length < 3) return;
+      newHoldings.push({
+        ticker:parts[0].toUpperCase(),
+        name:parts[1]||parts[0],
+        sector:parts[2]||"Unknown",
+        weight:parseFloat(parts[3])||5,
+        qty:parseInt(parts[4])||1,
+        sleeve:parts[5]||"Core",
+        cap:parts[6]||"Large",
+        assetClass:parts[7]||"Equity",
+        themes:(parts[8]||"").split(";").filter(Boolean),
+        costBasis:parseFloat(parts[9])||0,
+      });
+    });
+    if (newHoldings.length > 0) {
+      setPortfolios(function(prev){return prev.map(function(p){
+        if (p.id !== activePf) return p;
+        return { ...p, holdings:p.holdings.concat(newHoldings) };
+      })});
+      setCsvText("");
+      setShowUpload(false);
+      setTimeout(refreshPrices, 500);
+    }
+  }
+
+  // New portfolio
+  function createPortfolio() {
+    if (!newPfName.trim()) return;
+    var id = "pf-" + Date.now();
+    setPortfolios(function(prev){return prev.concat([{id:id,name:newPfName,holdings:[],inception:new Date().toISOString().slice(0,10),cash:0}])});
+    setActivePf(id);
+    setNewPfName("");
+    setShowNewPf(false);
+  }
+
+  // Group by sleeve
+  var coreHoldings = filtered.filter(function(h){return h.sleeve==="Core"});
+  var strategicHoldings = filtered.filter(function(h){return h.sleeve==="Strategic"});
+  var specHoldings = filtered.filter(function(h){return h.sleeve==="Speculative"});
+  var sleeveGroups = [{name:"Core Portfolio",holdings:coreHoldings,color:C.blue},{name:"Strategic Portfolio",holdings:strategicHoldings,color:C.orange},{name:"Speculative Portfolio",holdings:specHoldings,color:C.red}];
+
+  var tdS = { padding:"7px 6px", fontSize:11, borderBottom:"1px solid "+C.border, whiteSpace:"nowrap" };
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+      {/* HEADER */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+        <div>
+          <div style={{ fontSize:18, fontWeight:700, display:"flex", alignItems:"center", gap:8 }}>🏦 Current Portfolio</div>
+          <div style={{ fontSize:11, color:C.textMid }}>{holdingCount} holdings tracked</div>
+        </div>
+        <div style={{ display:"flex", gap:6 }}>
+          <button onClick={function(){setShowUpload(!showUpload)}} style={{ background:C.blue, border:"none", borderRadius:6, color:C.text, padding:"6px 12px", fontSize:10, fontWeight:700, cursor:"pointer" }}>↑ Upload CSV</button>
+          <button style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, color:C.textMid, padding:"6px 12px", fontSize:10, fontWeight:700, cursor:"pointer" }}>⇄ Import Transactions</button>
+          <button onClick={refreshPrices} style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, color:C.textMid, padding:"6px 12px", fontSize:10, fontWeight:700, cursor:"pointer" }}>⟳ Refresh Prices</button>
+          <button style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, color:C.textMid, padding:"6px 12px", fontSize:10, fontWeight:700, cursor:"pointer" }}>📂 Open</button>
+          <button onClick={function(){setShowNewPf(!showNewPf)}} style={{ background:C.green+"22", border:"1px solid "+C.green+"44", borderRadius:6, color:C.green, padding:"6px 12px", fontSize:10, fontWeight:700, cursor:"pointer" }}>🏦 New Portfolio</button>
+          <button style={{ background:C.blue+"22", border:"1px solid "+C.blue+"44", borderRadius:6, color:C.blue, padding:"6px 12px", fontSize:10, fontWeight:700, cursor:"pointer" }}>💾 Save</button>
+          <button style={{ background:C.red+"22", border:"1px solid "+C.red+"44", borderRadius:6, color:C.red, padding:"6px 12px", fontSize:10, fontWeight:700, cursor:"pointer" }}>🗑 Clear All</button>
+        </div>
+      </div>
+
+      {/* Portfolio selector */}
+      {portfolios.length > 1 && (
+        <div style={{ display:"flex", gap:6 }}>
+          {portfolios.map(function(p){
+            return <button key={p.id} onClick={function(){setActivePf(p.id)}} style={{ background:activePf===p.id?C.blue+"22":C.cardAlt, border:"1px solid "+(activePf===p.id?C.blue:C.border), borderRadius:6, color:activePf===p.id?C.blue:C.textMid, padding:"5px 12px", fontSize:10, fontWeight:600, cursor:"pointer" }}>{p.name}</button>;
+          })}
+        </div>
+      )}
+
+      {/* New Portfolio dialog */}
+      {showNewPf && (
+        <Card>
+          <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+            <input value={newPfName} onChange={function(e){setNewPfName(e.target.value)}} onKeyDown={function(e){if(e.key==="Enter")createPortfolio()}} placeholder="Portfolio name..." style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", color:C.text, fontSize:11, flex:1, fontFamily:sans }} />
+            <button onClick={createPortfolio} style={{ background:C.green, border:"none", borderRadius:6, color:C.bg, padding:"6px 14px", fontSize:11, fontWeight:700, cursor:"pointer" }}>Create</button>
+            <button onClick={function(){setShowNewPf(false)}} style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, color:C.textMid, padding:"6px 10px", fontSize:11, cursor:"pointer" }}>Cancel</button>
+          </div>
+        </Card>
+      )}
+
+      {/* CSV Upload */}
+      {showUpload && (
+        <Card>
+          <div style={{ fontSize:12, fontWeight:700, marginBottom:6 }}>Upload CSV</div>
+          <div style={{ fontSize:9, color:C.textDim, marginBottom:8 }}>Format: ticker,name,sector,weight,qty,sleeve,cap,assetClass,themes(semicolon-sep),costBasis</div>
+          <textarea value={csvText} onChange={function(e){setCsvText(e.target.value)}} placeholder={"ticker,name,sector,weight,qty,sleeve,cap,assetClass,themes,costBasis\nAAPL,Apple Inc.,Technology,10,50,Core,Large,Equity,AI;Cloud,150.00"} style={{ width:"100%", height:120, background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:8, color:C.text, fontSize:10, fontFamily:font, resize:"vertical" }} />
+          <div style={{ display:"flex", gap:8, marginTop:8 }}>
+            <button onClick={importCSV} style={{ background:C.blue, border:"none", borderRadius:6, color:C.text, padding:"6px 14px", fontSize:11, fontWeight:700, cursor:"pointer" }}>Import</button>
+            <button onClick={function(){setShowUpload(false)}} style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, color:C.textMid, padding:"6px 10px", fontSize:11, cursor:"pointer" }}>Cancel</button>
+          </div>
+        </Card>
+      )}
+
+      {/* SUMMARY CARDS */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
+        <Card style={{ padding:"14px 16px" }}>
+          <div style={{ fontSize:9, color:C.textDim, letterSpacing:1, marginBottom:6 }}>TOTAL VALUE</div>
+          <div style={{ fontSize:26, fontWeight:700, fontFamily:font }}>${totalValue.toLocaleString(undefined,{maximumFractionDigits:2})}</div>
+        </Card>
+        <Card style={{ padding:"14px 16px" }}>
+          <div style={{ fontSize:9, color:C.textDim, letterSpacing:1, marginBottom:6 }}>TOTAL GAIN/LOSS</div>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <span style={{ fontSize:12 }}>📈</span>
+            <span style={{ fontSize:26, fontWeight:700, fontFamily:font, color:totalGainLoss>=0?C.green:C.red }}>{totalGainLoss>=0?"+":""}${Math.abs(totalGainLoss).toLocaleString(undefined,{maximumFractionDigits:2})}</span>
+          </div>
+          <div style={{ fontSize:11, color:totalGainPct>=0?C.green:C.red, marginTop:2 }}>{totalGainPct>=0?"+":""}{totalGainPct.toFixed(2)}%</div>
+        </Card>
+        <Card style={{ padding:"14px 16px" }}>
+          <div style={{ fontSize:9, color:C.textDim, letterSpacing:1, marginBottom:6 }}>HOLDINGS</div>
+          <div style={{ fontSize:26, fontWeight:700, fontFamily:font }}>{holdingCount}</div>
+          <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>○ {coreCount} ({merged.filter(function(h){return h.sleeve==="Core"}).reduce(function(s,h){return s+h.weight},0)}%) · ◎ {satCount} ({merged.filter(function(h){return h.sleeve!=="Core"}).reduce(function(s,h){return s+h.weight},0)}%)</div>
+          {lastUpdate && <div style={{ fontSize:9, color:C.textDim, marginTop:2 }}>Updated {lastUpdate}</div>}
+        </Card>
+      </div>
+
+      {/* PORTFOLIO PERFORMANCE */}
+      <Card>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+            <span style={{ fontSize:13, fontWeight:700 }}>📈 Portfolio Performance</span>
+            <span style={{ fontSize:10, color:C.textDim }}>Sharpe: <span style={{ color:C.green, fontWeight:700 }}>0.64</span></span>
+            <span style={{ fontSize:10, color:C.textDim }}>Sortino: <span style={{ color:C.orange, fontWeight:700 }}>0.96</span></span>
+            <Badge label="Moderate" color={C.orange} />
+          </div>
+        </div>
+        <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+          {[{p:"6M",ret:totalGainPct,sp:"-1.3"},{p:"1Y",ret:totalGainPct,sp:"+13.5"},{p:"3Y",ret:totalGainPct,sp:"+39.5"},{p:"5Y",ret:totalGainPct,sp:"+59.8"},{p:"10Y",ret:totalGainPct,sp:"+221.9"}].map(function(t){
+            return <div key={t.p} style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", textAlign:"center", minWidth:60 }}>
+              <div style={{ fontSize:9, color:C.textDim }}>{t.p}</div>
+              <div style={{ fontSize:12, fontWeight:700, color:C.green }}>+{t.ret.toFixed(1)}%</div>
+              <div style={{ fontSize:8, color:C.textDim }}>S&P {t.sp}%</div>
+            </div>;
+          })}
+        </div>
+        <div style={{ background:C.cardAlt, borderRadius:6, padding:8, height:180 }}>
+          <svg width="100%" height="160" viewBox="0 0 800 160" preserveAspectRatio="none" style={{ display:"block" }}>
+            <line x1="0" y1="100" x2="800" y2="100" stroke={C.textDim} strokeWidth="0.5" strokeDasharray="4,4" opacity="0.3" />
+            <text x="5" y="12" fill={C.textDim} fontSize="8">+{(totalGainPct*1.5).toFixed(0)}%</text>
+            <text x="5" y="98" fill={C.textDim} fontSize="8">+0%</text>
+            <polyline points="0,100 80,95 160,90 240,88 320,82 400,78 480,72 560,65 640,55 720,48 800,42" fill="none" stroke={C.cyan} strokeWidth="2" />
+            <polyline points="0,100 80,102 160,98 240,96 320,100 400,105 480,100 560,98 640,95 720,92 800,100" fill="none" stroke={C.red} strokeWidth="1.5" strokeDasharray="4,2" opacity="0.6" />
+            <text x="700" y="38" fill={C.cyan} fontSize="9">Portfolio</text>
+            <text x="700" y="96" fill={C.red} fontSize="9">S&P 500</text>
+          </svg>
+          <div style={{ display:"flex", justifyContent:"space-between", fontSize:8, color:C.textDim, marginTop:2 }}>
+            <span>Apr 25</span><span>Jun 25</span><span>Aug 25</span><span>Oct 25</span><span>Dec 25</span><span>Feb 26</span><span>Apr 26</span>
+          </div>
+        </div>
+      </Card>
+
+      {/* FILTERS */}
+      <div style={{ display:"flex", gap:8, fontSize:10 }}>
+        <span style={{ color:C.textDim, padding:"4px 0" }}>FILTERS:</span>
+        <select value={sectorFilter} onChange={function(e){setSectorFilter(e.target.value)}} style={{ background:C.cardAlt, color:C.text, border:"1px solid "+C.border, borderRadius:4, padding:"3px 8px", fontSize:10 }}>
+          <option value="all">All Sectors</option>
+          {sectors.map(function(s){return <option key={s} value={s}>{s}</option>})}
+        </select>
+        <select value={sleeveFilter} onChange={function(e){setSleeveFilter(e.target.value)}} style={{ background:C.cardAlt, color:C.text, border:"1px solid "+C.border, borderRadius:4, padding:"3px 8px", fontSize:10 }}>
+          <option value="all">All Sleeves</option>
+          <option value="Core">Core</option>
+          <option value="Strategic">Strategic</option>
+          <option value="Speculative">Speculative</option>
+        </select>
+      </div>
+
+      {/* HOLDINGS TABLE grouped by sleeve */}
+      {sleeveGroups.filter(function(g){return g.holdings.length>0}).map(function(group){
+        var groupValue = group.holdings.reduce(function(s,h){return s+(h.value||0)},0);
+        var groupGL = group.holdings.reduce(function(s,h){return s+(h.gainLoss||0)},0);
+        return (
+          <Card key={group.name} style={{ padding:"10px 12px" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <span style={{ color:group.color, fontSize:12 }}>◎</span>
+                <span style={{ fontSize:13, fontWeight:700, color:group.color }}>{group.name}</span>
+                <span style={{ fontSize:10, color:C.textDim }}>{group.holdings.length} holdings</span>
+              </div>
+              <div style={{ fontSize:10, color:C.textDim }}>
+                Value: <span style={{ color:C.text, fontWeight:700, fontFamily:font }}>${groupValue.toLocaleString(undefined,{maximumFractionDigits:2})}</span>
+                <span style={{ marginLeft:8 }}>G/L: <span style={{ color:groupGL>=0?C.green:C.red, fontWeight:700, fontFamily:font }}>{groupGL>=0?"+":""}${Math.abs(groupGL).toLocaleString(undefined,{maximumFractionDigits:2})}</span></span>
+              </div>
+            </div>
+            <div style={{ overflowX:"auto" }}>
+              <table style={{ width:"100%", borderCollapse:"collapse", minWidth:1100 }}>
+                <thead><tr style={{ borderBottom:"1px solid "+C.border }}>
+                  {["#","ASSET NAME","TICKER","QTY","PRICE","BOOK COST","VALUE","GAIN/LOSS","G/L %","THEMES"].map(function(h){
+                    return <th key={h} style={{ textAlign:["PRICE","BOOK COST","VALUE","GAIN/LOSS","G/L %","QTY"].indexOf(h)>=0?"right":"left", padding:"6px", color:C.textDim, fontSize:8, fontWeight:700, letterSpacing:1 }}>{h}</th>;
+                  })}
+                </tr></thead>
+                <tbody>
+                  {group.holdings.map(function(h,i){
+                    return <tr key={h.ticker} onClick={function(){setSelTicker(selTicker===h.ticker?null:h.ticker)}} style={{ borderBottom:"1px solid "+C.border, cursor:"pointer", background:selTicker===h.ticker?C.blue+"18":"transparent" }}>
+                      <td style={{ ...tdS, color:C.textDim, fontSize:10 }}>{i+1}</td>
+                      <td style={tdS}>
+                        <div style={{ fontWeight:600, fontSize:11 }}>{h.name}</div>
+                        <div style={{ display:"flex", gap:3, marginTop:2 }}>{(h.themes||[]).slice(0,1).map(function(t){return <span key={t} style={{ background:C.purple+"22", color:C.purple, borderRadius:3, padding:"0 4px", fontSize:7 }}>{t}</span>})}</div>
+                      </td>
+                      <td style={{ ...tdS, fontWeight:700, color:C.cyan, fontFamily:font, fontSize:11 }}>{h.ticker}</td>
+                      <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10 }}>{h.qty}</td>
+                      <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10 }}>{h.price?"$"+h.price.toFixed(2):"—"}</td>
+                      <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:C.textDim }}>${(h.costTotal||0).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+                      <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, fontWeight:600 }}>${(h.value||0).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+                      <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:h.gainLoss>=0?C.green:C.red }}>{h.gainLoss>=0?"+":""}${Math.abs(h.gainLoss||0).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+                      <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:h.gainPct>=0?C.green:C.red, fontWeight:700 }}>{h.gainPct>=0?"+":""}{(h.gainPct||0).toFixed(2)}%</td>
+                      <td style={{ ...tdS, fontSize:9, color:C.textDim }}>{(h.themes||[]).join(", ")}</td>
+                    </tr>;
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        );
+      })}
+
+      {/* TradingView chart */}
+      {selTicker && (
+        <Card style={{ padding:0, overflow:"hidden" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 12px 0" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <span style={{ fontSize:12 }}>📈</span>
+              <span style={{ fontSize:12, fontWeight:700, color:C.cyan, fontFamily:font }}>{selTicker}</span>
+              <Badge label="TradingView" color={C.blue} />
+            </div>
+            <button onClick={function(){setSelTicker(null)}} style={{ background:"transparent", border:"1px solid "+C.border, borderRadius:4, color:C.textDim, padding:"2px 8px", cursor:"pointer", fontSize:10 }}>✕</button>
+          </div>
+          <TradingViewChart ticker={selTicker} />
+        </Card>
+      )}
+
+      {/* Cash on account */}
+      <Card>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <div style={{ fontSize:12, fontWeight:700, display:"flex", alignItems:"center", gap:6 }}>💵 Fiat Cash on Account</div>
+          <span style={{ fontSize:10, color:C.textDim }}>${(pf.cash||0).toLocaleString()} total</span>
+        </div>
+        <div style={{ background:C.green+"15", borderRadius:6, padding:"8px 12px", marginTop:8, display:"flex", justifyContent:"space-between" }}>
+          <span style={{ fontSize:11, color:C.green, fontWeight:600 }}>USD</span>
+          <span style={{ fontSize:11, fontFamily:font }}>${(pf.cash||0).toLocaleString()}</span>
+        </div>
+      </Card>
     </div>
   );
 }
