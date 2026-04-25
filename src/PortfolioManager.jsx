@@ -4138,26 +4138,58 @@ function PortfolioTabView() {
   var sectors = [];
   merged.forEach(function(h){if(h.sector&&sectors.indexOf(h.sector)<0)sectors.push(h.sector)});
 
-  // CSV Import
+  // CSV Import with smart column detection
   function importCSV() {
     if (!csvText.trim()) return;
-    var lines = csvText.trim().split("\n");
+    var lines = csvText.trim().split("\n").map(function(l){return l.trim()}).filter(Boolean);
+    if (lines.length < 1) return;
+
+    // Detect header row
+    var firstLine = lines[0].toLowerCase();
+    var hasHeader = firstLine.indexOf("ticker")>=0 || firstLine.indexOf("symbol")>=0 || firstLine.indexOf("name")>=0;
+    var headerRow = hasHeader ? lines[0].split(",").map(function(h){return h.trim().replace(/"/g,"").toLowerCase()}) : null;
+    var dataLines = hasHeader ? lines.slice(1) : lines;
+
+    // Column mapping — auto-detect from header names
+    function colIndex(names) {
+      if (!headerRow) return -1;
+      for (var i = 0; i < names.length; i++) {
+        var idx = headerRow.indexOf(names[i]);
+        if (idx >= 0) return idx;
+      }
+      return -1;
+    }
+    var tickerIdx = headerRow ? colIndex(["ticker","symbol","sym","stock"]) : 0;
+    var nameIdx = headerRow ? colIndex(["name","description","company","asset"]) : 1;
+    var sectorIdx = headerRow ? colIndex(["sector","industry","category"]) : 2;
+    var weightIdx = headerRow ? colIndex(["weight","allocation","pct","percent"]) : 3;
+    var qtyIdx = headerRow ? colIndex(["qty","quantity","shares","units","amount"]) : 4;
+    var sleeveIdx = headerRow ? colIndex(["sleeve","type","portfolio","bucket"]) : 5;
+    var capIdx = headerRow ? colIndex(["cap","marketcap","size","mktcap"]) : 6;
+    var assetIdx = headerRow ? colIndex(["assetclass","asset_class","class"]) : 7;
+    var themeIdx = headerRow ? colIndex(["themes","theme","tags"]) : 8;
+    var costIdx = headerRow ? colIndex(["costbasis","cost","price","avgprice","avg_price","buyprice","cost_basis"]) : 9;
+
+    // Fallback: if no header, assume ticker is first column
+    if (tickerIdx < 0) tickerIdx = 0;
+
     var newHoldings = [];
-    lines.forEach(function(line, i) {
-      if (i === 0 && line.toLowerCase().indexOf("ticker") >= 0) return; // Skip header
+    dataLines.forEach(function(line) {
       var parts = line.split(",").map(function(p){return p.trim().replace(/"/g,"")});
-      if (parts.length < 3) return;
+      if (parts.length < 1 || !parts[tickerIdx]) return;
+      var ticker = parts[tickerIdx].toUpperCase();
+      if (!ticker || ticker.length > 10) return;
       newHoldings.push({
-        ticker:parts[0].toUpperCase(),
-        name:parts[1]||parts[0],
-        sector:parts[2]||"Unknown",
-        weight:parseFloat(parts[3])||5,
-        qty:parseInt(parts[4])||1,
-        sleeve:parts[5]||"Core",
-        cap:parts[6]||"Large",
-        assetClass:parts[7]||"Equity",
-        themes:(parts[8]||"").split(";").filter(Boolean),
-        costBasis:parseFloat(parts[9])||0,
+        ticker: ticker,
+        name: nameIdx>=0 && parts[nameIdx] ? parts[nameIdx] : ticker,
+        sector: sectorIdx>=0 && parts[sectorIdx] ? parts[sectorIdx] : "Unknown",
+        weight: weightIdx>=0 ? (parseFloat(parts[weightIdx])||5) : 5,
+        qty: qtyIdx>=0 ? (parseInt(parts[qtyIdx])||1) : 1,
+        sleeve: sleeveIdx>=0 && parts[sleeveIdx] ? parts[sleeveIdx] : "Core",
+        cap: capIdx>=0 && parts[capIdx] ? parts[capIdx] : "Large",
+        assetClass: assetIdx>=0 && parts[assetIdx] ? parts[assetIdx] : "Equity",
+        themes: themeIdx>=0 && parts[themeIdx] ? parts[themeIdx].split(";").filter(Boolean) : [],
+        costBasis: costIdx>=0 ? (parseFloat(parts[costIdx])||0) : 0,
       });
     });
     if (newHoldings.length > 0) {
@@ -4231,12 +4263,74 @@ function PortfolioTabView() {
       {/* CSV Upload */}
       {showUpload && (
         <Card>
-          <div style={{ fontSize:12, fontWeight:700, marginBottom:6 }}>Upload CSV</div>
-          <div style={{ fontSize:9, color:C.textDim, marginBottom:8 }}>Format: ticker,name,sector,weight,qty,sleeve,cap,assetClass,themes(semicolon-sep),costBasis</div>
-          <textarea value={csvText} onChange={function(e){setCsvText(e.target.value)}} placeholder={"ticker,name,sector,weight,qty,sleeve,cap,assetClass,themes,costBasis\nAAPL,Apple Inc.,Technology,10,50,Core,Large,Equity,AI;Cloud,150.00"} style={{ width:"100%", height:120, background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:8, color:C.text, fontSize:10, fontFamily:font, resize:"vertical" }} />
-          <div style={{ display:"flex", gap:8, marginTop:8 }}>
-            <button onClick={importCSV} style={{ background:C.blue, border:"none", borderRadius:6, color:C.text, padding:"6px 14px", fontSize:11, fontWeight:700, cursor:"pointer" }}>Import</button>
-            <button onClick={function(){setShowUpload(false)}} style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, color:C.textMid, padding:"6px 10px", fontSize:11, cursor:"pointer" }}>Cancel</button>
+          <div style={{ fontSize:14, fontWeight:700, marginBottom:4 }}>↑ Upload CSV</div>
+          <div style={{ fontSize:10, color:C.textDim, marginBottom:10 }}>Upload a .csv file or paste CSV data below. Minimum columns: ticker, qty, costBasis. Optional: name, sector, weight, sleeve, cap, assetClass, themes (semicolon-separated).</div>
+
+          {/* File drop zone */}
+          <div
+            onDragOver={function(e){e.preventDefault();e.currentTarget.style.borderColor=C.cyan}}
+            onDragLeave={function(e){e.currentTarget.style.borderColor=C.border}}
+            onDrop={function(e){
+              e.preventDefault();
+              e.currentTarget.style.borderColor=C.border;
+              var file = e.dataTransfer.files[0];
+              if(file){var reader=new FileReader();reader.onload=function(ev){setCsvText(ev.target.result)};reader.readAsText(file)}
+            }}
+            style={{ border:"2px dashed "+C.border, borderRadius:8, padding:"20px", textAlign:"center", marginBottom:10, cursor:"pointer", transition:"border-color 0.2s" }}
+            onClick={function(){document.getElementById("csv-file-input").click()}}
+          >
+            <input
+              id="csv-file-input"
+              type="file"
+              accept=".csv,.txt"
+              style={{ display:"none" }}
+              onChange={function(e){
+                var file = e.target.files[0];
+                if(file){var reader=new FileReader();reader.onload=function(ev){setCsvText(ev.target.result)};reader.readAsText(file)}
+              }}
+            />
+            <div style={{ fontSize:24, marginBottom:6, opacity:0.4 }}>📄</div>
+            <div style={{ fontSize:11, color:C.textMid }}>Drag & drop a CSV file here, or click to browse</div>
+            <div style={{ fontSize:9, color:C.textDim, marginTop:4 }}>Accepts .csv and .txt files</div>
+          </div>
+
+          {/* Paste area */}
+          <div style={{ fontSize:10, color:C.textDim, marginBottom:4 }}>Or paste CSV data:</div>
+          <textarea value={csvText} onChange={function(e){setCsvText(e.target.value)}} placeholder={"ticker,name,sector,weight,qty,sleeve,cap,assetClass,themes,costBasis\nAAPL,Apple Inc.,Technology,10,50,Core,Large,Equity,AI;Cloud,150.00\nTSLA,Tesla Inc.,Technology,8,20,Strategic,Large,Equity,EV;AI,180.00"} style={{ width:"100%", height:120, background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:8, color:C.text, fontSize:10, fontFamily:font, resize:"vertical" }} />
+
+          {/* Preview */}
+          {csvText.trim() && (function(){
+            var lines = csvText.trim().split("\n");
+            var headers = lines[0].toLowerCase();
+            var isHeader = headers.indexOf("ticker")>=0 || headers.indexOf("symbol")>=0;
+            var dataLines = isHeader ? lines.slice(1) : lines;
+            var previewCount = Math.min(5, dataLines.length);
+            return (
+              <div style={{ marginTop:8, background:C.cardAlt, borderRadius:6, padding:8, border:"1px solid "+C.border }}>
+                <div style={{ fontSize:10, color:C.green, marginBottom:4 }}>✓ {dataLines.length} rows detected {isHeader?"(header row skipped)":""}</div>
+                <div style={{ fontSize:9, color:C.textDim }}>
+                  Preview: {dataLines.slice(0, previewCount).map(function(l){
+                    var parts = l.split(",");
+                    return parts[0];
+                  }).join(", ")}{dataLines.length > previewCount ? " ... +"+(dataLines.length-previewCount)+" more" : ""}
+                </div>
+              </div>
+            );
+          })()}
+
+          <div style={{ display:"flex", gap:8, marginTop:10, alignItems:"center" }}>
+            <button onClick={importCSV} disabled={!csvText.trim()} style={{ background:csvText.trim()?C.blue:C.border, border:"none", borderRadius:6, color:csvText.trim()?C.text:C.textDim, padding:"8px 18px", fontSize:11, fontWeight:700, cursor:csvText.trim()?"pointer":"default" }}>Import {csvText.trim() ? csvText.trim().split("\n").length-1+" holdings" : ""}</button>
+            <button onClick={function(){setCsvText("");setShowUpload(false)}} style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, color:C.textMid, padding:"8px 14px", fontSize:11, cursor:"pointer" }}>Cancel</button>
+            {csvText.trim() && <button onClick={function(){setCsvText("")}} style={{ background:"transparent", border:"none", color:C.red, fontSize:10, cursor:"pointer" }}>Clear</button>}
+          </div>
+
+          <div style={{ marginTop:10, background:C.cardAlt, borderRadius:6, padding:8, border:"1px solid "+C.border }}>
+            <div style={{ fontSize:9, fontWeight:700, color:C.textDim, letterSpacing:1, marginBottom:4 }}>SUPPORTED FORMATS</div>
+            <div style={{ fontSize:9, color:C.textDim, lineHeight:1.6 }}>
+              <div><strong style={{ color:C.text }}>Minimal:</strong> ticker,qty,costBasis</div>
+              <div><strong style={{ color:C.text }}>Standard:</strong> ticker,name,sector,weight,qty,sleeve,cap,assetClass,themes,costBasis</div>
+              <div><strong style={{ color:C.text }}>Broker export:</strong> Auto-detects columns named: Symbol/Ticker, Quantity/Qty/Shares, Price/Cost/CostBasis, Name/Description, Sector</div>
+            </div>
           </div>
         </Card>
       )}
