@@ -67,54 +67,58 @@ const SECTOR_PAIRS = [
   { name:"US vs Emerging Markets",   e1:"SPY",  e2:"EEM",  sub1:"Large Cap (SPY)",               sub2:"Emerging Markets (EEM)" },
 ];
 
+/* SEED — snapshot as of Apr 24, 2026 market close.
+   Displayed on first paint before live refresh completes (~2-5s), and as
+   fallback if all data sources fail. Values align with current reality so
+   the dashboard never shows a 6-month-stale regime on a cold load. */
 const SEED = {
-  macroRegime:{ season:"Autumn", phase:"Contraction", riskOn:false, confirmed:true, confidence:72, mediumTerm:"Risk Off", shortTerm:"Defensive positioning — extreme fear regime, elevated VIX, below key MAs", description:"Autumn contraction — S&P 500 at 6,408, below both 50-day (6,615) and 200-day (6,768) MAs. VIX at 27.44 (+8.3%), CNN F&G at 18 (Extreme Fear), crypto F&G at 10. Yield curve positive but rates rising. Dollar weak at 99.86." },
-  sp500:{ price:"6,408.38", change:"-2.78", sentiment:"BEARISH", dma50:"6,615.20", dma200:"6,768.50", wkSupport:"6,400.00", wkResistance:"6,573.22", moSupport:"6,350.00", moResistance:"6,591.90" },
-  nasdaq:{ price:"21,450.00", change:"-3.12", sentiment:"BEARISH", dma50:"22,100.00", dma200:"21,800.00", wkSupport:"21,200.00", wkResistance:"22,050.00", moSupport:"20,900.00", moResistance:"22,400.00" },
-  bitcoin:{ price:"68,420.00", change:"-4.85", sentiment:"BEARISH", dma50:"72,500.00", dma200:"65,800.00", wkSupport:"66,000.00", wkResistance:"72,000.00", moSupport:"62,000.00", moResistance:"75,000.00" },
-  vix:{ price:"27.44", change:"+2.11", changePct:"+8.33", level:"HIGH", note:"Elevated concern" },
-  dxy:{ price:"99.86", change:"-0.04", strength:"WEAK", note:"Tailwind for risk assets", position:49, sparkline:[] },
-  yield:{ spread:"+0.42", status:"NORMAL", recessionRisk:"LOW", recessionPct:18 },
-  fg:{ score:18, label:"Extreme Fear", vsPrev:-4, cryptoScore:10, cryptoLabel:"EXTREME FEAR" },
-  rates:{ status:"NEUTRAL", current:"4.33", expected:"4.08", impliedCuts:"-1" },
-  inflation:{ cpi:"3.3", trend:"Rising", truflation:"2.95", spread:"-0.35", note:"March CPI spike driven by energy — core stayed at 2.6%" },
-  liquidity:{ total:"17.4", score:"58", roc13w:"-0.40", roc52w:"-1.8", trend:"Contractionary" },
+  macroRegime:{ season:"Summer", phase:"Inflationary Boom", riskOn:true, confirmed:true, confidence:68, mediumTerm:"Risk On", shortTerm:"Record highs · narrow tech leadership · hedging demand elevated despite Greed sentiment", description:"Summer inflationary boom — S&P 500 at 7,165 (record close), Nasdaq 24,837 (record), above 50-day and 200-day MAs. VIX 18.71 (moderate). CNN F&G at 70 (Greed), crypto F&G ~65. Yield curve positive (+0.30). Fed funds 3.63% with 1 cut priced for 2026. CPI YoY 3.3% (Mar). Dollar weak at 98.61 (tailwind for risk)." },
+  sp500:{ price:"7,165.08", change:"+0.80", sentiment:"BULLISH", dma50:"7,020.00", dma200:"6,680.00", wkSupport:"7,050.00", wkResistance:"7,180.00", moSupport:"6,900.00", moResistance:"7,200.00" },
+  nasdaq:{ price:"24,836.60", change:"+1.63", sentiment:"BULLISH", dma50:"24,100.00", dma200:"22,800.00", wkSupport:"24,200.00", wkResistance:"24,900.00", moSupport:"23,500.00", moResistance:"25,000.00" },
+  bitcoin:{ price:"77,378.13", change:"-1.36", sentiment:"NEUTRAL", dma50:"79,500.00", dma200:"72,400.00", wkSupport:"76,000.00", wkResistance:"79,500.00", moSupport:"72,000.00", moResistance:"82,000.00" },
+  vix:{ price:"18.71", change:"-0.60", changePct:"-3.11", level:"MODERATE", note:"Normalized but elevated vs recent lows — hedging demand persists" },
+  dxy:{ price:"98.61", change:"+0.02", strength:"WEAK", note:"Tailwind for risk assets", position:43, sparkline:[] },
+  yield:{ spread:"+0.30", status:"NORMAL", recessionRisk:"LOW", recessionPct:15 },
+  fg:{ score:70, label:"Greed", vsPrev:28, cryptoScore:65, cryptoLabel:"GREED" },
+  rates:{ status:"EASING", current:"3.63", expected:"3.38", impliedCuts:"-1" },
+  inflation:{ cpi:"3.3", trend:"Stable", truflation:"2.80", spread:"-0.50", note:"March CPI 3.3% YoY; Fed dot plot shows 1 cut in 2026" },
+  liquidity:{ total:"23.1", score:"62", roc13w:"+0.40", roc52w:"+1.2", trend:"Expansionary" },
   liquidityHistory: null,
-  credit:{ moveIndex:"108.0", moveSignal:"Elevated", hyDAS:"340", igHyDiff:"65", tightNote:"Tight — Complacency Risk", sloosNote:"Net Tightening", goldCopper:"850", sahmRule:"0.30", ccDelinquency:"3.1" },
-  breadth:{ pct50:"38.2", pct200:"54.6", ad5d:"Falling", ad20d:"Falling", sentiment:"BEARISH", note:"Narrow participation — majority of stocks below 50-day MA" },
-  fci:{ value:"-2.10", nfci:"-0.38", status:"Loose", fedFunds:"+0.7", t10y:"+1.1", hySpread:"0.8", sp500load:"-2.0", usd:"+0.6" },
-  options:{ dexPCR:"1.42", omegaPCR:"1.18", status:"BEARISH", conviction:"42" },
-  macroIndic:{ usM2:"$21.8T", usM2Trend:"Rising", usM2Change:"+0.3%", ismPMI:"52.7", ismStatus:"Expanding", ismLabel:"ISM Manufacturing PMI", globalM2:"$17.4T", globalM2Trend:"Falling" },
+  credit:{ moveIndex:"88.0", moveSignal:"Normal", hyDAS:"290", igHyDiff:"58", tightNote:"Tight — Complacency Risk", sloosNote:"Net Easing", goldCopper:"760", sahmRule:"0.18", ccDelinquency:"3.0" },
+  breadth:{ pct50:"58.0", pct200:"64.0", ad5d:"Rising", ad20d:"Rising", sentiment:"BULLISH", note:"Healthy participation — most stocks above key MAs (narrow leadership caveat)" },
+  fci:{ value:"-0.95", nfci:"-0.55", status:"Loose", fedFunds:"-0.3", t10y:"+0.2", hySpread:"-0.4", sp500load:"-1.1", usd:"-0.2" },
+  options:{ dexPCR:"0.82", omegaPCR:"0.70", status:"BULLISH", conviction:"38" },
+  macroIndic:{ usM2:"$22.0T", usM2Trend:"Rising", usM2Change:"+0.4%", ismPMI:"52.7", ismStatus:"Expanding", ismLabel:"ISM Manufacturing PMI", globalM2:"$23.1T", globalM2Trend:"Rising" },
   sectorRotation: SECTOR_PAIRS.map(function(p) {
     var data = {
-      "Cyclical vs Defensive":{w1:"r",w1m:"r",w3m:"r",w6m:"r",bull:false,prob:"72",winner:p.sub2,diffPct:-4.2,note:"Defensive leading, risk-off trend intact"},
-      "Small Cap vs Large Cap":{w1:"r",w1m:"r",w3m:"r",w6m:"n",bull:false,prob:"68",winner:p.sub2,diffPct:-3.1,note:"Large cap outperforming, flight to quality"},
-      "Growth vs Value":{w1:"r",w1m:"r",w3m:"n",w6m:"g",bull:null,prob:"52",winner:null,diffPct:-0.8,note:"Mixed signals, rotation unclear"},
-      "Financials vs Utilities":{w1:"r",w1m:"r",w3m:"r",w6m:"r",bull:false,prob:"74",winner:p.sub2,diffPct:-5.6,note:"Utilities strongly outperforming, defensive bid"},
-      "High Beta vs Low Vol":{w1:"r",w1m:"r",w3m:"r",w6m:"r",bull:false,prob:"78",winner:p.sub2,diffPct:-7.3,note:"Low vol crushing high beta, fear regime"},
-      "US vs Emerging Markets":{w1:"r",w1m:"n",w3m:"g",w6m:"g",bull:null,prob:"55",winner:null,diffPct:1.2,note:"Mixed short-term, EM medium-term trend intact"},
+      "Cyclical vs Defensive":{w1:"g",w1m:"g",w3m:"g",w6m:"g",bull:true,prob:"76",winner:p.sub1,diffPct:5.8,note:"Cyclicals leading across all timeframes"},
+      "Small Cap vs Large Cap":{w1:"n",w1m:"r",w3m:"r",w6m:"r",bull:false,prob:"62",winner:p.sub2,diffPct:-4.2,note:"Large cap still dominant — narrow leadership"},
+      "Growth vs Value":{w1:"g",w1m:"g",w3m:"g",w6m:"g",bull:true,prob:"78",winner:p.sub1,diffPct:6.4,note:"Growth crushing value — AI/tech concentration"},
+      "Financials vs Utilities":{w1:"g",w1m:"g",w3m:"g",w6m:"n",bull:true,prob:"65",winner:p.sub1,diffPct:2.8,note:"Financials outperforming, steeper curve helps"},
+      "High Beta vs Low Vol":{w1:"g",w1m:"g",w3m:"g",w6m:"g",bull:true,prob:"80",winner:p.sub1,diffPct:8.1,note:"High beta decisively leading — risk-on regime"},
+      "US vs Emerging Markets":{w1:"n",w1m:"n",w3m:"g",w6m:"n",bull:null,prob:"53",winner:null,diffPct:0.6,note:"US slight edge, EM recovering with weak DXY"},
     };
     var d = data[p.name] || {w1:"n",w1m:"n",w3m:"n",w6m:"n",bull:null,prob:"50",winner:null,diffPct:0,note:"—"};
     return { ...p, ...d };
   }),
-  allocation:{ stocks:{n:"60",a:"50"}, bonds:{n:"10",a:"15"}, cash:{n:"5",a:"10"}, gold:{n:"5",a:"10"}, crypto:{n:"10",a:"7"}, realAssets:{n:"10",a:"8"} },
+  allocation:{ stocks:{n:"60",a:"65"}, bonds:{n:"10",a:"8"}, cash:{n:"5",a:"5"}, gold:{n:"5",a:"7"}, crypto:{n:"10",a:"10"}, realAssets:{n:"10",a:"5"} },
   topSectors:[
-    {name:"Utilities",etf:"XLU",r6m:"+11.2",r3m:"+6.8",pos:true},
-    {name:"Healthcare",etf:"XLV",r6m:"+8.4",r3m:"+3.2",pos:true},
-    {name:"Consumer Staples",etf:"XLP",r6m:"+6.1",r3m:"+4.5",pos:true},
-    {name:"Energy",etf:"XLE",r6m:"+4.8",r3m:"-2.1",pos:false},
-    {name:"Real Estate",etf:"XLRE",r6m:"+3.6",r3m:"+1.4",pos:true},
+    {name:"Technology",etf:"XLK",r6m:"+18.4",r3m:"+9.2",pos:true},
+    {name:"Communication Services",etf:"XLC",r6m:"+14.1",r3m:"+7.8",pos:true},
+    {name:"Consumer Discretionary",etf:"XLY",r6m:"+11.6",r3m:"+5.4",pos:true},
+    {name:"Industrials",etf:"XLI",r6m:"+9.2",r3m:"+4.1",pos:true},
+    {name:"Financials",etf:"XLF",r6m:"+7.8",r3m:"+3.6",pos:true},
   ],
   sectorAlloc:{
-    season:"AUTUMN", bias:"DEFENSIVE", confidence:"72",
-    overweight:[{name:"Utilities",conviction:"HIGH",target:"8.0"},{name:"Healthcare",conviction:"HIGH",target:"14.0"},{name:"Consumer Defensive",conviction:"MEDIUM",target:"10.0"}],
-    neutral:[{name:"Energy",conviction:"LOW",target:"5.0"},{name:"Industrials",conviction:"LOW",target:"7.0"}],
-    underweight:[{name:"Technology",conviction:"HIGH",target:"6.0"},{name:"Consumer Cyclical",conviction:"MEDIUM",target:"5.0"},{name:"Financial Services",conviction:"MEDIUM",target:"8.0"}],
+    season:"SUMMER", bias:"OFFENSIVE", confidence:"68",
+    overweight:[{name:"Technology",conviction:"HIGH",target:"16.0"},{name:"Communication Services",conviction:"HIGH",target:"11.0"},{name:"Consumer Discretionary",conviction:"MEDIUM",target:"12.0"}],
+    neutral:[{name:"Industrials",conviction:"LOW",target:"9.0"},{name:"Financials",conviction:"LOW",target:"11.0"}],
+    underweight:[{name:"Utilities",conviction:"HIGH",target:"2.0"},{name:"Consumer Staples",conviction:"MEDIUM",target:"4.0"},{name:"Healthcare",conviction:"MEDIUM",target:"8.0"}],
   },
   aiViews:{
-    bullish: "The setup for risk assets is stronger than headlines suggest. The S&P 500 trading at elevated levels with breadth recovering implies institutional accumulation. A weak DXY (~99) provides tailwinds for multinationals and emerging markets. With the yield curve positive and credit spreads tight at 340bp HY OAS, credit markets are not pricing in recession risk — a meaningful divergence from equity fear gauges.\n\nFed funds at 4.33% with market pricing in cuts creates a supportive backdrop. The Industrial Production reading at 103+ shows real economic activity is expanding. Historically, VIX spikes into 25-30 range have marked local bottoms, not tops. Rotating into quality growth, small caps, and cyclicals on any weakness is the higher-conviction play.\n\nTactical positioning: overweight equities (70%+), quality tech, industrials, and financials. Use options to hedge tail risk rather than reducing equity exposure wholesale.",
-    neutral: "The macro environment presents genuinely mixed signals. On the bullish side: yield curve positive, credit spreads tight, Fed easing bias. On the bearish side: VIX elevated, breadth narrowing, CPI jumped to 3.3% on energy shock. The truth is probably somewhere in between — markets consolidating through a stagflationary mini-cycle before the next directional move.\n\nThe March CPI surge to 3.3% was energy-driven; core remained tame at 2.6%. If energy stabilizes, inflation prints normalize and the Fed's easing path resumes. If energy pressures persist, stagflation risk rises materially. Bitcoin's weakness and crypto F&G at extreme fear mirror equity uncertainty but credit markets remain calm.\n\nTactical positioning: maintain balanced 60/40-style allocation with tilt toward quality. Barbell equity exposure between defensives (utilities, healthcare) and select growth. Keep 5-10% in cash for optionality. Avoid leverage until directional clarity emerges.",
-    bearish: "The macro environment has shifted decisively risk-off. The S&P 500 sits below both 50-day and 200-day moving averages — a bearish alignment not seen since 2024. CPI jumping to 3.3% combined with restrictive Fed funds at 4.33% creates stagflation risk. Industrial Production may be expanding but the monthly trend has flattened.\n\nSentiment indicators flash warning signs. CNN Fear & Greed in extreme fear territory, crypto F&G at 10, market breadth deteriorating with <40% of stocks above 50-day MA. The VIX spike confirms hedging demand. While credit spreads remain tight, credit always lags equity — complacency in credit is a classic late-cycle warning, not a bullish signal.\n\nTactical positioning: overweight defensives (utilities, staples, healthcare), gold, and cash. Reduce equity exposure to 40-50%. Underweight high-beta tech, consumer discretionary, crypto. Wait for VIX below 20, breadth above 50%, and CPI declining before re-engaging risk."
+    bullish: "The bull case is intact and well-supported by live data. The S&P 500 at 7,165 and Nasdaq at 24,837 both closed at record highs, up 0.8% and 1.6% respectively. Breadth confirms the advance with roughly 58% of stocks above their 50-day MA. Credit spreads remain tight at ~290bp HY OAS, MOVE index at 88 is normal-range, and NFCI at -0.55 shows loose financial conditions. The Fed has already cut 175bp since Sep 2024, with another cut priced for 2026.\n\nMacro tailwinds reinforce the setup: Fed funds at 3.63% (easing bias), CPI at 3.3% YoY with core stable, global liquidity expanding (+1.2% YoY), ISM PMI at 52.7 in expansion. DXY weakness at 98.6 supports multinationals and EM. With F&G at 70 (Greed but not extreme), there's room for further upside before contrarian exhaustion signals trigger.\n\nTactical positioning: overweight equities (65%+), lean into quality tech, AI infrastructure, semiconductors, and communication services. Keep some tactical cash (~5%) for inevitable pullbacks. Underweight defensives (utilities, staples) and long-duration bonds.",
+    neutral: "The current setup presents a classic 'Greed with hedging' regime — optimistic headline sentiment masking structural fragility. The F&G at 70 and record-high indexes contrast with VIX stuck at 18.7 and University of Michigan consumer sentiment at 49.8 (record low). When stocks and VIX rise together, it typically means institutions are hedging the rally rather than embracing it — a signal to respect but not to panic over.\n\nNarrow leadership is the key caveat: Intel +23% and a handful of semis drove Friday's session while the Dow finished -0.16%. That concentration creates fragility — a single large-cap reversal could trigger a faster drawdown than breadth suggests. Meanwhile, credit markets, rates, and macro data all point to a constructive backdrop. CPI at 3.3% is sticky but not rising; yield curve positive at +0.30; Sahm rule at 0.18 well below recession threshold (0.50).\n\nTactical positioning: maintain ~60% equity exposure with tilt toward quality growth. Barbell between large-cap tech leaders and defensive cash flow generators (healthcare ex-weight, consumer staples at neutral). Use options collars on concentrated positions. Keep 5-10% cash for tactical deployment on a 3-5% pullback.",
+    bearish: "The bear case has legitimate ammunition beneath the record-high surface. Consumer sentiment at 49.8 is the lowest reading on record — below 2008, below COVID. Nvidia retaking $5T market cap reflects the same AI-concentration concern that has tripped multiple cycles. The VIX at 18.7 refuses to compress despite indexes at all-time highs, which historically correlates with near-term pullbacks averaging 3-6%.\n\nUnderlying macro stress is real: CPI at 3.3% is sticky and has drifted up from 2.7% in December, Strait of Hormuz tensions keep oil volatility elevated (crude at $94.88), and Fed cuts are now priced at just 1 for 2026 after markets anticipated 2-3 earlier in the year. The yield curve at +0.30 is positive but narrow — any inversion returns recession probabilities to the foreground. Credit spread compression to 290bp is complacency, not strength; HY spreads widen before equities selloff 8 out of 10 times.\n\nTactical positioning: trim high-beta exposure into strength, rotate 10-15% toward defensives (utilities, staples, healthcare), add ~5-10% gold (confirmed trend, AU and GLD both rising), and build cash to 10-15%. Set protective stops on concentrated AI/semi positions. Avoid adding leverage. Re-engage risk after F&G retreats below 50 or breadth exceeds 65%."
   },
 };
 
