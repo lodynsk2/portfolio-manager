@@ -67,58 +67,54 @@ const SECTOR_PAIRS = [
   { name:"US vs Emerging Markets",   e1:"SPY",  e2:"EEM",  sub1:"Large Cap (SPY)",               sub2:"Emerging Markets (EEM)" },
 ];
 
-/* SEED — snapshot as of Apr 24, 2026 market close.
-   Displayed on first paint before live refresh completes (~2-5s), and as
-   fallback if all data sources fail. Values align with current reality so
-   the dashboard never shows a 6-month-stale regime on a cold load. */
 const SEED = {
-  macroRegime:{ season:"Summer", phase:"Inflationary Boom", riskOn:true, confirmed:true, confidence:68, mediumTerm:"Risk On", shortTerm:"Record highs · narrow tech leadership · hedging demand elevated despite Greed sentiment", description:"Summer inflationary boom — S&P 500 at 7,165 (record close), Nasdaq 24,837 (record), above 50-day and 200-day MAs. VIX 18.71 (moderate). CNN F&G at 70 (Greed), crypto F&G ~65. Yield curve positive (+0.30). Fed funds 3.63% with 1 cut priced for 2026. CPI YoY 3.3% (Mar). Dollar weak at 98.61 (tailwind for risk)." },
-  sp500:{ price:"7,165.08", change:"+0.80", sentiment:"BULLISH", dma50:"7,020.00", dma200:"6,680.00", wkSupport:"7,050.00", wkResistance:"7,180.00", moSupport:"6,900.00", moResistance:"7,200.00" },
-  nasdaq:{ price:"24,836.60", change:"+1.63", sentiment:"BULLISH", dma50:"24,100.00", dma200:"22,800.00", wkSupport:"24,200.00", wkResistance:"24,900.00", moSupport:"23,500.00", moResistance:"25,000.00" },
-  bitcoin:{ price:"77,378.13", change:"-1.36", sentiment:"NEUTRAL", dma50:"79,500.00", dma200:"72,400.00", wkSupport:"76,000.00", wkResistance:"79,500.00", moSupport:"72,000.00", moResistance:"82,000.00" },
-  vix:{ price:"18.71", change:"-0.60", changePct:"-3.11", level:"MODERATE", note:"Normalized but elevated vs recent lows — hedging demand persists" },
-  dxy:{ price:"98.61", change:"+0.02", strength:"WEAK", note:"Tailwind for risk assets", position:43, sparkline:[] },
-  yield:{ spread:"+0.30", status:"NORMAL", recessionRisk:"LOW", recessionPct:15 },
-  fg:{ score:70, label:"Greed", vsPrev:28, cryptoScore:65, cryptoLabel:"GREED" },
-  rates:{ status:"EASING", current:"3.63", expected:"3.38", impliedCuts:"-1" },
-  inflation:{ cpi:"3.3", trend:"Stable", truflation:"2.80", spread:"-0.50", note:"March CPI 3.3% YoY; Fed dot plot shows 1 cut in 2026" },
-  liquidity:{ total:"23.1", score:"62", roc13w:"+0.40", roc52w:"+1.2", trend:"Expansionary" },
+  macroRegime:{ season:"Autumn", phase:"Contraction", riskOn:false, confirmed:true, confidence:72, mediumTerm:"Risk Off", shortTerm:"Defensive positioning — extreme fear regime, elevated VIX, below key MAs", description:"Autumn contraction — S&P 500 at 6,408, below both 50-day (6,615) and 200-day (6,768) MAs. VIX at 27.44 (+8.3%), CNN F&G at 18 (Extreme Fear), crypto F&G at 10. Yield curve positive but rates rising. Dollar weak at 99.86." },
+  sp500:{ price:"6,408.38", change:"-2.78", sentiment:"BEARISH", dma50:"6,615.20", dma200:"6,768.50", wkSupport:"6,400.00", wkResistance:"6,573.22", moSupport:"6,350.00", moResistance:"6,591.90" },
+  nasdaq:{ price:"21,450.00", change:"-3.12", sentiment:"BEARISH", dma50:"22,100.00", dma200:"21,800.00", wkSupport:"21,200.00", wkResistance:"22,050.00", moSupport:"20,900.00", moResistance:"22,400.00" },
+  bitcoin:{ price:"68,420.00", change:"-4.85", sentiment:"BEARISH", dma50:"72,500.00", dma200:"65,800.00", wkSupport:"66,000.00", wkResistance:"72,000.00", moSupport:"62,000.00", moResistance:"75,000.00" },
+  vix:{ price:"27.44", change:"+2.11", changePct:"+8.33", level:"HIGH", note:"Elevated concern" },
+  dxy:{ price:"99.86", change:"-0.04", strength:"WEAK", note:"Tailwind for risk assets", position:49, sparkline:[] },
+  yield:{ spread:"+0.42", status:"NORMAL", recessionRisk:"LOW", recessionPct:18 },
+  fg:{ score:18, label:"Extreme Fear", vsPrev:-4, cryptoScore:10, cryptoLabel:"EXTREME FEAR" },
+  rates:{ status:"NEUTRAL", current:"4.33", expected:"4.08", impliedCuts:"-1" },
+  inflation:{ cpi:"3.3", trend:"Rising", truflation:"2.95", spread:"-0.35", note:"March CPI spike driven by energy — core stayed at 2.6%" },
+  liquidity:{ total:"17.4", score:"58", roc13w:"-0.40", roc52w:"-1.8", trend:"Contractionary" },
   liquidityHistory: null,
-  credit:{ moveIndex:"88.0", moveSignal:"Normal", hyDAS:"290", igHyDiff:"58", tightNote:"Tight — Complacency Risk", sloosNote:"Net Easing", goldCopper:"760", sahmRule:"0.18", ccDelinquency:"3.0" },
-  breadth:{ pct50:"58.0", pct200:"64.0", ad5d:"Rising", ad20d:"Rising", sentiment:"BULLISH", note:"Healthy participation — most stocks above key MAs (narrow leadership caveat)" },
-  fci:{ value:"-0.95", nfci:"-0.55", status:"Loose", fedFunds:"-0.3", t10y:"+0.2", hySpread:"-0.4", sp500load:"-1.1", usd:"-0.2" },
-  options:{ dexPCR:"0.82", omegaPCR:"0.70", status:"BULLISH", conviction:"38" },
-  macroIndic:{ usM2:"$22.0T", usM2Trend:"Rising", usM2Change:"+0.4%", ismPMI:"52.7", ismStatus:"Expanding", ismLabel:"ISM Manufacturing PMI", globalM2:"$23.1T", globalM2Trend:"Rising" },
+  credit:{ moveIndex:"108.0", moveSignal:"Elevated", hyDAS:"340", igHyDiff:"65", tightNote:"Tight — Complacency Risk", sloosNote:"Net Tightening", goldCopper:"850", sahmRule:"0.30", ccDelinquency:"3.1" },
+  breadth:{ pct50:"38.2", pct200:"54.6", ad5d:"Falling", ad20d:"Falling", sentiment:"BEARISH", note:"Narrow participation — majority of stocks below 50-day MA" },
+  fci:{ value:"-2.10", nfci:"-0.38", status:"Loose", fedFunds:"+0.7", t10y:"+1.1", hySpread:"0.8", sp500load:"-2.0", usd:"+0.6" },
+  options:{ dexPCR:"1.42", omegaPCR:"1.18", status:"BEARISH", conviction:"42" },
+  macroIndic:{ usM2:"$21.8T", usM2Trend:"Rising", usM2Change:"+0.3%", ismPMI:"52.7", ismStatus:"Expanding", ismLabel:"ISM Manufacturing PMI", globalM2:"$17.4T", globalM2Trend:"Falling" },
   sectorRotation: SECTOR_PAIRS.map(function(p) {
     var data = {
-      "Cyclical vs Defensive":{w1:"g",w1m:"g",w3m:"g",w6m:"g",bull:true,prob:"76",winner:p.sub1,diffPct:5.8,note:"Cyclicals leading across all timeframes"},
-      "Small Cap vs Large Cap":{w1:"n",w1m:"r",w3m:"r",w6m:"r",bull:false,prob:"62",winner:p.sub2,diffPct:-4.2,note:"Large cap still dominant — narrow leadership"},
-      "Growth vs Value":{w1:"g",w1m:"g",w3m:"g",w6m:"g",bull:true,prob:"78",winner:p.sub1,diffPct:6.4,note:"Growth crushing value — AI/tech concentration"},
-      "Financials vs Utilities":{w1:"g",w1m:"g",w3m:"g",w6m:"n",bull:true,prob:"65",winner:p.sub1,diffPct:2.8,note:"Financials outperforming, steeper curve helps"},
-      "High Beta vs Low Vol":{w1:"g",w1m:"g",w3m:"g",w6m:"g",bull:true,prob:"80",winner:p.sub1,diffPct:8.1,note:"High beta decisively leading — risk-on regime"},
-      "US vs Emerging Markets":{w1:"n",w1m:"n",w3m:"g",w6m:"n",bull:null,prob:"53",winner:null,diffPct:0.6,note:"US slight edge, EM recovering with weak DXY"},
+      "Cyclical vs Defensive":{w1:"r",w1m:"r",w3m:"r",w6m:"r",bull:false,prob:"72",winner:p.sub2,diffPct:-4.2,note:"Defensive leading, risk-off trend intact"},
+      "Small Cap vs Large Cap":{w1:"r",w1m:"r",w3m:"r",w6m:"n",bull:false,prob:"68",winner:p.sub2,diffPct:-3.1,note:"Large cap outperforming, flight to quality"},
+      "Growth vs Value":{w1:"r",w1m:"r",w3m:"n",w6m:"g",bull:null,prob:"52",winner:null,diffPct:-0.8,note:"Mixed signals, rotation unclear"},
+      "Financials vs Utilities":{w1:"r",w1m:"r",w3m:"r",w6m:"r",bull:false,prob:"74",winner:p.sub2,diffPct:-5.6,note:"Utilities strongly outperforming, defensive bid"},
+      "High Beta vs Low Vol":{w1:"r",w1m:"r",w3m:"r",w6m:"r",bull:false,prob:"78",winner:p.sub2,diffPct:-7.3,note:"Low vol crushing high beta, fear regime"},
+      "US vs Emerging Markets":{w1:"r",w1m:"n",w3m:"g",w6m:"g",bull:null,prob:"55",winner:null,diffPct:1.2,note:"Mixed short-term, EM medium-term trend intact"},
     };
     var d = data[p.name] || {w1:"n",w1m:"n",w3m:"n",w6m:"n",bull:null,prob:"50",winner:null,diffPct:0,note:"—"};
     return { ...p, ...d };
   }),
-  allocation:{ stocks:{n:"60",a:"65"}, bonds:{n:"10",a:"8"}, cash:{n:"5",a:"5"}, gold:{n:"5",a:"7"}, crypto:{n:"10",a:"10"}, realAssets:{n:"10",a:"5"} },
+  allocation:{ stocks:{n:"60",a:"50"}, bonds:{n:"10",a:"15"}, cash:{n:"5",a:"10"}, gold:{n:"5",a:"10"}, crypto:{n:"10",a:"7"}, realAssets:{n:"10",a:"8"} },
   topSectors:[
-    {name:"Technology",etf:"XLK",r6m:"+18.4",r3m:"+9.2",pos:true},
-    {name:"Communication Services",etf:"XLC",r6m:"+14.1",r3m:"+7.8",pos:true},
-    {name:"Consumer Discretionary",etf:"XLY",r6m:"+11.6",r3m:"+5.4",pos:true},
-    {name:"Industrials",etf:"XLI",r6m:"+9.2",r3m:"+4.1",pos:true},
-    {name:"Financials",etf:"XLF",r6m:"+7.8",r3m:"+3.6",pos:true},
+    {name:"Utilities",etf:"XLU",r6m:"+11.2",r3m:"+6.8",pos:true},
+    {name:"Healthcare",etf:"XLV",r6m:"+8.4",r3m:"+3.2",pos:true},
+    {name:"Consumer Staples",etf:"XLP",r6m:"+6.1",r3m:"+4.5",pos:true},
+    {name:"Energy",etf:"XLE",r6m:"+4.8",r3m:"-2.1",pos:false},
+    {name:"Real Estate",etf:"XLRE",r6m:"+3.6",r3m:"+1.4",pos:true},
   ],
   sectorAlloc:{
-    season:"SUMMER", bias:"OFFENSIVE", confidence:"68",
-    overweight:[{name:"Technology",conviction:"HIGH",target:"16.0"},{name:"Communication Services",conviction:"HIGH",target:"11.0"},{name:"Consumer Discretionary",conviction:"MEDIUM",target:"12.0"}],
-    neutral:[{name:"Industrials",conviction:"LOW",target:"9.0"},{name:"Financials",conviction:"LOW",target:"11.0"}],
-    underweight:[{name:"Utilities",conviction:"HIGH",target:"2.0"},{name:"Consumer Staples",conviction:"MEDIUM",target:"4.0"},{name:"Healthcare",conviction:"MEDIUM",target:"8.0"}],
+    season:"AUTUMN", bias:"DEFENSIVE", confidence:"72",
+    overweight:[{name:"Utilities",conviction:"HIGH",target:"8.0"},{name:"Healthcare",conviction:"HIGH",target:"14.0"},{name:"Consumer Defensive",conviction:"MEDIUM",target:"10.0"}],
+    neutral:[{name:"Energy",conviction:"LOW",target:"5.0"},{name:"Industrials",conviction:"LOW",target:"7.0"}],
+    underweight:[{name:"Technology",conviction:"HIGH",target:"6.0"},{name:"Consumer Cyclical",conviction:"MEDIUM",target:"5.0"},{name:"Financial Services",conviction:"MEDIUM",target:"8.0"}],
   },
   aiViews:{
-    bullish: "The bull case is intact and well-supported by live data. The S&P 500 at 7,165 and Nasdaq at 24,837 both closed at record highs, up 0.8% and 1.6% respectively. Breadth confirms the advance with roughly 58% of stocks above their 50-day MA. Credit spreads remain tight at ~290bp HY OAS, MOVE index at 88 is normal-range, and NFCI at -0.55 shows loose financial conditions. The Fed has already cut 175bp since Sep 2024, with another cut priced for 2026.\n\nMacro tailwinds reinforce the setup: Fed funds at 3.63% (easing bias), CPI at 3.3% YoY with core stable, global liquidity expanding (+1.2% YoY), ISM PMI at 52.7 in expansion. DXY weakness at 98.6 supports multinationals and EM. With F&G at 70 (Greed but not extreme), there's room for further upside before contrarian exhaustion signals trigger.\n\nTactical positioning: overweight equities (65%+), lean into quality tech, AI infrastructure, semiconductors, and communication services. Keep some tactical cash (~5%) for inevitable pullbacks. Underweight defensives (utilities, staples) and long-duration bonds.",
-    neutral: "The current setup presents a classic 'Greed with hedging' regime — optimistic headline sentiment masking structural fragility. The F&G at 70 and record-high indexes contrast with VIX stuck at 18.7 and University of Michigan consumer sentiment at 49.8 (record low). When stocks and VIX rise together, it typically means institutions are hedging the rally rather than embracing it — a signal to respect but not to panic over.\n\nNarrow leadership is the key caveat: Intel +23% and a handful of semis drove Friday's session while the Dow finished -0.16%. That concentration creates fragility — a single large-cap reversal could trigger a faster drawdown than breadth suggests. Meanwhile, credit markets, rates, and macro data all point to a constructive backdrop. CPI at 3.3% is sticky but not rising; yield curve positive at +0.30; Sahm rule at 0.18 well below recession threshold (0.50).\n\nTactical positioning: maintain ~60% equity exposure with tilt toward quality growth. Barbell between large-cap tech leaders and defensive cash flow generators (healthcare ex-weight, consumer staples at neutral). Use options collars on concentrated positions. Keep 5-10% cash for tactical deployment on a 3-5% pullback.",
-    bearish: "The bear case has legitimate ammunition beneath the record-high surface. Consumer sentiment at 49.8 is the lowest reading on record — below 2008, below COVID. Nvidia retaking $5T market cap reflects the same AI-concentration concern that has tripped multiple cycles. The VIX at 18.7 refuses to compress despite indexes at all-time highs, which historically correlates with near-term pullbacks averaging 3-6%.\n\nUnderlying macro stress is real: CPI at 3.3% is sticky and has drifted up from 2.7% in December, Strait of Hormuz tensions keep oil volatility elevated (crude at $94.88), and Fed cuts are now priced at just 1 for 2026 after markets anticipated 2-3 earlier in the year. The yield curve at +0.30 is positive but narrow — any inversion returns recession probabilities to the foreground. Credit spread compression to 290bp is complacency, not strength; HY spreads widen before equities selloff 8 out of 10 times.\n\nTactical positioning: trim high-beta exposure into strength, rotate 10-15% toward defensives (utilities, staples, healthcare), add ~5-10% gold (confirmed trend, AU and GLD both rising), and build cash to 10-15%. Set protective stops on concentrated AI/semi positions. Avoid adding leverage. Re-engage risk after F&G retreats below 50 or breadth exceeds 65%."
+    bullish: "The setup for risk assets is stronger than headlines suggest. The S&P 500 trading at elevated levels with breadth recovering implies institutional accumulation. A weak DXY (~99) provides tailwinds for multinationals and emerging markets. With the yield curve positive and credit spreads tight at 340bp HY OAS, credit markets are not pricing in recession risk — a meaningful divergence from equity fear gauges.\n\nFed funds at 4.33% with market pricing in cuts creates a supportive backdrop. The Industrial Production reading at 103+ shows real economic activity is expanding. Historically, VIX spikes into 25-30 range have marked local bottoms, not tops. Rotating into quality growth, small caps, and cyclicals on any weakness is the higher-conviction play.\n\nTactical positioning: overweight equities (70%+), quality tech, industrials, and financials. Use options to hedge tail risk rather than reducing equity exposure wholesale.",
+    neutral: "The macro environment presents genuinely mixed signals. On the bullish side: yield curve positive, credit spreads tight, Fed easing bias. On the bearish side: VIX elevated, breadth narrowing, CPI jumped to 3.3% on energy shock. The truth is probably somewhere in between — markets consolidating through a stagflationary mini-cycle before the next directional move.\n\nThe March CPI surge to 3.3% was energy-driven; core remained tame at 2.6%. If energy stabilizes, inflation prints normalize and the Fed's easing path resumes. If energy pressures persist, stagflation risk rises materially. Bitcoin's weakness and crypto F&G at extreme fear mirror equity uncertainty but credit markets remain calm.\n\nTactical positioning: maintain balanced 60/40-style allocation with tilt toward quality. Barbell equity exposure between defensives (utilities, healthcare) and select growth. Keep 5-10% in cash for optionality. Avoid leverage until directional clarity emerges.",
+    bearish: "The macro environment has shifted decisively risk-off. The S&P 500 sits below both 50-day and 200-day moving averages — a bearish alignment not seen since 2024. CPI jumping to 3.3% combined with restrictive Fed funds at 4.33% creates stagflation risk. Industrial Production may be expanding but the monthly trend has flattened.\n\nSentiment indicators flash warning signs. CNN Fear & Greed in extreme fear territory, crypto F&G at 10, market breadth deteriorating with <40% of stocks above 50-day MA. The VIX spike confirms hedging demand. While credit spreads remain tight, credit always lags equity — complacency in credit is a classic late-cycle warning, not a bullish signal.\n\nTactical positioning: overweight defensives (utilities, staples, healthcare), gold, and cash. Reduce equity exposure to 40-50%. Underweight high-beta tech, consumer discretionary, crypto. Wait for VIX below 20, breadth above 50%, and CPI declining before re-engaging risk."
   },
 };
 
@@ -1166,13 +1162,13 @@ try {
         {topTab==="Analysis" && (
           <div>
             {stage===1 && <MacroStage d={d} />}
-            {stage===2 && <PortfolioStage />}
-            {stage===3 && <ScreenerStage />}
-            {stage===4 && <BuilderStage />}
-            {stage===5 && <ExecutionStage />}
+            {stage===2 && <PortfolioStage d={d} />}
+            {stage===3 && <ScreenerStage d={d} />}
+            {stage===4 && <BuilderStage d={d} />}
+            {stage===5 && <ExecutionStage d={d} />}
           </div>
         )}
-        {topTab==="Portfolio" && <PortfolioTabView />}
+        {topTab==="Portfolio" && <PortfolioTabView d={d} />}
         {topTab!=="Analysis" && topTab!=="Portfolio" && (
           <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:400 }}>
             <div style={{ fontSize:28, opacity:0.2, marginBottom:8 }}>🚧</div>
@@ -2246,7 +2242,7 @@ function MacroStage({ d }) {
             {d.sectorTimestamp ? (
               <Badge label="LIVE" color={C.green} />
             ) : (
-              <Badge label="SEED" color={C.textDim} />
+              <Badge label={d.fci?.nfci && d.fci.nfci !== SEED.fci.nfci ? "LIVE" : "SEED"} color={d.fci?.nfci && d.fci.nfci !== SEED.fci.nfci ? C.green : C.textDim} />
             )}
           </div>
         </div>
@@ -2488,7 +2484,7 @@ function TradingViewChart({ ticker }) {
 }
 
 /* ─── PORTFOLIO STAGE ────────────────────────────────────────────── */
-function PortfolioStage() {
+function PortfolioStage({ d }) {
   var _ps = useState([]);
   var holdings = _ps[0], setHoldings = _ps[1];
   var _pl = useState(true);
@@ -2507,7 +2503,7 @@ function PortfolioStage() {
   var selectedTicker = _st[0], setSelectedTicker = _st[1];
   var chartRef = useState(null);
 
-  var regime = "Summer";
+  var regime = d?.macroRegime?.season || "Summer";
 
   useEffect(function() {
     (async function() {
@@ -2883,6 +2879,155 @@ function PortfolioStage() {
         )}
       </Card>
 
+      {/* CORRELATION MATRIX */}
+      <Card>
+        <div style={{ fontSize:14, fontWeight:700, display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+          <span>🔗</span> Correlation Matrix
+          <span style={{ fontSize:10, color:C.textDim, fontWeight:400 }}>How holdings move together — high correlation = concentration risk</span>
+        </div>
+        {(function(){
+          // Compute simplified correlation from available data (r6m, trend direction, sector)
+          var tickers = holdings.filter(function(h){return h.price}).slice(0,10); // Top 10 by weight
+          if (tickers.length < 2) return <div style={{ color:C.textDim, fontSize:11 }}>Need at least 2 holdings with data</div>;
+          var cellSize = 38;
+          return (
+            <div style={{ overflowX:"auto" }}>
+              <div style={{ display:"inline-grid", gridTemplateColumns:(cellSize+60)+"px repeat("+tickers.length+", "+cellSize+"px)", gap:1 }}>
+                <div />
+                {tickers.map(function(h){return <div key={h.ticker+"h"} style={{ fontSize:8, color:C.cyan, fontFamily:font, textAlign:"center", padding:"4px 0", fontWeight:700 }}>{h.ticker}</div>})}
+                {tickers.map(function(row, ri){
+                  return [
+                    <div key={row.ticker+"r"} style={{ fontSize:8, color:C.cyan, fontFamily:font, display:"flex", alignItems:"center", paddingRight:6, fontWeight:700 }}>{row.ticker}</div>,
+                    tickers.map(function(col, ci){
+                      if (ri === ci) return <div key={ri+"-"+ci} style={{ width:cellSize, height:cellSize, background:C.blue+"44", borderRadius:3, display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontFamily:font, color:C.text }}>1.00</div>;
+                      // Simplified correlation estimate
+                      var sameSector = row.sector === col.sector ? 0.4 : 0;
+                      var sameSleeve = row.sleeve === col.sleeve ? 0.15 : 0;
+                      var sameTrend = row.trend === col.trend ? 0.2 : -0.1;
+                      var r6mSim = row.r6m && col.r6m ? (1 - Math.abs(row.r6m - col.r6m) / 100) * 0.25 : 0;
+                      var corr = Math.max(-1, Math.min(1, sameSector + sameSleeve + sameTrend + r6mSim));
+                      var bg = corr > 0.6 ? C.red+"55" : corr > 0.3 ? C.orange+"44" : corr > 0 ? C.green+"22" : C.blue+"22";
+                      return <div key={ri+"-"+ci} style={{ width:cellSize, height:cellSize, background:bg, borderRadius:3, display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontFamily:font, color:corr>0.5?C.red:corr>0.2?C.orange:C.green }}>{corr.toFixed(2)}</div>;
+                    })
+                  ];
+                })}
+              </div>
+              <div style={{ display:"flex", gap:12, marginTop:8, fontSize:9, color:C.textDim }}>
+                <span><span style={{ display:"inline-block", width:10, height:10, background:C.red+"55", borderRadius:2, marginRight:3 }} />High (&gt;0.6)</span>
+                <span><span style={{ display:"inline-block", width:10, height:10, background:C.orange+"44", borderRadius:2, marginRight:3 }} />Medium (0.3-0.6)</span>
+                <span><span style={{ display:"inline-block", width:10, height:10, background:C.green+"22", borderRadius:2, marginRight:3 }} />Low (&lt;0.3)</span>
+                <span><span style={{ display:"inline-block", width:10, height:10, background:C.blue+"22", borderRadius:2, marginRight:3 }} />Negative</span>
+              </div>
+            </div>
+          );
+        })()}
+      </Card>
+
+      {/* RISK HEATMAP */}
+      <Card>
+        <div style={{ fontSize:14, fontWeight:700, display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+          <span>🌡</span> Risk Heatmap
+          <span style={{ fontSize:10, color:C.textDim, fontWeight:400 }}>Multi-dimensional risk assessment per holding</span>
+        </div>
+        <div style={{ overflowX:"auto" }}>
+          <table style={{ width:"100%", borderCollapse:"collapse" }}>
+            <thead><tr style={{ borderBottom:"1px solid "+C.border }}>
+              {["TICKER","VOLATILITY","MOMENTUM","TREND RISK","CONCENTRATION","DRAWDOWN","OVERALL"].map(function(h){
+                return <th key={h} style={{ textAlign:h==="TICKER"?"left":"center", padding:"6px 8px", color:C.textDim, fontSize:8, fontWeight:700, letterSpacing:1 }}>{h}</th>;
+              })}
+            </tr></thead>
+            <tbody>
+              {holdings.filter(function(h){return h.price}).map(function(h){
+                var volRisk = h.zScore ? Math.min(1, Math.abs(h.zScore) / 3) : 0.5;
+                var momRisk = h.r6m ? (h.r6m > 50 ? 0.8 : h.r6m > 20 ? 0.4 : h.r6m < -10 ? 0.9 : 0.2) : 0.5;
+                var trendRisk = h.trend==="Bearish"?0.9:h.trend==="Neutral"?0.5:h.rsi>75?0.6:0.2;
+                var concRisk = h.weight > 8 ? 0.8 : h.weight > 6 ? 0.5 : 0.2;
+                var ddRisk = h.maDev ? (h.maDev < -10 ? 0.9 : h.maDev < -5 ? 0.6 : h.maDev < 0 ? 0.4 : 0.2) : 0.5;
+                var overall = (volRisk + momRisk + trendRisk + concRisk + ddRisk) / 5;
+                function riskCell(val) {
+                  var bg = val>0.7?C.red:val>0.4?C.orange:C.green;
+                  var label = val>0.7?"HIGH":val>0.4?"MED":"LOW";
+                  return <td style={{ textAlign:"center", padding:"6px 4px", borderBottom:"1px solid "+C.border }}>
+                    <div style={{ background:bg+"22", border:"1px solid "+bg+"44", borderRadius:4, padding:"3px 6px", fontSize:9, color:bg, fontWeight:700, display:"inline-block" }}>{label}</div>
+                  </td>;
+                }
+                return <tr key={h.ticker}>
+                  <td style={{ padding:"6px 8px", fontWeight:700, color:C.cyan, fontFamily:font, fontSize:11, borderBottom:"1px solid "+C.border }}>{h.ticker}</td>
+                  {riskCell(volRisk)}
+                  {riskCell(momRisk)}
+                  {riskCell(trendRisk)}
+                  {riskCell(concRisk)}
+                  {riskCell(ddRisk)}
+                  <td style={{ textAlign:"center", padding:"6px 4px", borderBottom:"1px solid "+C.border }}>
+                    <div style={{ background:(overall>0.6?C.red:overall>0.35?C.orange:C.green)+"22", border:"1px solid "+(overall>0.6?C.red:overall>0.35?C.orange:C.green)+"44", borderRadius:4, padding:"3px 8px", fontSize:10, color:overall>0.6?C.red:overall>0.35?C.orange:C.green, fontWeight:700, display:"inline-block" }}>{(overall*100).toFixed(0)}</div>
+                  </td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ fontSize:9, color:C.textDim, marginTop:6 }}>
+          Volatility: Z-score magnitude | Momentum: extended rally risk | Trend: bearish/overbought | Concentration: portfolio weight | Drawdown: distance from highs
+        </div>
+      </Card>
+
+      {/* DRAWDOWN MONITOR */}
+      <Card>
+        <div style={{ fontSize:14, fontWeight:700, display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+          <span>📉</span> Drawdown Monitor
+          <span style={{ fontSize:10, color:C.textDim, fontWeight:400 }}>Max drawdown from peak per holding</span>
+        </div>
+        {(function(){
+          var portfolioDD = 0;
+          var holdingsDD = holdings.filter(function(h){return h.price&&h.maDev!=null}).map(function(h){
+            // Estimate drawdown from peak using MA deviation and Z-score
+            var peakEst = h.ma50 && h.price > h.ma50 ? h.price : (h.ma50 || h.price);
+            if (h.zScore && h.zScore > 0) peakEst = h.price; // At or near peak
+            else if (h.r6m > 0) peakEst = h.price / (1 + h.r6m/100) * (1 + Math.max(h.r6m, 0)/100 * 1.2);
+            var dd = peakEst > 0 ? ((h.price / peakEst - 1) * 100) : 0;
+            dd = Math.min(0, dd); // Drawdown is always negative or zero
+            // If maDev is very negative, use that as a better DD estimate
+            if (h.maDev && h.maDev < dd) dd = h.maDev;
+            return { ticker:h.ticker, dd:dd, value:h.value||0, weight:h.weight };
+          });
+          portfolioDD = holdingsDD.reduce(function(s,h){return s + h.dd * h.weight/100},0);
+          return (
+            <div>
+              <div style={{ display:"flex", gap:12, marginBottom:12 }}>
+                <div style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"10px 16px" }}>
+                  <div style={{ fontSize:9, color:C.textDim, letterSpacing:1 }}>PORTFOLIO MAX DD</div>
+                  <div style={{ fontSize:22, fontWeight:700, fontFamily:font, color:portfolioDD<-10?C.red:portfolioDD<-5?C.orange:C.green }}>{portfolioDD.toFixed(1)}%</div>
+                </div>
+                <div style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"10px 16px" }}>
+                  <div style={{ fontSize:9, color:C.textDim, letterSpacing:1 }}>WORST HOLDING</div>
+                  {(function(){
+                    var worst = holdingsDD.sort(function(a,b){return a.dd-b.dd})[0];
+                    return worst ? <div><span style={{ fontSize:14, fontWeight:700, fontFamily:font, color:C.red }}>{worst.dd.toFixed(1)}%</span><span style={{ fontSize:10, color:C.cyan, marginLeft:6 }}>{worst.ticker}</span></div> : <div style={{ color:C.textDim }}>—</div>;
+                  })()}
+                </div>
+                <div style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"10px 16px" }}>
+                  <div style={{ fontSize:9, color:C.textDim, letterSpacing:1 }}>IN DRAWDOWN</div>
+                  <div style={{ fontSize:22, fontWeight:700, fontFamily:font, color:C.orange }}>{holdingsDD.filter(function(h){return h.dd<-3}).length}/{holdingsDD.length}</div>
+                </div>
+              </div>
+              <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                {holdingsDD.sort(function(a,b){return a.dd-b.dd}).map(function(h){
+                  var barWidth = Math.min(100, Math.abs(h.dd) * 3);
+                  var color = h.dd<-15?C.red:h.dd<-5?C.orange:h.dd<-2?C.yellow:C.green;
+                  return <div key={h.ticker} style={{ display:"grid", gridTemplateColumns:"55px 1fr 55px", gap:8, alignItems:"center" }}>
+                    <span style={{ fontSize:11, fontWeight:700, color:C.cyan, fontFamily:font }}>{h.ticker}</span>
+                    <div style={{ height:6, background:C.border, borderRadius:3, direction:"rtl" }}>
+                      <div style={{ width:barWidth+"%", height:"100%", background:color, borderRadius:3 }} />
+                    </div>
+                    <span style={{ fontSize:10, fontFamily:font, color:color, textAlign:"right" }}>{h.dd.toFixed(1)}%</span>
+                  </div>;
+                })}
+              </div>
+            </div>
+          );
+        })()}
+      </Card>
+
       {error && <div style={{ background:"#2b0d10", border:"1px solid "+C.red+"44", borderRadius:8, padding:"7px 13px", fontSize:12, color:C.red }}>⚠ {error}</div>}
     </div>
   );
@@ -2940,7 +3085,7 @@ function computeScreenerScore(d) {
   if (!d || !d.price) return { score:0, quality:0, momentum:0, value:0, pattern:0, sentiment:0 };
   var quality = d.tq != null ? Math.min(1, Math.abs(d.tq) / 80) : 0;
   var momentum = d.r6m != null ? Math.min(1, Math.max(0, d.r6m / 60)) : 0;
-  var value = 0.03;
+  var value = 0.03; // Placeholder — fundamentals (PE, FCF) require paid data API; weighted at only 10% so minimal impact on composite
   var patternVal = 0;
   if (d.pattern && d.pattern !== "—") patternVal = 0.62;
   var sentiment = 0;
@@ -2978,7 +3123,7 @@ function detectScreenerPattern(d) {
   return "—";
 }
 
-function ScreenerStage() {
+function ScreenerStage({ d }) {
   var _c = useState([]);
   var candidates = _c[0], setCandidates = _c[1];
   var _l = useState(true);
@@ -3008,7 +3153,7 @@ function ScreenerStage() {
   var _lastRefresh = useState(null);
   var lastRefresh = _lastRefresh[0], setLastRefresh = _lastRefresh[1];
 
-  var regime = "Summer";
+  var regime = d?.macroRegime?.season || "Summer";
 
   function runScreener() {
     (async function() {
@@ -3392,15 +3537,17 @@ function ScreenerStage() {
 }
 
 /* ─── PORTFOLIO BUILDER (Stage 4) ──────────────────────────────── */
-function BuilderStage() {
+function BuilderStage({ d }) {
   var _h = useState([]);
   var holdings = _h[0], setHoldings = _h[1];
   var _l = useState(true);
   var loading = _l[0], setLoading = _l[1];
   var _ts = useState(null);
   var lastRefresh = _ts[0], setLastRefresh = _ts[1];
+  var _exp = useState(null);
+  var expandedTicker = _exp[0], setExpandedTicker = _exp[1];
 
-  var regime = "Summer";
+  var regime = d?.macroRegime?.season || "Summer";
   var maxPositions = 20;
   var accountValue = 50000;
   var cashReserve = 3000;
@@ -3447,7 +3594,12 @@ function BuilderStage() {
     return s + (h.price - h.safetyStop) * h.qty;
   }, 0);
   var avgRR = holdings.filter(function(h){return h.entryRR!=="—"}).reduce(function(s,h,_,a){ var v=parseFloat(h.entryRR); return s+(isNaN(v)?0:v/a.length); },0);
-  var sortino = 2.87; // Estimated
+  // Compute Sortino from actual portfolio returns
+  var returns = holdings.filter(function(h){return h.pnlPct}).map(function(h){return h.pnlPct/100});
+  var avgReturn = returns.length > 0 ? returns.reduce(function(s,r){return s+r},0)/returns.length : 0;
+  var downside = returns.filter(function(r){return r<0});
+  var downsideDev = downside.length > 0 ? Math.sqrt(downside.reduce(function(s,r){return s+r*r},0)/downside.length) : 0.01;
+  var sortino = downsideDev > 0 ? +(avgReturn / downsideDev).toFixed(2) : 0;
   var positionCount = holdings.length;
   var slotsAvail = maxPositions - positionCount;
 
@@ -3519,6 +3671,78 @@ function BuilderStage() {
             </div>;
           })}
         </div>
+      </Card>
+
+      {/* POSITION SIZE CALCULATOR */}
+      <Card>
+        <div style={{ fontSize:14, fontWeight:700, display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+          <span>🧮</span> Position Size Calculator
+          <span style={{ fontSize:10, color:C.textDim, fontWeight:400 }}>Calculate exact shares based on risk tolerance</span>
+        </div>
+        {(function(){
+          var _calcTicker = useState("");
+          var calcTicker = _calcTicker[0], setCalcTicker = _calcTicker[1];
+          var _calcRisk = useState("2");
+          var calcRisk = _calcRisk[0], setCalcRisk = _calcRisk[1];
+          var _calcStop = useState("");
+          var calcStop = _calcStop[0], setCalcStop = _calcStop[1];
+
+          var match = holdings.find(function(h){return h.ticker===calcTicker.toUpperCase()});
+          var price = match ? match.price : null;
+          var defaultStop = match && match.safetyStop ? match.safetyStop : (price ? price * 0.92 : null);
+          var stopPrice = calcStop ? parseFloat(calcStop) : defaultStop;
+          var riskPct = parseFloat(calcRisk) || 2;
+          var riskDollars = totalValue * (riskPct / 100);
+          var riskPerShare = price && stopPrice ? Math.abs(price - stopPrice) : 0;
+          var shares = riskPerShare > 0 ? Math.floor(riskDollars / riskPerShare) : 0;
+          var positionValue = shares * (price || 0);
+          var positionPct = totalValue > 0 ? (positionValue / totalValue * 100) : 0;
+
+          return (
+            <div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:12 }}>
+                <div>
+                  <div style={{ fontSize:9, color:C.textDim, marginBottom:3 }}>Ticker</div>
+                  <input value={calcTicker} onChange={function(e){setCalcTicker(e.target.value.toUpperCase())}} placeholder="AVGO" style={{ width:"100%", background:C.cardAlt, border:"1px solid "+C.border, borderRadius:5, padding:"6px 8px", color:C.text, fontSize:12, fontFamily:font }} />
+                </div>
+                <div>
+                  <div style={{ fontSize:9, color:C.textDim, marginBottom:3 }}>Risk % of Account</div>
+                  <input value={calcRisk} onChange={function(e){setCalcRisk(e.target.value)}} placeholder="2" style={{ width:"100%", background:C.cardAlt, border:"1px solid "+C.border, borderRadius:5, padding:"6px 8px", color:C.text, fontSize:12, fontFamily:font }} />
+                </div>
+                <div>
+                  <div style={{ fontSize:9, color:C.textDim, marginBottom:3 }}>Stop Loss Price {defaultStop ? "(default: $"+defaultStop.toFixed(2)+")" : ""}</div>
+                  <input value={calcStop} onChange={function(e){setCalcStop(e.target.value)}} placeholder={defaultStop ? defaultStop.toFixed(2) : "0.00"} style={{ width:"100%", background:C.cardAlt, border:"1px solid "+C.border, borderRadius:5, padding:"6px 8px", color:C.text, fontSize:12, fontFamily:font }} />
+                </div>
+              </div>
+              {price && (
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:8 }}>
+                  <div style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"8px 10px" }}>
+                    <div style={{ fontSize:8, color:C.textDim, letterSpacing:1 }}>PRICE</div>
+                    <div style={{ fontSize:14, fontWeight:700, fontFamily:font }}>${price.toFixed(2)}</div>
+                  </div>
+                  <div style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"8px 10px" }}>
+                    <div style={{ fontSize:8, color:C.textDim, letterSpacing:1 }}>RISK $</div>
+                    <div style={{ fontSize:14, fontWeight:700, fontFamily:font, color:C.red }}>${riskDollars.toFixed(2)}</div>
+                  </div>
+                  <div style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"8px 10px" }}>
+                    <div style={{ fontSize:8, color:C.textDim, letterSpacing:1 }}>RISK/SHARE</div>
+                    <div style={{ fontSize:14, fontWeight:700, fontFamily:font, color:C.orange }}>${riskPerShare.toFixed(2)}</div>
+                  </div>
+                  <div style={{ background:C.green+"0a", border:"1px solid "+C.green+"33", borderRadius:6, padding:"8px 10px" }}>
+                    <div style={{ fontSize:8, color:C.textDim, letterSpacing:1 }}>SHARES TO BUY</div>
+                    <div style={{ fontSize:18, fontWeight:700, fontFamily:font, color:C.green }}>{shares}</div>
+                  </div>
+                  <div style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"8px 10px" }}>
+                    <div style={{ fontSize:8, color:C.textDim, letterSpacing:1 }}>POSITION SIZE</div>
+                    <div style={{ fontSize:14, fontWeight:700, fontFamily:font }}>${positionValue.toLocaleString(undefined,{maximumFractionDigits:2})}</div>
+                    <div style={{ fontSize:9, color:C.textDim }}>{positionPct.toFixed(1)}% of portfolio</div>
+                  </div>
+                </div>
+              )}
+              {!price && calcTicker && <div style={{ fontSize:10, color:C.textDim, marginTop:4 }}>Enter a ticker from your portfolio to auto-fill price and stop</div>}
+            </div>
+          );
+        })()}
       </Card>
 
       {/* BROKER ACCOUNTS */}
@@ -3839,7 +4063,7 @@ function BuilderStage() {
 }
 
 /* ─── EXECUTION STAGE (Stage 5) ────────────────────────────────── */
-function ExecutionStage() {
+function ExecutionStage({ d }) {
   var _h = useState([]);
   var holdings = _h[0], setHoldings = _h[1];
   var _l = useState(true);
@@ -3849,7 +4073,7 @@ function ExecutionStage() {
   var _orderStatus = useState({});
   var orderStatus = _orderStatus[0], setOrderStatus = _orderStatus[1];
 
-  var regime = "Summer";
+  var regime = d?.macroRegime?.season || "Summer";
 
   useEffect(function() {
     (async function() {
@@ -3872,13 +4096,18 @@ function ExecutionStage() {
     })();
   }, []);
 
-  // Execution timing signals
-  var fgScore = 20; // Would come from live data
-  var vixLevel = 25.0;
-  var sp500 = holdings.find(function(h){return h.ticker==="MSFT"});
-  var sp500Price = sp500 ? sp500.price : 0;
-  var pcrDex = 1.56;
-  var breadth50 = 50;
+  // Execution timing signals — from live macro data
+  var fgScore = d?.fg?.score != null ? d.fg.score : 50;
+  var vixLevel = parseFloat(d?.vix?.price) || 15;
+  var sp500Price = d?.sp500?.price || "—";
+  var sp500dma50 = d?.sp500?.dma50 || "—";
+  var sp500Label = d?.sp500?.sentiment === "BEARISH" ? "Pullback" : d?.sp500?.sentiment === "BULLISH" ? "Rally" : "Sideways";
+  var pcrDex = parseFloat(d?.options?.dexPCR) || 1.0;
+  var pcrOmega = parseFloat(d?.options?.omegaPCR) || 1.0;
+  var pcrStatus = d?.options?.status || "Neutral";
+  var breadth50 = parseFloat(d?.breadth?.pct50) || 50;
+  var breadth200 = parseFloat(d?.breadth?.pct200) || 50;
+  var breadthLabel = d?.breadth?.sentiment || "Neutral";
 
   var fgLabel = fgScore<=25?"Extreme Fear":fgScore<=44?"Fear":fgScore<=55?"Neutral":fgScore<=75?"Greed":"Extreme Greed";
   var vixLabel = vixLevel>35?"Extreme":vixLevel>25?"High":vixLevel>15?"Moderate":"Low";
@@ -3929,9 +4158,9 @@ function ExecutionStage() {
           {[
             {icon:"◌",label:"Fear & Greed",val:String(fgScore),sub:fgLabel,color:fgScore<25?C.red:fgScore<45?C.orange:C.green},
             {icon:"◎",label:"VIX",val:vixLevel.toFixed(1),sub:vixLabel,color:vixLevel>25?C.red:vixLevel>15?C.orange:C.green},
-            {icon:"↘",label:"S&P 500",val:"6,583.82",sub:"MA50: 6,834.89\n"+sp500Label,color:C.orange},
-            {icon:"↗",label:"Options PCR",val:"DEX "+pcrDex.toFixed(2),sub:"Omega 1.11\nNeutral",color:C.textMid},
-            {icon:"▣",label:"Market Breadth",val:breadth50+"% > MA50",sub:"68% > MA200\n"+breadthLabel,color:breadth50>50?C.green:C.red},
+            {icon:"↘",label:"S&P 500",val:String(sp500Price),sub:"MA50: "+sp500dma50+"\n"+sp500Label,color:sp500Label==="Pullback"?C.orange:sp500Label==="Rally"?C.green:C.textMid},
+            {icon:"↗",label:"Options PCR",val:"DEX "+pcrDex.toFixed(2),sub:"Omega "+pcrOmega.toFixed(2)+"\n"+pcrStatus,color:pcrDex>1.3?C.red:pcrDex<0.7?C.green:C.textMid},
+            {icon:"▣",label:"Market Breadth",val:breadth50.toFixed(0)+"% > MA50",sub:breadth200.toFixed(0)+"% > MA200\n"+breadthLabel,color:breadth50>50?C.green:C.red},
           ].map(function(s,i){
             return <div key={i} style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"10px 12px" }}>
               <div style={{ fontSize:9, color:C.textDim, marginBottom:4, display:"flex", alignItems:"center", gap:4 }}><span>{s.icon}</span> {s.label}</div>
@@ -4073,7 +4302,7 @@ function ExecutionStage() {
 }
 
 /* ─── PORTFOLIO TAB VIEW ─────────────────────────────────────── */
-function PortfolioTabView() {
+function PortfolioTabView({ d }) {
   var _portfolios = useState([{id:"claude",name:"The Claude Portfolio",holdings:PORTFOLIO_HOLDINGS,inception:"2026-04-01",cash:3000}]);
   var portfolios = _portfolios[0], setPortfolios = _portfolios[1];
   var _activePf = useState("claude");
@@ -4366,9 +4595,22 @@ function PortfolioTabView() {
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
           <div style={{ display:"flex", alignItems:"center", gap:12 }}>
             <span style={{ fontSize:13, fontWeight:700 }}>📈 Portfolio Performance</span>
-            <span style={{ fontSize:10, color:C.textDim }}>Sharpe: <span style={{ color:C.green, fontWeight:700 }}>0.64</span></span>
-            <span style={{ fontSize:10, color:C.textDim }}>Sortino: <span style={{ color:C.orange, fontWeight:700 }}>0.96</span></span>
-            <Badge label="Moderate" color={C.orange} />
+            {(function(){
+              var rets = merged.filter(function(h){return h.gainPct}).map(function(h){return h.gainPct/100});
+              var avg = rets.length>0?rets.reduce(function(s,r){return s+r},0)/rets.length:0;
+              var stdDev = rets.length>1?Math.sqrt(rets.reduce(function(s,r){return s+(r-avg)*(r-avg)},0)/(rets.length-1)):0.01;
+              var downside = rets.filter(function(r){return r<0});
+              var dsDev = downside.length>0?Math.sqrt(downside.reduce(function(s,r){return s+r*r},0)/downside.length):0.01;
+              var sharpe = stdDev>0?+(avg/stdDev).toFixed(2):0;
+              var sortino = dsDev>0?+(avg/dsDev).toFixed(2):0;
+              var rating = sortino>2?"Excellent":sortino>1?"Good":sortino>0.5?"Moderate":"Poor";
+              var ratingColor = sortino>2?C.green:sortino>1?C.green:sortino>0.5?C.orange:C.red;
+              return [
+                <span key="sh" style={{ fontSize:10, color:C.textDim }}>Sharpe: <span style={{ color:sharpe>1?C.green:sharpe>0.5?C.orange:C.red, fontWeight:700 }}>{sharpe}</span></span>,
+                <span key="so" style={{ fontSize:10, color:C.textDim }}>Sortino: <span style={{ color:sortino>1?C.green:sortino>0.5?C.orange:C.red, fontWeight:700 }}>{sortino}</span></span>,
+                <Badge key="rt" label={rating} color={ratingColor} />,
+              ];
+            })()}
           </div>
         </div>
         <div style={{ display:"flex", gap:8, marginBottom:12 }}>
@@ -4383,10 +4625,19 @@ function PortfolioTabView() {
         <div style={{ background:C.cardAlt, borderRadius:6, padding:8, height:180 }}>
           <svg width="100%" height="160" viewBox="0 0 800 160" preserveAspectRatio="none" style={{ display:"block" }}>
             <line x1="0" y1="100" x2="800" y2="100" stroke={C.textDim} strokeWidth="0.5" strokeDasharray="4,4" opacity="0.3" />
-            <text x="5" y="12" fill={C.textDim} fontSize="8">+{(totalGainPct*1.5).toFixed(0)}%</text>
+            <text x="5" y="12" fill={C.textDim} fontSize="8">+{Math.max(1,Math.abs(totalGainPct*1.2)).toFixed(0)}%</text>
             <text x="5" y="98" fill={C.textDim} fontSize="8">+0%</text>
-            <polyline points="0,100 80,95 160,90 240,88 320,82 400,78 480,72 560,65 640,55 720,48 800,42" fill="none" stroke={C.cyan} strokeWidth="2" />
-            <polyline points="0,100 80,102 160,98 240,96 320,100 400,105 480,100 560,98 640,95 720,92 800,100" fill="none" stroke={C.red} strokeWidth="1.5" strokeDasharray="4,2" opacity="0.6" />
+            {(function(){
+              // Generate portfolio line from individual holding returns
+              var pts = merged.map(function(h,i){
+                var x = (i / Math.max(1, merged.length-1)) * 800;
+                var cumReturn = h.gainPct || 0;
+                var y = 100 - (cumReturn / Math.max(1, Math.abs(totalGainPct)*1.5)) * 80;
+                return x.toFixed(0)+","+Math.max(5,Math.min(155,y)).toFixed(0);
+              }).join(" ");
+              return <polyline points={pts} fill="none" stroke={C.cyan} strokeWidth="2" />;
+            })()}
+            <polyline points="0,100 80,102 160,98 240,100 320,103 400,100 480,97 560,95 640,98 720,96 800,100" fill="none" stroke={C.red} strokeWidth="1.5" strokeDasharray="4,2" opacity="0.6" />
             <text x="700" y="38" fill={C.cyan} fontSize="9">Portfolio</text>
             <text x="700" y="96" fill={C.red} fontSize="9">S&P 500</text>
           </svg>
@@ -4474,6 +4725,63 @@ function PortfolioTabView() {
           <TradingViewChart ticker={selTicker} />
         </Card>
       )}
+
+      {/* EARNINGS CALENDAR */}
+      <Card>
+        <div style={{ fontSize:14, fontWeight:700, display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+          <span>📅</span> Earnings Calendar
+          <span style={{ fontSize:10, color:C.textDim, fontWeight:400 }}>Upcoming earnings for your holdings</span>
+        </div>
+        {(function(){
+          // Approximate earnings dates — in production this would come from an API
+          var earningsDates = {
+            AVGO:{ next:"2026-06-12", q:"Q2 FY26" },
+            MSFT:{ next:"2026-04-29", q:"Q3 FY26" },
+            LLY:{ next:"2026-05-01", q:"Q1 FY26" },
+            AMZN:{ next:"2026-05-01", q:"Q1 FY26" },
+            META:{ next:"2026-04-30", q:"Q1 FY26" },
+            GOOGL:{ next:"2026-04-29", q:"Q1 FY26" },
+            UNH:{ next:"2026-07-15", q:"Q2 FY26" },
+            NVDA:{ next:"2026-05-28", q:"Q1 FY26" },
+            VST:{ next:"2026-05-06", q:"Q1 FY26" },
+            CEG:{ next:"2026-05-08", q:"Q1 FY26" },
+            XOM:{ next:"2026-05-02", q:"Q1 FY26" },
+            PLTR:{ next:"2026-05-05", q:"Q1 FY26" },
+            FCX:{ next:"2026-07-22", q:"Q2 FY26" },
+            AU:{ next:"2026-05-09", q:"Q1 FY26" },
+            GLD:{ next:null, q:"N/A (ETF)" },
+          };
+          var now = new Date();
+          var upcoming = merged.map(function(h){
+            var ed = earningsDates[h.ticker];
+            if (!ed || !ed.next) return null;
+            var d = new Date(ed.next);
+            var daysUntil = Math.ceil((d - now) / (1000*60*60*24));
+            if (daysUntil < -7) return null;
+            return { ticker:h.ticker, name:h.name, date:ed.next, q:ed.q, days:daysUntil, weight:h.weight };
+          }).filter(Boolean).sort(function(a,b){return a.days-b.days});
+
+          return (
+            <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+              {upcoming.length === 0 && <div style={{ color:C.textDim, fontSize:11 }}>No upcoming earnings in the next 90 days</div>}
+              {upcoming.map(function(e){
+                var urgency = e.days <= 3 ? C.red : e.days <= 7 ? C.orange : e.days <= 14 ? C.yellow : C.green;
+                var label = e.days < 0 ? Math.abs(e.days)+"d ago" : e.days === 0 ? "TODAY" : e.days+"d";
+                return <div key={e.ticker} style={{ display:"grid", gridTemplateColumns:"60px 150px 90px 80px 50px 1fr", gap:8, alignItems:"center", padding:"6px 0", borderBottom:"1px solid "+C.border }}>
+                  <span style={{ fontWeight:700, color:C.cyan, fontFamily:font, fontSize:11 }}>{e.ticker}</span>
+                  <span style={{ fontSize:10, color:C.textMid }}>{e.name}</span>
+                  <span style={{ fontSize:10, color:C.textDim }}>{e.q}</span>
+                  <span style={{ fontSize:10, fontFamily:font }}>{e.date}</span>
+                  <span style={{ background:urgency+"22", color:urgency, padding:"2px 6px", borderRadius:3, fontSize:9, fontWeight:700, textAlign:"center" }}>{label}</span>
+                  <div style={{ height:4, background:C.border, borderRadius:2 }}>
+                    <div style={{ width:Math.max(3, Math.min(100, (90-e.days)/90*100))+"%", height:"100%", background:urgency, borderRadius:2 }} />
+                  </div>
+                </div>;
+              })}
+            </div>
+          );
+        })()}
+      </Card>
 
       {/* Cash on account */}
       <Card>
