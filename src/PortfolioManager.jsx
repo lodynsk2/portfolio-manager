@@ -11,6 +11,7 @@ var SECTORS_LIVE_URL = "https://portfolio-proxy-ja56.vercel.app/api/sectors-live
 var CLAUDE_URL = "https://portfolio-proxy-ja56.vercel.app/api/claude";
 var PORTFOLIO_URL = "https://portfolio-proxy-ja56.vercel.app/api/portfolio";
 var SEC_FINANCIALS_URL = "https://portfolio-proxy-ja56.vercel.app/api/sec-financials";
+var EARNINGS_URL = "https://portfolio-proxy-ja56.vercel.app/api/earnings";
 
 /* ──────────────────────────────────────────────────────────────────── */
 
@@ -4478,31 +4479,23 @@ function FinancialsTabView({ d }) {
 
   function loadEarningsData(t) {
     setEarningsLoading(true); setEarningsError(""); setEarningsData(null);
-    var today=new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
-    var prompt="Today is "+today+". Research quarterly earnings history and the next earnings event for US-listed ticker "+t+". ACCURACY RULES: use the issuer's official investor-relations site for a confirmed next earnings date; if it is not officially announced, return null. For EPS actual-versus-consensus history, use one identifiable consensus provider and keep one basis (GAAP or adjusted) for both actual and estimate. Do not infer, interpolate or invent. Return the six most recent reported quarters in chronological order plus at most one upcoming quarter. Every plotted row must have a source URL. Return ONLY JSON: "+
-      '{"ticker":"'+t+'","basis":"adjusted or gaap","nextEarningsDate":"YYYY-MM-DD or null","nextEarningsConfirmed":true,"nextEstimate":0.00,"dataAsOf":"YYYY-MM-DD","quarters":[{"period":"Q4 FY26","date":"YYYY-MM-DD","actual":0.00,"estimate":0.00,"reported":true,"source":"https://..."},{"period":"Q2 FY27E","date":"YYYY-MM-DD","actual":null,"estimate":0.00,"reported":false,"source":"https://..."}],"sources":[{"label":"Official IR","url":"https://..."},{"label":"Consensus provider","url":"https://..."}]}. ';
-    function finalize(parsed){
-      if(!parsed||!Array.isArray(parsed.quarters))throw new Error("No usable earnings history returned");
-      var clean=parsed.quarters.filter(function(q){return q&&q.period&&q.source&&(q.actual!=null||q.estimate!=null);}).map(function(q){return {...q,reported:q.reported!==false&&q.actual!=null,_time:q.date&&isFinite(Date.parse(q.date))?Date.parse(q.date):null};});
-      var reported=clean.filter(function(q){return q.reported&&q.actual!=null;}).sort(function(a,b){return (a._time||0)-(b._time||0);}).slice(-6);
-      var upcoming=clean.filter(function(q){return !q.reported;}).sort(function(a,b){return (a._time||9e15)-(b._time||9e15);});
-      var next=upcoming.length?upcoming[0]:null;
-      parsed.quarters=reported.concat(next?[next]:[]).map(function(q){var n={...q};delete n._time;return n;});
-      if(parsed.nextEarningsDate&&Date.parse(parsed.nextEarningsDate)<Date.now()-86400000){parsed.nextEarningsDate=null;parsed.nextEarningsConfirmed=false;}
-      return parsed;
-    }
-    fetch(CLAUDE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1900,tools:[{type:"web_search_20250305",name:"web_search"}],messages:[{role:"user",content:prompt}]})})
-      .then(function(r){if(!r.ok)throw new Error("Earnings data HTTP "+r.status);return r.json();})
-      .then(function(j){
-        var txt=(j.content||[]).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("\n");
-        var firstPass=finalize(parseAIJson(txt));
-        var verifyPrompt="Independently verify this earnings dataset for ticker "+t+" as of "+today+". Use the issuer's official IR page to verify any claimed confirmed next earnings date and verify each actual/estimate pair against the SAME cited consensus provider and SAME EPS basis. Remove any row you cannot verify; do not replace it with a guess. Keep quarters chronological oldest to newest and upcoming last. Return ONLY the corrected JSON in the exact same schema. Candidate: "+JSON.stringify(firstPass);
-        return fetch(CLAUDE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1600,tools:[{type:"web_search_20250305",name:"web_search"}],messages:[{role:"user",content:verifyPrompt}]})})
-          .then(function(r){if(!r.ok)throw new Error("Earnings verification HTTP "+r.status);return r.json();})
-          .then(function(vj){var vtxt=(vj.content||[]).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("\n");var verified=finalize(parseAIJson(vtxt));verified.verificationStatus="SOURCE-CHECKED";return verified;})
-          .catch(function(){firstPass.verificationStatus="SINGLE-PASS";return firstPass;});
+    fetch(EARNINGS_URL + "?ticker=" + encodeURIComponent(t))
+      .then(function(r){
+        return r.json().catch(function(){return {};}).then(function(j){
+          if(!r.ok) throw new Error(j.error || ("Earnings endpoint HTTP "+r.status));
+          return j;
+        });
       })
-      .then(function(parsed){setEarningsData(parsed);setEarningsLoading(false);})
+      .then(function(parsed){
+        if(!parsed || !Array.isArray(parsed.quarters)) throw new Error("No usable earnings history returned");
+        // Defensive final sort: historical rows oldest -> newest; upcoming estimate last.
+        var reported=parsed.quarters.filter(function(q){return q&&q.reported!==false&&q.actual!=null;})
+          .sort(function(a,b){return (Date.parse(a.date)||0)-(Date.parse(b.date)||0);});
+        var upcoming=parsed.quarters.filter(function(q){return q&&q.reported===false;})
+          .sort(function(a,b){return (Date.parse(a.date)||9e15)-(Date.parse(b.date)||9e15);});
+        parsed.quarters=reported.concat(upcoming.slice(0,1));
+        setEarningsData(parsed); setEarningsLoading(false);
+      })
       .catch(function(e){setEarningsError(e.message||"Earnings history unavailable");setEarningsLoading(false);});
   }
 
