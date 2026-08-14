@@ -4316,6 +4316,9 @@ function FinancialsTabView({ d }) {
   const [quoteAsOf, setQuoteAsOf] = useState(null);
   const [quoteWarning, setQuoteWarning] = useState("");
   const [verifyStage, setVerifyStage] = useState("");
+  const [earningsData, setEarningsData] = useState(null);
+  const [earningsLoading, setEarningsLoading] = useState(false);
+  const [earningsError, setEarningsError] = useState("");
   const [scenario, setScenario] = useState("Base");
   const [assumptions, setAssumptions] = useState({
     Bear:{ revGrowth:3, ebitdaMargin:24, taxRate:24, daPct:4, capexPct:5, nwcPct:8, wacc:10.5, terminalGrowth:2.0 },
@@ -4470,9 +4473,11 @@ function FinancialsTabView({ d }) {
         setCompany(function(prev){
           if(!prev || (prev.ticker||t).toUpperCase()!==t) return prev;
           var next={...prev,currentPrice:livePrice};
+          if(q.exchange||q.fullExchangeName) next.exchange=q.exchange||q.fullExchangeName;
+          if(q.marketCap&&Number(q.marketCap)>0) next.marketCap=Number(q.marketCap);
           var shares=Number(next.shares)||0, debt=Number(next.debt)||0, cash=Number(next.cash)||0;
           var latestHist=next.historical&&next.historical.length?next.historical[next.historical.length-1]:null;
-          if(shares>0) next.marketCap=livePrice*shares;
+          if((!next.marketCap||next.marketCap<=0)&&shares>0) next.marketCap=livePrice*shares;
           if(next.marketCap!=null) next.enterpriseValue=next.marketCap+debt-cash;
           if(latestHist&&Number(latestHist.eps)>0) next.pe=livePrice/Number(latestHist.eps);
           if(next.enterpriseValue!=null&&latestHist&&Number(latestHist.ebitda)>0) next.evEbitda=next.enterpriseValue/Number(latestHist.ebitda);
@@ -4483,6 +4488,29 @@ function FinancialsTabView({ d }) {
       .catch(function(){
         setQuoteWarning("Live quote unavailable — price-based valuation metrics are withheld rather than showing stale data.");
       });
+  }
+
+  function loadEarningsData(t) {
+    setEarningsLoading(true); setEarningsError(""); setEarningsData(null);
+    var today = new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
+    var prompt = "Today is " + today + ". Research earnings history and the next earnings estimate for US-listed ticker " + t + ". " +
+      "Use reliable market-data sources such as Nasdaq earnings history, TradingView, the company's investor-relations releases, MarketBeat, or Zacks. " +
+      "For historical quarters, ACTUAL EPS and CONSENSUS ESTIMATE EPS must be directly comparable and preferably come from the same source. " +
+      "Do not infer or invent values. If a number cannot be verified, use null. Return the six most recent reported quarters, newest last, plus the next upcoming quarter if a consensus estimate is available. " +
+      "Use split-adjusted/per-share figures as currently reported by the source. Return ONLY valid JSON with this exact structure: " +
+      '{"ticker":"'+t+'","nextEarningsDate":"YYYY-MM-DD or null","nextEstimate":0.00,"dataAsOf":"YYYY-MM-DD","quarters":[{"period":"Q3 \'25","date":"YYYY-MM-DD","actual":0.00,"estimate":0.00,"reported":true,"source":"https://..."},{"period":"Q3 \'26E","date":"YYYY-MM-DD","actual":null,"estimate":0.00,"reported":false,"source":"https://..."}],"sources":[{"label":"Source name","url":"https://..."}]}. ' +
+      "A reported quarter must not be included unless actual EPS is verified. Do not place an annual EPS figure in a quarterly row.";
+    fetch(CLAUDE_URL,{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1800,tools:[{type:"web_search_20250305",name:"web_search"}],messages:[{role:"user",content:prompt}]})
+    }).then(function(r){if(!r.ok) throw new Error("Earnings data HTTP "+r.status);return r.json();})
+      .then(function(j){
+        var txt=(j.content||[]).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("\n");
+        var parsed=parseAIJson(txt);
+        if(!parsed||!Array.isArray(parsed.quarters)) throw new Error("No usable earnings history returned");
+        parsed.quarters=parsed.quarters.filter(function(q){return q&&q.period&&(q.actual!=null||q.estimate!=null)}).slice(-7);
+        setEarningsData(parsed); setEarningsLoading(false);
+      }).catch(function(e){setEarningsError(e.message||"Earnings history unavailable");setEarningsLoading(false);});
   }
 
   function validateSecDataset(data) {
@@ -4505,6 +4533,7 @@ function FinancialsTabView({ d }) {
     var t = String(rawTicker||"").trim().toUpperCase();
     if (!t) return;
     setTicker(t); setInputTicker(t); setLoading(true); setError(""); setCompany(null); setSubTab("Overview");
+    setEarningsData(null); setEarningsError(""); loadEarningsData(t);
     setVerifyStage("Loading SEC XBRL company facts…");
 
     // Primary path: deterministic SEC Company Facts extraction from our Vercel proxy.
@@ -4604,6 +4633,59 @@ function FinancialsTabView({ d }) {
     </Card>
   }
 
+  function tvSymbolFor(c) {
+    var ex=String((c&&c.exchange)||"").toUpperCase();
+    if(ex.indexOf("NASDAQ")>=0||ex==="NMS"||ex==="NGM"||ex==="NCM") return "NASDAQ:"+ticker;
+    if(ex.indexOf("NYSE")>=0||ex==="NYQ") return "NYSE:"+ticker;
+    if(ex.indexOf("AMEX")>=0||ex==="ASE") return "AMEX:"+ticker;
+    return ticker;
+  }
+
+  function TradingViewAdvanced({symbol}) {
+    const ref = useState(function(){return "tv-"+Math.random().toString(36).slice(2);})[0];
+    useEffect(function(){
+      var host=document.getElementById(ref);
+      if(!host) return;
+      host.innerHTML='<div class="tradingview-widget-container__widget" style="height:100%;width:100%"></div>';
+      var script=document.createElement("script");
+      script.src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+      script.type="text/javascript"; script.async=true;
+      script.innerHTML=JSON.stringify({autosize:true,symbol:symbol,interval:"D",timezone:"exchange",theme:"dark",style:"1",locale:"en",backgroundColor:"rgba(8,9,15,1)",gridColor:"rgba(28,30,48,0.55)",allow_symbol_change:true,calendar:false,hide_side_toolbar:false,withdateranges:true,save_image:false,details:true,hotlist:false,support_host:"https://www.tradingview.com"});
+      host.appendChild(script);
+      return function(){if(host) host.innerHTML="";};
+    },[symbol,ref]);
+    return <div style={{height:390,borderRadius:8,overflow:"hidden",border:"1px solid "+C.border,background:C.card}}><div id={ref} className="tradingview-widget-container" style={{height:"100%",width:"100%"}}/></div>;
+  }
+
+  function EarningsChart() {
+    var qs=(earningsData&&earningsData.quarters)||[];
+    if(earningsLoading) return <Card><div style={{height:260,display:"flex",alignItems:"center",justifyContent:"center",gap:8,color:C.textDim,fontSize:11}}><Spinner/> Loading earnings history & consensus…</div></Card>;
+    if(!qs.length) return <Card><div style={{fontSize:13,fontWeight:700,marginBottom:6}}>🟢 Earnings & Estimates</div><div style={{height:220,display:"flex",alignItems:"center",justifyContent:"center",textAlign:"center",fontSize:10,color:C.textDim,lineHeight:1.6}}>{earningsError||"Consensus EPS history is unavailable for this symbol."}<br/>SEC financial statements remain available in the other tabs.</div></Card>;
+    var nums=[]; qs.forEach(function(q){if(q.actual!=null)nums.push(Number(q.actual));if(q.estimate!=null)nums.push(Number(q.estimate));});
+    var min=Math.min.apply(null,nums),max=Math.max.apply(null,nums); if(!isFinite(min)||!isFinite(max)){min=0;max=1;} if(min===max){min-=0.2;max+=0.2;}
+    var pad=(max-min)*0.18; min-=pad;max+=pad;
+    var W=620,H=245,pL=44,pR=18,pT=18,pB=42,chartW=W-pL-pR,chartH=H-pT-pB;
+    function xx(i){return pL+(qs.length===1?chartW/2:(i/(qs.length-1))*chartW)}
+    function yy(v){return pT+chartH-((Number(v)-min)/(max-min))*chartH}
+    var ticks=[0,1,2,3,4].map(function(i){var v=min+(max-min)*(i/4);return {v:v,y:yy(v)}});
+    var reported=qs.filter(function(q){return q.reported!==false&&q.actual!=null});
+    var latestR=reported.length?reported[reported.length-1]:null;
+    var surprise=latestR&&latestR.estimate!=null&&Number(latestR.estimate)!==0?(Number(latestR.actual)/Number(latestR.estimate)-1)*100:null;
+    return <Card>
+      <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start",marginBottom:10}}>
+        <div><div style={{fontSize:13,fontWeight:800}}>🟢 Earnings & Estimates</div><div style={{fontSize:9,color:C.textDim,marginTop:3}}>Reported EPS vs consensus estimate · market-data research (non-SEC)</div></div>
+        {earningsData&&earningsData.nextEarningsDate&&<div style={{textAlign:"right"}}><div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",letterSpacing:1}}>Next earnings</div><div style={{fontFamily:font,fontSize:12,fontWeight:700,color:C.cyan}}>{earningsData.nextEarningsDate}</div>{earningsData.nextEstimate!=null&&<div style={{fontSize:9,color:C.textMid}}>Est. EPS ${Number(earningsData.nextEstimate).toFixed(2)}</div>}</div>}
+      </div>
+      {latestR&&<div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap"}}><Badge label={latestR.period+" actual $"+Number(latestR.actual).toFixed(2)} color={C.text}/>{latestR.estimate!=null&&<Badge label={"estimate $"+Number(latestR.estimate).toFixed(2)} color={C.textDim}/>} {surprise!=null&&<Badge label={(surprise>=0?"Beat +":"Miss ")+surprise.toFixed(1)+"%"} color={surprise>=0?C.green:C.red}/>}</div>}
+      <svg viewBox={"0 0 "+W+" "+H} width="100%" height="245" preserveAspectRatio="none" style={{display:"block"}}>
+        {ticks.map(function(t,i){return <g key={i}><line x1={pL} x2={W-pR} y1={t.y} y2={t.y} stroke={C.border} strokeWidth="1"/><text x={pL-7} y={t.y+3} fill={C.textDim} fontSize="8" textAnchor="end">{t.v.toFixed(2)}</text></g>})}
+        {qs.map(function(q,i){var x=xx(i);var beat=q.actual!=null&&q.estimate!=null?Number(q.actual)>=Number(q.estimate):true;return <g key={q.period+"-"+i}>{q.estimate!=null&&<circle cx={x} cy={yy(q.estimate)} r="6" fill={C.card} stroke={C.textDim} strokeWidth="1.5"/>}{q.actual!=null&&<circle cx={x} cy={yy(q.actual)} r="7" fill={beat?C.green:C.red} stroke={beat?C.green:C.red} strokeWidth="1"/>}<text x={x} y={H-15} fill={q.reported===false?C.orange:C.textDim} fontSize="8" textAnchor="middle">{q.period}</text></g>})}
+      </svg>
+      <div style={{display:"flex",gap:14,alignItems:"center",fontSize:9,color:C.textDim,marginTop:-4}}><span><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:C.green,marginRight:5}}/>Actual / beat</span><span><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:C.red,marginRight:5}}/>Actual / miss</span><span><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",border:"1px solid "+C.textDim,marginRight:5}}/>Consensus estimate</span></div>
+      {(earningsData.sources||[]).length>0&&<div style={{marginTop:9,paddingTop:8,borderTop:"1px solid "+C.border,display:"flex",gap:10,flexWrap:"wrap"}}>{earningsData.sources.slice(0,4).map(function(src,i){return <a key={i} href={src.url} target="_blank" rel="noreferrer" style={{fontSize:8,color:C.cyan,textDecoration:"none"}}>↗ {src.label||"Earnings source"}</a>})}</div>}
+    </Card>;
+  }
+
   if(!company&&!loading&&!error) return null;
   var hist=company&&company.historical?company.historical:[];
   var latest=hist.length?hist[hist.length-1]:{};
@@ -4680,7 +4762,7 @@ function FinancialsTabView({ d }) {
             {company.verifiedAsOf&&<span style={{fontSize:9,color:C.textDim}}>Verified {company.verifiedAsOf}</span>}
           </div>
         </div>
-        <div style={{display:"flex",gap:6,marginTop:12,flexWrap:"wrap"}}>{["Overview","Statements","Forecast","Valuation"].map(function(t){return <button key={t} onClick={function(){setSubTab(t)}} style={{background:subTab===t?C.blue+"22":"transparent",border:"1px solid "+(subTab===t?C.blue+"66":C.border),borderRadius:5,color:subTab===t?C.text:C.textDim,padding:"5px 10px",fontSize:9,cursor:"pointer"}}>{t}</button>})}</div>
+        <div style={{display:"flex",gap:6,marginTop:12,flexWrap:"wrap"}}>{["Overview","Statements","Earnings","Forecast","Valuation"].map(function(t){return <button key={t} onClick={function(){setSubTab(t)}} style={{background:subTab===t?C.blue+"22":"transparent",border:"1px solid "+(subTab===t?C.blue+"66":C.border),borderRadius:5,color:subTab===t?C.text:C.textDim,padding:"5px 10px",fontSize:9,cursor:"pointer"}}>{t}</button>})}</div>
       </Card>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(6,minmax(0,1fr))",gap:9}}>
@@ -4720,6 +4802,19 @@ function FinancialsTabView({ d }) {
       {subTab==="Statements"&&<>
         <Card><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}><div style={{fontSize:14,fontWeight:700}}>📚 Verified Financial Statements</div><Badge label={verification.status||"PARTIAL"} color={verifyColor}/></div><div style={{fontSize:9,color:C.textDim,marginBottom:12}}>Annual values are completed fiscal years only. Interim 2026 results remain separately labeled YTD and are never annualized.</div><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr><th style={{textAlign:"left",padding:8,color:C.textDim}}>Metric</th>{histDisplay.map(function(h){return <th key={h.periodLabel||h.year} style={{textAlign:"right",padding:8,color:h.periodType==="YTD"?C.orange:C.textDim}}><div>{h.periodLabel||h.year}</div>{h.periodEnd&&<div style={{fontSize:7,fontWeight:400,marginTop:2}}>{h.periodEnd}</div>}</th>})}</tr></thead><tbody>{statementRows.concat([["Diluted EPS","eps"]]).map(function(r){return <tr key={r[1]}><td style={{padding:8,borderTop:"1px solid "+C.border,color:C.textMid,fontWeight:600}}>{r[0]}</td>{histDisplay.map(function(h){var v=h[r[1]];return <td key={h.periodLabel||h.year} style={{padding:8,borderTop:"1px solid "+C.border,textAlign:"right",fontFamily:font,color:h.periodType==="YTD"?C.orange:C.text}}>{r[1]==="eps"?(v!=null?"$"+Number(v).toFixed(2):"—"):fmtMoney(v)}</td>})}</tr>})}</tbody></table></div></Card>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}><Card><div style={{fontSize:12,fontWeight:700,marginBottom:8}}>Balance Sheet Snapshot</div><Row label="Cash & equivalents" val={fmtMoney(company.cash)}/><Row label="Total debt" val={fmtMoney(company.debt)}/><Row label="Net cash / (debt)" val={fmtMoney(netCash)} color={netCash>=0?C.green:C.red}/><Row label="Diluted shares" val={company.shares?Number(company.shares).toLocaleString():"—"}/></Card><Card><div style={{fontSize:12,fontWeight:700,marginBottom:8}}>Verification Summary</div><Row label="Values checked" val={verification.checkedValues||"—"}/><Row label="Corrections made" val={verification.correctedValues||0}/><Row label="Verified as of" val={company.verifiedAsOf||"—"}/><div style={{fontSize:9,color:C.textDim,lineHeight:1.5,marginTop:8}}>If a figure cannot be confirmed from an official filing or investor-relations report, the dashboard leaves it blank rather than estimating it.</div></Card></div>
+      </>}
+
+      {subTab==="Earnings"&&<>
+        <div style={{display:"grid",gridTemplateColumns:"minmax(0,0.9fr) minmax(0,1.1fr)",gap:12,alignItems:"stretch"}}>
+          <EarningsChart/>
+          <div><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}><div><div style={{fontSize:13,fontWeight:800}}>📈 TradingView Advanced Chart</div><div style={{fontSize:9,color:C.textDim,marginTop:2}}>Interactive price chart, indicators and drawing tools · data provided by TradingView</div></div><Badge label="TRADINGVIEW" color={C.blueLight}/></div><TradingViewAdvanced symbol={tvSymbolFor(company)}/></div>
+        </div>
+        <div style={{marginTop:12,display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:9}}>
+          <Metric label="Next Earnings" value={(earningsData&&earningsData.nextEarningsDate)||"—"} color={C.cyan} sub="Scheduled / expected date" icon="◷"/>
+          <Metric label="Consensus EPS" value={earningsData&&earningsData.nextEstimate!=null?"$"+Number(earningsData.nextEstimate).toFixed(2):"—"} color={C.purple} sub="Non-SEC analyst consensus" icon="◎"/>
+          <Metric label="Data As Of" value={(earningsData&&earningsData.dataAsOf)||"—"} color={C.text} sub="Earnings estimate research timestamp" icon="✓"/>
+        </div>
+        <div style={{fontSize:9,color:C.textDim,lineHeight:1.55,marginTop:10,padding:"9px 11px",border:"1px solid "+C.border,borderRadius:7,background:C.cardAlt}}>SEC XBRL remains the source of truth for filed financial statements. Analyst EPS estimates are not SEC-reported figures and can vary by provider. The dashboard only plots estimate values returned with a cited market-data source; unavailable estimates remain blank. TradingView widget data may be real-time, delayed, or end-of-day depending on the market and instrument.</div>
       </>}
 
       {subTab==="Forecast"&&<div style={{display:"grid",gridTemplateColumns:"330px 1fr",gap:12}}>
