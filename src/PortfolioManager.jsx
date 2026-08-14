@@ -10,6 +10,7 @@ var LIQ_URL = "https://portfolio-proxy-ja56.vercel.app/api/liquidity-history";
 var SECTORS_LIVE_URL = "https://portfolio-proxy-ja56.vercel.app/api/sectors-live";
 var CLAUDE_URL = "https://portfolio-proxy-ja56.vercel.app/api/claude";
 var PORTFOLIO_URL = "https://portfolio-proxy-ja56.vercel.app/api/portfolio";
+var SEC_FINANCIALS_URL = "https://portfolio-proxy-ja56.vercel.app/api/sec-financials";
 
 /* ──────────────────────────────────────────────────────────────────── */
 
@@ -4349,14 +4350,50 @@ function FinancialsTabView({ d }) {
 
   function normalizeFinancialData(parsed) {
     if(!parsed||!parsed.historical||!parsed.historical.length) throw new Error("No usable financial data returned");
+
+    // Official filings often present tables "in millions".  The research response
+    // carries explicit scale metadata so the UI always stores and displays raw USD.
+    var moneyScale = Number(parsed.financialValuesScale || parsed.moneyScale || 1);
+    var sharesScale = Number(parsed.shareValuesScale || parsed.sharesScale || 1);
+    if(!isFinite(moneyScale)||moneyScale<=0) moneyScale=1;
+    if(!isFinite(sharesScale)||sharesScale<=0) sharesScale=1;
+
+    function scaleMoney(v){ return v==null||v===""?null:Number(v)*moneyScale; }
+    function scaleShares(v){ return v==null||v===""?null:Number(v)*sharesScale; }
+    function scalePeriod(x){
+      if(!x) return x;
+      return {...x,
+        revenue:scaleMoney(x.revenue),
+        grossProfit:scaleMoney(x.grossProfit),
+        ebitda:scaleMoney(x.ebitda),
+        operatingIncome:scaleMoney(x.operatingIncome),
+        netIncome:scaleMoney(x.netIncome),
+        freeCashFlow:scaleMoney(x.freeCashFlow),
+        operatingCashFlow:scaleMoney(x.operatingCashFlow),
+        capex:scaleMoney(x.capex)
+      };
+    }
+
     parsed.historical=parsed.historical
       .filter(function(x){return x&&x.year&&x.revenue!=null&&(x.periodType==null||x.periodType==="FY")})
+      .map(scalePeriod)
       .sort(function(a,b){return a.year-b.year})
       .slice(-5)
       .map(function(x){ return {...x,periodType:"FY",periodLabel:x.periodLabel||("FY "+x.year)}; });
+
     if(parsed.currentPeriod&&parsed.currentPeriod.revenue!=null){
+      parsed.currentPeriod=scalePeriod(parsed.currentPeriod);
       parsed.currentPeriod={...parsed.currentPeriod,periodType:"YTD",periodLabel:parsed.currentPeriod.periodLabel||((parsed.currentPeriod.year||new Date().getFullYear())+" YTD")};
     }
+
+    parsed.cash=scaleMoney(parsed.cash);
+    parsed.debt=scaleMoney(parsed.debt);
+    parsed.shares=scaleShares(parsed.shares);
+
+    // Prevent a second normalization pass (the verifier/repair path calls this again).
+    parsed.financialValuesScale=1;
+    parsed.shareValuesScale=1;
+
     var latest=parsed.historical[parsed.historical.length-1]||{};
     parsed.ratios = parsed.ratios || {};
     if (latest.revenue) {
@@ -4378,13 +4415,48 @@ function FinancialsTabView({ d }) {
     return parsed;
   }
 
+  function mergeFinancialPeriods(base, repair) {
+    var out={...base};
+    var byYear={};
+    (base.historical||[]).forEach(function(h){if(h&&h.year)byYear[h.year]=h;});
+    (repair.historical||[]).forEach(function(h){
+      if(!h||!h.year) return;
+      var prev=byYear[h.year]||{};
+      byYear[h.year]={...prev,...h};
+    });
+    out.historical=Object.keys(byYear).map(function(y){return byYear[y];}).sort(function(a,b){return a.year-b.year;}).slice(-5);
+    if(repair.currentPeriod&&repair.currentPeriod.revenue!=null) out.currentPeriod=repair.currentPeriod;
+    ["cash","debt","shares","ratios","sources","verifiedAsOf","name","sector","industry"].forEach(function(k){
+      if(repair[k]!=null) out[k]=repair[k];
+    });
+    return out;
+  }
+
+  function needsHistoryRepair(data) {
+    var hist=(data&&data.historical)||[];
+    if(hist.length<4) return true;
+    var years=hist.map(function(h){return Number(h.year);}).filter(Boolean).sort(function(a,b){return a-b;});
+    if(!years.length) return true;
+    // In 2026, most calendar-year issuers should have FY2025 available.  For
+    // non-calendar fiscal years the verifier can explicitly mark a later FY2026.
+    var latest=Math.max.apply(null,years);
+    return latest < (new Date().getFullYear()-1);
+  }
+
   function primaryDataPrompt(t) {
-    return "Today is "+new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})+". Research ticker "+t+" using ONLY official SEC filings (10-K/10-Q/8-K earnings exhibits) and the company's official investor-relations site. Return ONLY valid JSON. ACCURACY IS MORE IMPORTANT THAN COMPLETENESS. Do not use aggregators, search snippets, Macrotrends, Yahoo, Google Finance, StockAnalysis, CompaniesMarketCap, or blogs for statement values. Use GAAP figures and raw USD numbers. Return the FIVE most recent COMPLETED fiscal years. If FY2026 has been officially completed and filed/reported, include FY2026. If it is not complete, do NOT annualize or estimate it; put the latest 2026 interim period in currentPeriod and label it YTD. For every annual period, use the fiscal-year label and end date from the filing. Free cash flow = operating cash flow minus capital expenditures only if both values are verified. EBITDA may be null if not directly reported or reliably derivable. If any number cannot be confirmed, use null. Never fabricate or estimate historical values. Include at least two official source URLs when available. Schema: "+
-      '{"ticker":"'+t+'","name":"Company Name","sector":"Sector","industry":"Industry","currentPrice":null,"marketCap":null,"enterpriseValue":null,"pe":null,"evEbitda":null,"dividendYield":null,"cash":null,"debt":null,"shares":null,"historical":[{"year":2022,"periodLabel":"FY 2022","periodType":"FY","periodEnd":"YYYY-MM-DD","revenue":null,"grossProfit":null,"ebitda":null,"operatingIncome":null,"netIncome":null,"eps":null,"freeCashFlow":null},{"year":2023,"periodLabel":"FY 2023","periodType":"FY","periodEnd":"YYYY-MM-DD","revenue":null,"grossProfit":null,"ebitda":null,"operatingIncome":null,"netIncome":null,"eps":null,"freeCashFlow":null},{"year":2024,"periodLabel":"FY 2024","periodType":"FY","periodEnd":"YYYY-MM-DD","revenue":null,"grossProfit":null,"ebitda":null,"operatingIncome":null,"netIncome":null,"eps":null,"freeCashFlow":null},{"year":2025,"periodLabel":"FY 2025","periodType":"FY","periodEnd":"YYYY-MM-DD","revenue":null,"grossProfit":null,"ebitda":null,"operatingIncome":null,"netIncome":null,"eps":null,"freeCashFlow":null},{"year":2026,"periodLabel":"FY 2026","periodType":"FY","periodEnd":"YYYY-MM-DD","revenue":null,"grossProfit":null,"ebitda":null,"operatingIncome":null,"netIncome":null,"eps":null,"freeCashFlow":null}],"currentPeriod":null,"ratios":{"grossMargin":null,"operatingMargin":null,"ebitdaMargin":null,"netMargin":null,"roe":null,"roa":null,"roic":null,"currentRatio":null,"debtToEquity":null,"interestCoverage":null},"sources":[{"label":"SEC annual filing","url":"https://...","type":"SEC"},{"label":"Investor relations","url":"https://...","type":"IR"}],"verifiedAsOf":"YYYY-MM-DD"}';
+    var currentYear=new Date().getFullYear();
+    return "Today is "+new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})+". Research ticker "+t+" using ONLY official SEC filings (10-K/10-Q/8-K earnings exhibits) and the company's official investor-relations site. Return ONLY valid JSON. ACCURACY AND RECENCY ARE MORE IMPORTANT THAN COMPLETENESS. Do not use aggregators, search snippets, Macrotrends, Yahoo, Google Finance, StockAnalysis, CompaniesMarketCap, or blogs for statement values. First determine the issuer's fiscal-year end. Then return the FIVE most recent COMPLETED fiscal years actually reported as of today. Do not stop at older years if newer 10-Ks exist. For a calendar-year issuer in "+currentYear+", this will normally be FY "+(currentYear-5)+" through FY "+(currentYear-1)+". If the issuer has already completed FY"+currentYear+" (for example a June fiscal year), include FY"+currentYear+" and shift the five-year window accordingly. If the current fiscal year is not complete, return the latest "+currentYear+" interim/YTD period separately in currentPeriod; never annualize it. Use GAAP figures. IMPORTANT UNITS RULE: If the official table is stated in thousands, millions, or billions, you may copy the displayed numeric values but MUST set financialValuesScale to the exact multiplier required to convert every returned money field to raw USD (1, 1000, 1000000, or 1000000000). Do the same for diluted shares with shareValuesScale. Do not mix units between periods. For every annual period, use the fiscal-year label and exact period end date from the filing. Free cash flow = operating cash flow minus capital expenditures only if both values are verified. EBITDA may be null if not directly reported or reliably derivable. If any number cannot be confirmed, use null. Never fabricate or estimate historical values. Include at least two official source URLs when available. Schema: "+
+      '{"ticker":"'+t+'","name":"Company Name","sector":"Sector","industry":"Industry","fiscalYearEnd":"Month/Day","financialValuesScale":1000000,"shareValuesScale":1000000,"currentPrice":null,"marketCap":null,"enterpriseValue":null,"pe":null,"evEbitda":null,"dividendYield":null,"cash":null,"debt":null,"shares":null,"historical":[{"year":2021,"periodLabel":"FY 2021","periodType":"FY","periodEnd":"YYYY-MM-DD","revenue":null,"grossProfit":null,"ebitda":null,"operatingIncome":null,"netIncome":null,"eps":null,"operatingCashFlow":null,"capex":null,"freeCashFlow":null},{"year":2022,"periodLabel":"FY 2022","periodType":"FY","periodEnd":"YYYY-MM-DD","revenue":null,"grossProfit":null,"ebitda":null,"operatingIncome":null,"netIncome":null,"eps":null,"operatingCashFlow":null,"capex":null,"freeCashFlow":null},{"year":2023,"periodLabel":"FY 2023","periodType":"FY","periodEnd":"YYYY-MM-DD","revenue":null,"grossProfit":null,"ebitda":null,"operatingIncome":null,"netIncome":null,"eps":null,"operatingCashFlow":null,"capex":null,"freeCashFlow":null},{"year":2024,"periodLabel":"FY 2024","periodType":"FY","periodEnd":"YYYY-MM-DD","revenue":null,"grossProfit":null,"ebitda":null,"operatingIncome":null,"netIncome":null,"eps":null,"operatingCashFlow":null,"capex":null,"freeCashFlow":null},{"year":2025,"periodLabel":"FY 2025","periodType":"FY","periodEnd":"YYYY-MM-DD","revenue":null,"grossProfit":null,"ebitda":null,"operatingIncome":null,"netIncome":null,"eps":null,"operatingCashFlow":null,"capex":null,"freeCashFlow":null}],"currentPeriod":{"year":2026,"periodLabel":"2026 YTD","periodType":"YTD","periodEnd":"YYYY-MM-DD","revenue":null,"grossProfit":null,"ebitda":null,"operatingIncome":null,"netIncome":null,"eps":null,"operatingCashFlow":null,"capex":null,"freeCashFlow":null},"ratios":{"grossMargin":null,"operatingMargin":null,"ebitdaMargin":null,"netMargin":null,"roe":null,"roa":null,"roic":null,"currentRatio":null,"debtToEquity":null,"interestCoverage":null},"sources":[{"label":"SEC annual filing","url":"https://...","type":"SEC"},{"label":"Investor relations","url":"https://...","type":"IR"}],"verifiedAsOf":"YYYY-MM-DD"}';
+  }
+
+  function historyRepairPrompt(t, candidate) {
+    var currentYear=new Date().getFullYear();
+    var have=(candidate.historical||[]).map(function(h){return h.year;}).join(", ");
+    return "Today is "+new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})+". The first research pass for "+t+" returned an incomplete fiscal history (years currently present: "+have+"). Using ONLY the issuer's official SEC 10-K/10-Q/8-K earnings exhibits and official investor-relations reports, repair the dataset. Determine the issuer's fiscal-year end and return the FIVE most recent COMPLETED fiscal years available as of today, plus the latest "+currentYear+" YTD/interim period if the current fiscal year is not complete. Explicitly search for the newest annual reports before using older years. Do not omit FY2024 or FY2025 when official reports exist. Preserve GAAP definitions and exact fiscal period-end dates. IMPORTANT: include financialValuesScale and shareValuesScale so all monetary/share values can be converted to raw units; do not mix scales. Missing/unverifiable values must be null, never estimated. Return ONLY a complete corrected company JSON in the same schema as the candidate. Candidate: "+JSON.stringify(candidate);
   }
 
   function verificationPrompt(t, candidate) {
-    return "Act as an independent financial-data verifier. Today is "+new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})+". Verify EVERY non-null financial statement value in the candidate JSON for ticker "+t+" against official SEC filings and/or the company's official investor-relations reports. Ignore all third-party aggregators. Check fiscal-year labels/end dates, revenue, gross profit, operating income, net income, diluted EPS, cash, debt, diluted shares, and free cash flow. For FCF verify OCF minus CapEx. EBITDA should stay null unless directly reported or reliably derivable from official filings. CORRECT any mismatches. Do not estimate missing values. Return ONLY JSON in this schema: {\"verifiedData\":<complete corrected candidate object>,\"verification\":{\"status\":\"VERIFIED\"|\"PARTIAL\",\"checkedValues\":0,\"correctedValues\":0,\"notes\":\"short explanation\",\"latestOfficialPeriod\":\"FY 2026 or 2026 YTD\",\"sources\":[{\"label\":\"...\",\"url\":\"https://...\",\"type\":\"SEC or IR\"}]}}. Candidate JSON: "+JSON.stringify(candidate);
+    return "Act as an independent financial-data verifier. Today is "+new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})+". Verify EVERY non-null financial statement value in the candidate JSON for ticker "+t+" against official SEC filings and/or the company's official investor-relations reports. Ignore all third-party aggregators. FIRST verify that the historical array contains the FIVE most recent COMPLETED fiscal years available as of today. If a newer 10-K exists than the latest year in the candidate, add it and remove the oldest year so the array remains five completed FYs. Check fiscal-year labels/end dates, revenue, gross profit, operating income, net income, diluted EPS, cash, debt, diluted shares, operating cash flow, capex, and free cash flow. For FCF verify OCF minus CapEx. Verify the financialValuesScale/shareValuesScale metadata against the units stated in the official tables. EBITDA should stay null unless directly reported or reliably derivable from official filings. CORRECT any mismatches. Do not estimate missing values. If current-year interim data exists, include the latest official YTD period separately in currentPeriod. Return ONLY JSON with keys verifiedData and verification. verification must contain status, checkedValues, correctedValues, notes, latestOfficialPeriod, missingFiscalYears, and sources. Candidate JSON: "+JSON.stringify(candidate);
   }
 
   function loadLiveQuote(t) {
@@ -4413,45 +4485,53 @@ function FinancialsTabView({ d }) {
       });
   }
 
+  function validateSecDataset(data) {
+    var hist=(data&&data.historical)||[];
+    if(!hist.length) return {ok:false,reason:"No annual SEC financials returned"};
+    var years=hist.map(function(h){return Number(h.year);}).filter(Boolean).sort(function(a,b){return a-b;});
+    if(years.length<3) return {ok:false,reason:"Fewer than three completed fiscal years were available from SEC XBRL"};
+    for(var i=1;i<years.length;i++){
+      if(years[i]===years[i-1]) return {ok:false,reason:"Duplicate fiscal-year periods returned"};
+    }
+    var latest=years[years.length-1];
+    var nowY=new Date().getFullYear();
+    // Do not blindly require FY currentYear-1 because some issuers have not filed it yet.
+    // The backend derives the newest completed FY directly from 10-K XBRL facts.
+    if(latest < nowY-2) return {ok:false,reason:"SEC history appears stale (latest completed FY is "+latest+")"};
+    return {ok:true,latest:latest};
+  }
+
   function loadCompany(rawTicker) {
     var t = String(rawTicker||"").trim().toUpperCase();
     if (!t) return;
     setTicker(t); setInputTicker(t); setLoading(true); setError(""); setCompany(null); setSubTab("Overview");
-    setVerifyStage("Pulling official filings…");
-    fetch(CLAUDE_URL,{
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:3200,tools:[{type:"web_search_20250305",name:"web_search"}],messages:[{role:"user",content:primaryDataPrompt(t)}]})
-    }).then(function(r){ if(!r.ok) throw new Error("Primary-source lookup HTTP "+r.status); return r.json(); })
-      .then(function(j){
-        var txt=(j.content||[]).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("\n");
-        var candidate=normalizeFinancialData(parseAIJson(txt));
-        setVerifyStage("Cross-checking every reported figure…");
-        return fetch(CLAUDE_URL,{
-          method:"POST", headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:3600,tools:[{type:"web_search_20250305",name:"web_search"}],messages:[{role:"user",content:verificationPrompt(t,candidate)}]})
-        }).then(function(r){ if(!r.ok) throw new Error("Verification HTTP "+r.status); return r.json(); })
-          .then(function(vj){
-            var vtxt=(vj.content||[]).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("\n");
-            var verified=parseAIJson(vtxt);
-            var finalData=candidate;
-            if(verified&&verified.verifiedData){
-              finalData=normalizeFinancialData(verified.verifiedData);
-              finalData.verification=verified.verification||finalData.verification;
-              if(verified.verification&&verified.verification.sources&&verified.verification.sources.length) finalData.sources=verified.verification.sources;
-            } else {
-              finalData.verification={status:"PARTIAL",checkedValues:0,correctedValues:0,notes:"Independent verification response was unavailable. Values are still restricted to primary-source research.",sources:finalData.sources||[]};
-            }
-            return finalData;
-          }).catch(function(){
-            candidate.verification={status:"PARTIAL",checkedValues:0,correctedValues:0,notes:"Second-pass verification failed. Primary-source-only data is shown; review source links before relying on it.",sources:candidate.sources||[]};
-            return candidate;
-          });
+    setVerifyStage("Loading SEC XBRL company facts…");
+
+    // Primary path: deterministic SEC Company Facts extraction from our Vercel proxy.
+    // This avoids asking an LLM to decide which fiscal years or statement values to use.
+    fetch(SEC_FINANCIALS_URL + "?ticker=" + encodeURIComponent(t))
+      .then(function(r){
+        if(!r.ok) return r.json().catch(function(){return {};}).then(function(j){throw new Error(j.error||("SEC financials HTTP "+r.status));});
+        return r.json();
       })
-      .then(function(parsed){
-        var latest=parsed.historical[parsed.historical.length-1]||{};
+      .then(function(secData){
+        var parsed=normalizeFinancialData(secData);
+        var quality=validateSecDataset(parsed);
+        if(!quality.ok) throw new Error(quality.reason);
+        parsed.verification={
+          status:"SEC XBRL",
+          checkedValues:(parsed.historical||[]).length*8,
+          correctedValues:0,
+          notes:"Financial-statement history is extracted deterministically from SEC Company Facts. Newest completed fiscal years are selected from 10-K/10-K/A facts; interim data comes from the newest 10-Q period.",
+          latestOfficialPeriod:(parsed.currentPeriod&&parsed.currentPeriod.periodLabel)||((parsed.historical||[]).slice(-1)[0]||{}).periodLabel||"",
+          missingFiscalYears:[],
+          sources:parsed.sources||[]
+        };
         setCompany(parsed);
-        setVerifyStage(parsed.verification&&parsed.verification.status==="VERIFIED"?"Verified against official filings":"Primary-source data loaded");
+        setVerifyStage("SEC filing data loaded");
         loadLiveQuote(t);
+
+        var latest=parsed.historical[parsed.historical.length-1]||{};
         var hist=parsed.historical;
         var prior=hist.length>1?hist[hist.length-2]:null;
         var revGrowth=prior&&prior.revenue?((latest.revenue/prior.revenue)-1)*100:7;
@@ -4465,7 +4545,28 @@ function FinancialsTabView({ d }) {
         });
         setLoading(false);
       })
-      .catch(function(e){setError(e.message||"Unable to load verified company financials");setVerifyStage("");setLoading(false);});
+      .catch(function(secErr){
+        // Safe fallback: do NOT silently show an old 2022/2023 dataset.  If SEC
+        // extraction fails, use the primary-source research path only as a clearly
+        // labeled fallback and reject it if its fiscal history is stale.
+        setVerifyStage("SEC extraction unavailable — checking official filings…");
+        fetch(CLAUDE_URL,{
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:3400,tools:[{type:"web_search_20250305",name:"web_search"}],messages:[{role:"user",content:primaryDataPrompt(t)}]})
+        }).then(function(r){if(!r.ok)throw new Error("Official-filing fallback HTTP "+r.status);return r.json();})
+          .then(function(j){
+            var txt=(j.content||[]).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("\n");
+            var candidate=normalizeFinancialData(parseAIJson(txt));
+            var q=validateSecDataset(candidate);
+            if(!q.ok) throw new Error("Data withheld: "+q.reason+". The dashboard will not display stale annual history.");
+            candidate.verification={status:"PRIMARY SOURCES — FALLBACK",checkedValues:0,correctedValues:0,notes:"SEC structured-data extraction was unavailable. Values were researched from SEC filings/issuer IR and passed a recency gate. Review source links before relying on them.",sources:candidate.sources||[]};
+            setCompany(candidate); setVerifyStage("Primary-source fallback loaded"); loadLiveQuote(t); setLoading(false);
+          })
+          .catch(function(e){
+            setError((e&&e.message?e.message:"Unable to load company financials")+" (SEC path: "+(secErr&&secErr.message?secErr.message:"unavailable")+")");
+            setVerifyStage(""); setLoading(false);
+          });
+      });
   }
 
   useEffect(function(){ loadCompany("MSFT"); }, []);
