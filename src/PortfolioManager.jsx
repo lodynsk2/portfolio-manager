@@ -1143,7 +1143,7 @@ try {
       <div style={{ flex:1, overflow:"auto", padding:"13px 16px" }}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
           <div style={{ display:"flex", gap:18 }}>
-            {["Analysis","Portfolio","Themes","Active Trader","Intelligence"].map(t => (
+            {["Analysis","Portfolio","Financials","Active Trader","Intelligence"].map(t => (
               <span key={t} onClick={function(){setTopTab(t)}} style={{ fontSize:13, color:t===topTab?C.text:C.textMid, fontWeight:t===topTab?600:400, cursor:"pointer", borderBottom:t===topTab?"2px solid " + C.blue:"none", paddingBottom:3 }}>{t}</span>
             ))}
           </div>
@@ -1169,7 +1169,8 @@ try {
           </div>
         )}
         {topTab==="Portfolio" && <PortfolioTabView d={d} />}
-        {topTab!=="Analysis" && topTab!=="Portfolio" && (
+        {topTab==="Financials" && <FinancialsTabView d={d} />}
+        {topTab!=="Analysis" && topTab!=="Portfolio" && topTab!=="Financials" && (
           <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:400 }}>
             <div style={{ fontSize:28, opacity:0.2, marginBottom:8 }}>🚧</div>
             <div style={{ color:C.textDim, fontSize:14 }}>{topTab} — coming soon</div>
@@ -4302,6 +4303,181 @@ function ExecutionStage({ d }) {
 }
 
 /* ─── PORTFOLIO TAB VIEW ─────────────────────────────────────── */
+
+/* ─── FINANCIALS TAB ─────────────────────────────────────────────── */
+function FinancialsTabView({ d }) {
+  const [ticker, setTicker] = useState("MSFT");
+  const [inputTicker, setInputTicker] = useState("MSFT");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [company, setCompany] = useState(null);
+  const [subTab, setSubTab] = useState("Overview");
+  const [scenario, setScenario] = useState("Base");
+  const [assumptions, setAssumptions] = useState({
+    Bear:{ revGrowth:3, ebitdaMargin:24, taxRate:24, daPct:4, capexPct:5, nwcPct:8, wacc:10.5, terminalGrowth:2.0 },
+    Base:{ revGrowth:7, ebitdaMargin:28, taxRate:24, daPct:4, capexPct:5, nwcPct:8, wacc:9.0, terminalGrowth:2.5 },
+    Bull:{ revGrowth:11, ebitdaMargin:31, taxRate:24, daPct:4, capexPct:5, nwcPct:8, wacc:8.0, terminalGrowth:3.0 },
+  });
+
+  function fmtMoney(v) {
+    if (v == null || isNaN(v)) return "—";
+    var a = Math.abs(v);
+    if (a >= 1e12) return "$" + (v/1e12).toFixed(2) + "T";
+    if (a >= 1e9) return "$" + (v/1e9).toFixed(2) + "B";
+    if (a >= 1e6) return "$" + (v/1e6).toFixed(1) + "M";
+    return "$" + Number(v).toLocaleString(undefined,{maximumFractionDigits:0});
+  }
+  function fmtPct(v) { return v==null||isNaN(v)?"—":Number(v).toFixed(1)+"%"; }
+
+  function parseAIJson(txt) {
+    var clean = String(txt||"").replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
+    try { return JSON.parse(clean); } catch(e) {}
+    var depth=0,start=-1,last=null;
+    for(var i=0;i<clean.length;i++){
+      if(clean[i]==="{"){if(depth===0)start=i;depth++;}
+      else if(clean[i]==="}"){depth--;if(depth===0&&start>=0){try{last=JSON.parse(clean.slice(start,i+1));}catch(e2){}start=-1;}}
+    }
+    return last;
+  }
+
+  function loadCompany(rawTicker) {
+    var t = String(rawTicker||"").trim().toUpperCase();
+    if (!t) return;
+    setTicker(t); setInputTicker(t); setLoading(true); setError("");
+    fetch(CLAUDE_URL,{
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        model:"claude-sonnet-4-6", max_tokens:2600,
+        tools:[{type:"web_search_20250305",name:"web_search"}],
+        messages:[{role:"user",content:
+          "Search the web for the latest publicly available annual financial data for ticker "+t+". Return ONLY valid JSON, no markdown and no commentary. Use raw USD numbers, not strings with B/M suffixes. Prefer the latest four completed fiscal years from SEC/company filings. Schema: "+
+          '{"ticker":"'+t+'","name":"Company Name","sector":"Sector","industry":"Industry","currentPrice":0,"marketCap":0,"enterpriseValue":0,"pe":0,"evEbitda":0,"dividendYield":0,"cash":0,"debt":0,"shares":0,"historical":[{"year":2022,"revenue":0,"grossProfit":0,"ebitda":0,"operatingIncome":0,"netIncome":0,"eps":0,"freeCashFlow":0},{"year":2023,"revenue":0,"grossProfit":0,"ebitda":0,"operatingIncome":0,"netIncome":0,"eps":0,"freeCashFlow":0},{"year":2024,"revenue":0,"grossProfit":0,"ebitda":0,"operatingIncome":0,"netIncome":0,"eps":0,"freeCashFlow":0},{"year":2025,"revenue":0,"grossProfit":0,"ebitda":0,"operatingIncome":0,"netIncome":0,"eps":0,"freeCashFlow":0}],"ratios":{"grossMargin":0,"operatingMargin":0,"ebitdaMargin":0,"netMargin":0,"roe":0,"roa":0,"roic":0,"currentRatio":0,"debtToEquity":0,"interestCoverage":0}}. If a field cannot be verified, use null. Do not estimate missing historical financials.'
+        }]
+      })
+    }).then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+      .then(function(j){
+        var txt=(j.content||[]).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("\n");
+        var parsed=parseAIJson(txt);
+        if(!parsed||!parsed.historical||!parsed.historical.length) throw new Error("No usable financial data returned");
+        parsed.historical=parsed.historical.filter(function(x){return x&&x.year&&x.revenue!=null}).sort(function(a,b){return a.year-b.year});
+        setCompany(parsed);
+        var latest=parsed.historical[parsed.historical.length-1]||{};
+        var hist=parsed.historical;
+        var prior=hist.length>1?hist[hist.length-2]:null;
+        var revGrowth=prior&&prior.revenue?((latest.revenue/prior.revenue)-1)*100:7;
+        var ebitdaMargin=latest.revenue&&latest.ebitda!=null?(latest.ebitda/latest.revenue)*100:28;
+        var fcfMargin=latest.revenue&&latest.freeCashFlow!=null?(latest.freeCashFlow/latest.revenue)*100:null;
+        setAssumptions(function(prev){
+          var n={...prev};
+          n.Base={...n.Base,revGrowth:+Math.max(-20,Math.min(30,revGrowth)).toFixed(1),ebitdaMargin:+Math.max(1,Math.min(60,ebitdaMargin)).toFixed(1)};
+          n.Bear={...n.Bear,revGrowth:+(n.Base.revGrowth-4).toFixed(1),ebitdaMargin:+Math.max(1,n.Base.ebitdaMargin-3).toFixed(1)};
+          n.Bull={...n.Bull,revGrowth:+(n.Base.revGrowth+4).toFixed(1),ebitdaMargin:+Math.min(70,n.Base.ebitdaMargin+3).toFixed(1)};
+          return n;
+        });
+      }).catch(function(e){setError(e.message||"Unable to load company financials");})
+      .finally(function(){setLoading(false);});
+  }
+
+  useEffect(function(){ loadCompany("MSFT"); },[]);
+
+  var a = assumptions[scenario];
+  var hist = company&&company.historical?company.historical:[];
+  var latest = hist.length?hist[hist.length-1]:null;
+  var forecast=[];
+  if(latest){
+    var prevRevenue=Number(latest.revenue)||0;
+    for(var y=1;y<=5;y++){
+      var revenue=prevRevenue*(1+a.revGrowth/100);
+      var ebitda=revenue*(a.ebitdaMargin/100);
+      var da=revenue*(a.daPct/100);
+      var ebit=ebitda-da;
+      var taxes=Math.max(0,ebit)*(a.taxRate/100);
+      var nopat=ebit-taxes;
+      var capex=revenue*(a.capexPct/100);
+      var deltaNwc=Math.max(0,revenue-prevRevenue)*(a.nwcPct/100);
+      var ufcf=nopat+da-capex-deltaNwc;
+      forecast.push({year:Number(latest.year)+y,revenue:revenue,ebitda:ebitda,ebit:ebit,taxes:taxes,nopat:nopat,da:da,capex:capex,deltaNwc:deltaNwc,ufcf:ufcf});
+      prevRevenue=revenue;
+    }
+  }
+  var pvFcf=0,terminalValue=0,pvTerminal=0,enterpriseValue=0,equityValue=0,impliedPrice=null;
+  if(forecast.length){
+    var w=a.wacc/100, g=a.terminalGrowth/100;
+    forecast.forEach(function(f,i){pvFcf += f.ufcf/Math.pow(1+w,i+1);});
+    if(w>g){
+      terminalValue=forecast[4].ufcf*(1+g)/(w-g);
+      pvTerminal=terminalValue/Math.pow(1+w,5);
+      enterpriseValue=pvFcf+pvTerminal;
+      equityValue=enterpriseValue-(Number(company?.debt)||0)+(Number(company?.cash)||0);
+      if(Number(company?.shares)>0) impliedPrice=equityValue/Number(company.shares);
+    }
+  }
+  var upside=impliedPrice&&company?.currentPrice?((impliedPrice/company.currentPrice)-1)*100:null;
+
+  function updateAssump(key,val){
+    var num=parseFloat(val);
+    setAssumptions(function(prev){var n={...prev};n[scenario]={...n[scenario],[key]:isNaN(num)?0:num};return n;});
+  }
+
+  function Metric({label,value,sub,color}){ return <Card style={{padding:"12px 14px"}}><div style={{fontSize:9,color:C.textDim,letterSpacing:1,marginBottom:6}}>{label}</div><div style={{fontSize:20,fontWeight:700,fontFamily:font,color:color||C.text}}>{value}</div>{sub&&<div style={{fontSize:9,color:C.textDim,marginTop:4}}>{sub}</div>}</Card>; }
+  function NumInput({label,k,suffix}){ return <div><div style={{fontSize:9,color:C.textDim,marginBottom:4}}>{label}</div><div style={{display:"flex",alignItems:"center",gap:4}}><input type="number" step="0.1" value={a[k]} onChange={function(e){updateAssump(k,e.target.value)}} style={{width:"100%",background:C.cardAlt,border:"1px solid "+C.border,borderRadius:5,color:C.text,padding:"7px 8px",fontFamily:font,fontSize:11}}/><span style={{fontSize:10,color:C.textDim}}>{suffix||"%"}</span></div></div>; }
+
+  var statementRows=[
+    ["Revenue","revenue"],["Gross Profit","grossProfit"],["EBITDA","ebitda"],["Operating Income","operatingIncome"],["Net Income","netIncome"],["Free Cash Flow","freeCashFlow"]
+  ];
+  var ratioRows=company?.ratios?Object.entries(company.ratios):[];
+
+  return <div style={{display:"flex",flexDirection:"column",gap:12}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+      <div>
+        <div style={{fontSize:18,fontWeight:700}}>💼 Company Financial Analysis</div>
+        <div style={{fontSize:10,color:C.textDim,marginTop:3}}>Financial statements · Forecasting · DCF valuation · Sensitivity analysis</div>
+      </div>
+      <div style={{display:"flex",gap:6}}>
+        <input value={inputTicker} onChange={function(e){setInputTicker(e.target.value.toUpperCase())}} onKeyDown={function(e){if(e.key==="Enter")loadCompany(inputTicker)}} placeholder="Ticker" style={{width:100,background:C.card,border:"1px solid "+C.border,borderRadius:6,color:C.text,padding:"7px 9px",fontFamily:font,fontSize:12,textTransform:"uppercase"}}/>
+        <button onClick={function(){loadCompany(inputTicker)}} disabled={loading} style={{background:"linear-gradient(135deg,"+C.cyan+","+C.blue+")",border:"none",borderRadius:6,color:C.bg,padding:"7px 13px",fontSize:11,fontWeight:700,cursor:loading?"wait":"pointer"}}>{loading?"Loading...":"Analyze"}</button>
+      </div>
+    </div>
+    {error&&<div style={{background:C.red+"15",border:"1px solid "+C.red+"55",borderRadius:7,padding:"9px 12px",fontSize:11,color:C.red}}>⚠ {error}</div>}
+    {loading&&!company&&<Card><div style={{display:"flex",alignItems:"center",gap:8,color:C.textMid,fontSize:11}}><Spinner/> Fetching financial statements and market data for {ticker}...</div></Card>}
+    {company&&<>
+      <Card style={{padding:"12px 14px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <div><span style={{fontSize:18,fontWeight:700,color:C.cyan,fontFamily:font}}>{company.ticker||ticker}</span><span style={{fontSize:15,fontWeight:600,marginLeft:10}}>{company.name||""}</span><div style={{fontSize:10,color:C.textDim,marginTop:4}}>{company.sector||"—"} · {company.industry||"—"}</div></div>
+          <div style={{display:"flex",gap:6}}>{["Overview","Statements","Forecast","Valuation"].map(function(t){return <button key={t} onClick={function(){setSubTab(t)}} style={{background:subTab===t?C.blue+"25":"transparent",border:"1px solid "+(subTab===t?C.blue+"66":C.border),borderRadius:5,color:subTab===t?C.text:C.textMid,padding:"5px 9px",fontSize:10,cursor:"pointer"}}>{t}</button>})}</div>
+        </div>
+      </Card>
+
+      {subTab==="Overview"&&<>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10}}>
+          <Metric label="PRICE" value={company.currentPrice?"$"+Number(company.currentPrice).toFixed(2):"—"}/><Metric label="MARKET CAP" value={fmtMoney(company.marketCap)}/><Metric label="ENTERPRISE VALUE" value={fmtMoney(company.enterpriseValue)}/><Metric label="P / E" value={company.pe!=null?Number(company.pe).toFixed(1)+"x":"—"}/><Metric label="EV / EBITDA" value={company.evEbitda!=null?Number(company.evEbitda).toFixed(1)+"x":"—"}/><Metric label="DIVIDEND YIELD" value={company.dividendYield!=null?fmtPct(company.dividendYield):"—"}/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:12}}>
+          <Card><div style={{fontSize:13,fontWeight:700,marginBottom:10}}>📈 Financial Performance</div><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}><thead><tr><th style={{textAlign:"left",padding:6,color:C.textDim}}>Metric</th>{hist.map(function(h){return <th key={h.year} style={{textAlign:"right",padding:6,color:C.textDim}}>{h.year}</th>})}</tr></thead><tbody>{statementRows.map(function(r){return <tr key={r[1]}><td style={{padding:6,borderTop:"1px solid "+C.border,color:C.textMid}}>{r[0]}</td>{hist.map(function(h){return <td key={h.year} style={{padding:6,borderTop:"1px solid "+C.border,textAlign:"right",fontFamily:font}}>{fmtMoney(h[r[1]])}</td>})}</tr>})}<tr><td style={{padding:6,borderTop:"1px solid "+C.border,color:C.textMid}}>EPS</td>{hist.map(function(h){return <td key={h.year} style={{padding:6,borderTop:"1px solid "+C.border,textAlign:"right",fontFamily:font}}>{h.eps!=null?"$"+Number(h.eps).toFixed(2):"—"}</td>})}</tr></tbody></table></div></Card>
+          <Card><div style={{fontSize:13,fontWeight:700,marginBottom:10}}>🧾 Key Ratios</div>{ratioRows.length?ratioRows.map(function(r){var label=r[0].replace(/([A-Z])/g," $1").replace(/^./,function(s){return s.toUpperCase()});var v=r[1];var isMultiple=["currentRatio","debtToEquity","interestCoverage"].includes(r[0]);return <Row key={r[0]} label={label} val={v==null?"—":isMultiple?Number(v).toFixed(2)+"x":fmtPct(v)} /> }):<div style={{fontSize:10,color:C.textDim}}>Ratio data unavailable</div>}<div style={{marginTop:12,paddingTop:10,borderTop:"1px solid "+C.border}}><Row label="Cash" val={fmtMoney(company.cash)}/><Row label="Debt" val={fmtMoney(company.debt)}/><Row label="Net Debt" val={fmtMoney((Number(company.debt)||0)-(Number(company.cash)||0))}/></div></Card>
+        </div>
+      </>}
+
+      {subTab==="Statements"&&<Card><div style={{fontSize:14,fontWeight:700,marginBottom:10}}>📚 Historical Financial Statements</div><div style={{fontSize:10,color:C.textDim,marginBottom:10}}>Latest completed fiscal years returned from public filings/company disclosures.</div><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr><th style={{textAlign:"left",padding:7,color:C.textDim}}>Metric</th>{hist.map(function(h){return <th key={h.year} style={{textAlign:"right",padding:7,color:C.textDim}}>{h.year}</th>})}</tr></thead><tbody>{statementRows.concat([["EPS","eps"]]).map(function(r){return <tr key={r[1]}><td style={{padding:7,borderTop:"1px solid "+C.border,color:C.textMid,fontWeight:600}}>{r[0]}</td>{hist.map(function(h){var v=h[r[1]];return <td key={h.year} style={{padding:7,borderTop:"1px solid "+C.border,textAlign:"right",fontFamily:font}}>{r[1]==="eps"?(v!=null?"$"+Number(v).toFixed(2):"—"):fmtMoney(v)}</td>})}</tr>})}</tbody></table></div></Card>}
+
+      {subTab==="Forecast"&&<>
+        <div style={{display:"grid",gridTemplateColumns:"340px 1fr",gap:12}}>
+          <Card><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><div style={{fontSize:13,fontWeight:700}}>⚙ Forecast Assumptions</div><div style={{display:"flex",gap:4}}>{["Bear","Base","Bull"].map(function(s){return <button key={s} onClick={function(){setScenario(s)}} style={{background:scenario===s?(s==="Bear"?C.red:s==="Bull"?C.green:C.blue)+"22":"transparent",border:"1px solid "+(scenario===s?(s==="Bear"?C.red:s==="Bull"?C.green:C.blue)+"55":C.border),borderRadius:4,color:scenario===s?(s==="Bear"?C.red:s==="Bull"?C.green:C.blue):C.textDim,padding:"4px 7px",fontSize:9,cursor:"pointer"}}>{s}</button>})}</div></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><NumInput label="Revenue Growth" k="revGrowth"/><NumInput label="EBITDA Margin" k="ebitdaMargin"/><NumInput label="Tax Rate" k="taxRate"/><NumInput label="D&A / Revenue" k="daPct"/><NumInput label="CapEx / Revenue" k="capexPct"/><NumInput label="NWC / ΔRevenue" k="nwcPct"/><NumInput label="WACC" k="wacc"/><NumInput label="Terminal Growth" k="terminalGrowth"/></div><div style={{fontSize:9,color:C.textDim,lineHeight:1.5,marginTop:12}}>Forecasts are assumption-driven and intended for analytical practice, not investment advice.</div></Card>
+          <Card><div style={{fontSize:13,fontWeight:700,marginBottom:10}}>📊 5-Year Operating Forecast · {scenario} Case</div><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}><thead><tr>{["Year","Revenue","EBITDA","EBIT","Taxes","NOPAT","D&A","CapEx","ΔNWC","UFCF"].map(function(h){return <th key={h} style={{textAlign:h==="Year"?"left":"right",padding:6,color:C.textDim}}>{h}</th>})}</tr></thead><tbody>{forecast.map(function(f){return <tr key={f.year}>{[f.year,f.revenue,f.ebitda,f.ebit,f.taxes,f.nopat,f.da,f.capex,f.deltaNwc,f.ufcf].map(function(v,i){return <td key={i} style={{padding:6,borderTop:"1px solid "+C.border,textAlign:i===0?"left":"right",fontFamily:font,color:i===9?C.green:C.text}}>{i===0?v:fmtMoney(v)}</td>})}</tr>})}</tbody></table></div></Card>
+        </div>
+      </>}
+
+      {subTab==="Valuation"&&<>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10}}><Metric label="PV OF 5Y FCF" value={fmtMoney(pvFcf)}/><Metric label="PV TERMINAL VALUE" value={fmtMoney(pvTerminal)}/><Metric label="ENTERPRISE VALUE" value={fmtMoney(enterpriseValue)}/><Metric label="EQUITY VALUE" value={fmtMoney(equityValue)}/><Metric label="IMPLIED SHARE PRICE" value={impliedPrice?"$"+impliedPrice.toFixed(2):"—"} color={upside!=null?(upside>=0?C.green:C.red):C.text} sub={upside!=null?((upside>=0?"+":"")+upside.toFixed(1)+"% vs current"):""}/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <Card><div style={{fontSize:13,fontWeight:700,marginBottom:10}}>💰 DCF Bridge</div><Row label="PV of Forecast UFCF" val={fmtMoney(pvFcf)}/><Row label="Terminal Value" val={fmtMoney(terminalValue)}/><Row label="PV of Terminal Value" val={fmtMoney(pvTerminal)}/><div style={{borderTop:"1px solid "+C.border,margin:"8px 0"}}/><Row label="Enterprise Value" val={fmtMoney(enterpriseValue)}/><Row label="Less: Debt" val={fmtMoney(company.debt)}/><Row label="Add: Cash" val={fmtMoney(company.cash)}/><Row label="Equity Value" val={fmtMoney(equityValue)}/><Row label="Diluted Shares" val={company.shares?Number(company.shares).toLocaleString():"—"}/><div style={{borderTop:"1px solid "+C.border,margin:"8px 0"}}/><Row label="Current Price" val={company.currentPrice?"$"+Number(company.currentPrice).toFixed(2):"—"}/><Row label="DCF Implied Price" val={impliedPrice?"$"+impliedPrice.toFixed(2):"—"}/><Row label="Upside / Downside" val={upside!=null?(upside>=0?"+":"")+upside.toFixed(1)+"%":"—"} color={upside!=null?(upside>=0?C.green:C.red):C.text}/></Card>
+          <Card><div style={{fontSize:13,fontWeight:700,marginBottom:4}}>🧮 WACC × Terminal Growth Sensitivity</div><div style={{fontSize:9,color:C.textDim,marginBottom:10}}>Implied share price under alternate discount-rate and terminal-growth assumptions.</div><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}><thead><tr><th style={{padding:6,color:C.textDim}}>WACC \ g</th>{[-0.5,0,0.5].map(function(x){var gg=a.terminalGrowth+x;return <th key={x} style={{padding:6,color:C.textDim,textAlign:"right"}}>{gg.toFixed(1)}%</th>})}</tr></thead><tbody>{[-1,0,1].map(function(wx){var ww=a.wacc+wx;return <tr key={wx}><td style={{padding:7,borderTop:"1px solid "+C.border,fontFamily:font}}>{ww.toFixed(1)}%</td>{[-0.5,0,0.5].map(function(gx){var W=ww/100,G=(a.terminalGrowth+gx)/100,pt=null;if(forecast.length&&W>G&&company.shares){var pv=0;forecast.forEach(function(f,i){pv+=f.ufcf/Math.pow(1+W,i+1)});var tv=forecast[4].ufcf*(1+G)/(W-G);var ev=pv+tv/Math.pow(1+W,5);var eq=ev-(Number(company.debt)||0)+(Number(company.cash)||0);pt=eq/Number(company.shares);}var isBase=wx===0&&gx===0;return <td key={gx} style={{padding:7,borderTop:"1px solid "+C.border,textAlign:"right",fontFamily:font,background:isBase?C.blue+"18":"transparent",color:isBase?C.cyan:C.text}}>{pt?"$"+pt.toFixed(2):"—"}</td>})}</tr>})}</tbody></table></div></Card>
+        </div>
+      </>}
+    </>}
+  </div>;
+}
+
 function PortfolioTabView({ d }) {
   var _portfolios = useState([{id:"claude",name:"The Claude Portfolio",holdings:PORTFOLIO_HOLDINGS,inception:"2026-04-01",cash:3000}]);
   var portfolios = _portfolios[0], setPortfolios = _portfolios[1];
