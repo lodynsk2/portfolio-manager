@@ -12,6 +12,7 @@ var CLAUDE_URL = "https://portfolio-proxy-ja56.vercel.app/api/claude";
 var PORTFOLIO_URL = "https://portfolio-proxy-ja56.vercel.app/api/portfolio";
 var SEC_FINANCIALS_URL = "https://portfolio-proxy-ja56.vercel.app/api/sec-financials";
 var EARNINGS_URL = "https://portfolio-proxy-ja56.vercel.app/api/earnings";
+var MACRO_CALENDAR_URL = "https://portfolio-proxy-ja56.vercel.app/api/macro-calendar";
 
 /* ──────────────────────────────────────────────────────────────────── */
 
@@ -1145,7 +1146,7 @@ try {
       <div style={{ flex:1, overflow:"auto", padding:"13px 16px" }}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
           <div style={{ display:"flex", gap:18 }}>
-            {["Analysis","Portfolio","Financials","Active Trader","Intelligence"].map(t => (
+            {["Analysis","Portfolio","Financials","US Macro Calendar","Intelligence"].map(t => (
               <span key={t} onClick={function(){setTopTab(t)}} style={{ fontSize:13, color:t===topTab?C.text:C.textMid, fontWeight:t===topTab?600:400, cursor:"pointer", borderBottom:t===topTab?"2px solid " + C.blue:"none", paddingBottom:3 }}>{t}</span>
             ))}
           </div>
@@ -1172,7 +1173,8 @@ try {
         )}
         {topTab==="Portfolio" && <PortfolioTabView d={d} />}
         {topTab==="Financials" && <FinancialsTabView d={d} />}
-        {topTab!=="Analysis" && topTab!=="Portfolio" && topTab!=="Financials" && (
+        {topTab==="US Macro Calendar" && <USMacroCalendarTab />}
+        {topTab!=="Analysis" && topTab!=="Portfolio" && topTab!=="Financials" && topTab!=="US Macro Calendar" && (
           <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:400 }}>
             <div style={{ fontSize:28, opacity:0.2, marginBottom:8 }}>🚧</div>
             <div style={{ color:C.textDim, fontSize:14 }}>{topTab} — coming soon</div>
@@ -4305,6 +4307,213 @@ function ExecutionStage({ d }) {
 }
 
 /* ─── PORTFOLIO TAB VIEW ─────────────────────────────────────── */
+
+
+/* ─── US MACRO CALENDAR TAB ─────────────────────────────────────── */
+function TradingViewEconomicCalendar() {
+  var containerId = "tv-economic-calendar";
+  useEffect(function(){
+    var container=document.getElementById(containerId);
+    if(!container) return;
+    container.innerHTML="";
+    var script=document.createElement("script");
+    script.src="https://s3.tradingview.com/external-embedding/embed-widget-events.js";
+    script.type="text/javascript";
+    script.async=true;
+    script.innerHTML=JSON.stringify({
+      colorTheme:"dark",isTransparent:true,locale:"en",countryFilter:"us",
+      importanceFilter:"-1,0,1",width:"100%",height:620
+    });
+    container.appendChild(script);
+    return function(){ if(container) container.innerHTML=""; };
+  },[]);
+  return <div id={containerId} style={{width:"100%",minHeight:620}}/>;
+}
+
+function USMacroCalendarTab() {
+  var today=new Date();
+  var _view=useState(new Date(today.getFullYear(),today.getMonth(),1));
+  var view=_view[0],setView=_view[1];
+  var _events=useState([]); var events=_events[0],setEvents=_events[1];
+  var _loading=useState(true); var loading=_loading[0],setLoading=_loading[1];
+  var _error=useState(""); var error=_error[0],setError=_error[1];
+  var _selected=useState(null); var selected=_selected[0],setSelected=_selected[1];
+  var _filter=useState("All"); var filter=_filter[0],setFilter=_filter[1];
+  var _warnings=useState([]); var warnings=_warnings[0],setWarnings=_warnings[1];
+
+  var year=view.getFullYear(), month=view.getMonth()+1;
+  var monthName=view.toLocaleDateString("en-US",{month:"long",year:"numeric"});
+
+  useEffect(function(){
+    var cancelled=false;
+    setLoading(true); setError(""); setSelected(null);
+    fetch(MACRO_CALENDAR_URL+"?year="+year+"&month="+month)
+      .then(function(r){return r.json().catch(function(){return {};}).then(function(j){if(!r.ok) throw new Error(j.error||("Macro calendar HTTP "+r.status)); return j;});})
+      .then(function(j){if(cancelled)return;setEvents(Array.isArray(j.events)?j.events:[]);setWarnings(Array.isArray(j.warnings)?j.warnings:[]);setLoading(false);})
+      .catch(function(e){if(cancelled)return;setError(e.message||"Macro calendar unavailable");setEvents([]);setLoading(false);});
+    return function(){cancelled=true;};
+  },[year,month]);
+
+  function moveMonth(delta){setView(new Date(year,view.getMonth()+delta,1));}
+  function goToday(){setView(new Date(today.getFullYear(),today.getMonth(),1));}
+  function dateKey(y,m,d){return y+"-"+String(m).padStart(2,"0")+"-"+String(d).padStart(2,"0");}
+  function categoryColor(cat){
+    if(cat==="Inflation")return C.orange;
+    if(cat==="Labor")return C.cyan;
+    if(cat==="Growth")return C.purple;
+    if(cat==="Fed")return C.green;
+    if(cat==="Survey")return C.yellow;
+    return C.blueLight;
+  }
+  function categoryIcon(cat){
+    if(cat==="Inflation")return "◉";
+    if(cat==="Labor")return "●";
+    if(cat==="Growth")return "◆";
+    if(cat==="Fed")return "▣";
+    if(cat==="Survey")return "◇";
+    return "•";
+  }
+  function impactColor(impact){return impact==="High"?C.red:impact==="Medium"?C.orange:C.blueLight;}
+  function isTodayDate(y,m,d){return today.getFullYear()===y&&today.getMonth()+1===m&&today.getDate()===d;}
+
+  var categories=["All","Inflation","Labor","Growth","Fed","Survey"];
+  var filtered=events.filter(function(e){return filter==="All"||e.category===filter;});
+  var byDate={};
+  filtered.forEach(function(e){if(!byDate[e.date])byDate[e.date]=[];byDate[e.date].push(e);});
+
+  var first=new Date(year,month-1,1);
+  var daysInMonth=new Date(year,month,0).getDate();
+  var prevMonthDays=new Date(year,month-1,0).getDate();
+  var mondayIndex=(first.getDay()+6)%7;
+  var cells=[];
+  for(var i=0;i<42;i++){
+    var raw=i-mondayIndex+1;
+    var cellYear=year,cellMonth=month,day=raw,inMonth=true;
+    if(raw<1){
+      var pm=new Date(year,month-2,1);cellYear=pm.getFullYear();cellMonth=pm.getMonth()+1;day=prevMonthDays+raw;inMonth=false;
+    }else if(raw>daysInMonth){
+      var nm=new Date(year,month,1);cellYear=nm.getFullYear();cellMonth=nm.getMonth()+1;day=raw-daysInMonth;inMonth=false;
+    }
+    cells.push({year:cellYear,month:cellMonth,day:day,inMonth:inMonth,key:dateKey(cellYear,cellMonth,day)});
+  }
+
+  var highCount=events.filter(function(e){return e.impact==="High";}).length;
+  var nextHigh=events.filter(function(e){return e.impact==="High"&&Date.parse(e.date+"T23:59:59")>=Date.now();})[0]||null;
+
+  if(error){
+    return <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div><div style={{fontSize:20,fontWeight:800}}>🇺🇸 US Macro Calendar</div><div style={{fontSize:10,color:C.textDim,marginTop:3}}>High-impact U.S. economic releases · Eastern Time</div></div>
+        <Badge label="TRADINGVIEW FALLBACK" color={C.orange}/>
+      </div>
+      <Card>
+        <div style={{fontSize:11,color:C.orange,marginBottom:10}}>Monthly grid unavailable: {error}. Showing TradingView's live U.S. economic calendar instead.</div>
+        <TradingViewEconomicCalendar/>
+      </Card>
+    </div>;
+  }
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:12}}>
+      <div>
+        <div style={{display:"flex",alignItems:"center",gap:9}}>
+          <div style={{fontSize:20,fontWeight:800}}>🇺🇸 US Macro Calendar</div>
+          <Badge label="OFFICIAL SCHEDULES" color={C.green}/>
+        </div>
+        <div style={{fontSize:10,color:C.textDim,marginTop:4}}>FRED release calendar + Federal Reserve FOMC schedule · Times shown in Eastern Time</div>
+      </div>
+      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+        <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:7,padding:"7px 10px",minWidth:92}}>
+          <div style={{fontSize:8,color:C.textDim,letterSpacing:1,textTransform:"uppercase"}}>Events</div>
+          <div style={{fontFamily:font,fontSize:15,fontWeight:700,marginTop:2}}>{events.length}</div>
+        </div>
+        <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:7,padding:"7px 10px",minWidth:92}}>
+          <div style={{fontSize:8,color:C.textDim,letterSpacing:1,textTransform:"uppercase"}}>High Impact</div>
+          <div style={{fontFamily:font,fontSize:15,fontWeight:700,color:C.red,marginTop:2}}>{highCount}</div>
+        </div>
+        {nextHigh&&<div style={{background:C.card,border:"1px solid "+C.border,borderRadius:7,padding:"7px 10px",minWidth:155}}>
+          <div style={{fontSize:8,color:C.textDim,letterSpacing:1,textTransform:"uppercase"}}>Next High Impact</div>
+          <div style={{fontSize:10,fontWeight:700,color:C.text,marginTop:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nextHigh.title}</div>
+        </div>}
+      </div>
+    </div>
+
+    <Card>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <div style={{fontSize:15,fontWeight:800}}>{monthName}</div>
+          {loading&&<span style={{fontSize:9,color:C.cyan,fontFamily:font}}>Loading official dates…</span>}
+        </div>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          <button onClick={function(){moveMonth(-1)}} style={{background:C.cardAlt,border:"1px solid "+C.border,borderRadius:7,color:C.text,padding:"6px 9px",cursor:"pointer"}}>‹</button>
+          <button onClick={goToday} style={{background:C.cardAlt,border:"1px solid "+C.border,borderRadius:7,color:C.text,padding:"6px 10px",fontSize:10,cursor:"pointer"}}>Today</button>
+          <button onClick={function(){moveMonth(1)}} style={{background:C.cardAlt,border:"1px solid "+C.border,borderRadius:7,color:C.text,padding:"6px 9px",cursor:"pointer"}}>›</button>
+          <div style={{background:C.cardAlt,border:"1px solid "+C.border,borderRadius:7,padding:"6px 10px",fontSize:10,color:C.textMid}}>▣ Monthly</div>
+          <select value={filter} onChange={function(e){setFilter(e.target.value)}} style={{background:C.cardAlt,border:"1px solid "+C.border,borderRadius:7,color:C.text,padding:"6px 10px",fontSize:10,outline:"none"}}>
+            {categories.map(function(c){return <option key={c} value={c}>{c==="All"?"Type: All":c}</option>;})}
+          </select>
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",border:"1px solid "+C.border,borderRadius:10,overflow:"hidden",position:"relative"}}>
+        {["Mon","Tues","Wed","Thurs","Fri","Sat","Sun"].map(function(d){return <div key={d} style={{padding:"8px 10px",fontSize:9,color:C.textDim,textAlign:"center",borderBottom:"1px solid "+C.border,background:C.cardAlt}}>{d}</div>;})}
+        {cells.map(function(cell,idx){
+          var dayEvents=byDate[cell.key]||[];
+          var visible=dayEvents.slice(0,3);
+          return <div key={cell.key+"-"+idx} style={{minHeight:112,padding:"8px 7px",borderRight:((idx+1)%7!==0?"1px solid "+C.border:"none"),borderBottom:(idx<35?"1px solid "+C.border:"none"),background:cell.inMonth?C.panel:C.bg,opacity:cell.inMonth?1:0.38,position:"relative"}}>
+            <div style={{display:"flex",justifyContent:"flex-end",marginBottom:6}}>
+              <div style={{width:24,height:24,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,background:isTodayDate(cell.year,cell.month,cell.day)?C.red:"transparent",color:isTodayDate(cell.year,cell.month,cell.day)?"#fff":C.text}}>{cell.day}</div>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:4}}>
+              {visible.map(function(ev){var col=categoryColor(ev.category);return <div key={ev.id} onClick={function(){setSelected(ev)}} title={ev.fullTitle} style={{display:"flex",alignItems:"center",gap:5,borderLeft:"3px solid "+col,background:col+"10",borderRadius:4,padding:"4px 5px",cursor:"pointer",minWidth:0}}>
+                <span style={{color:col,fontSize:9}}>{categoryIcon(ev.category)}</span>
+                <span style={{fontSize:9,color:C.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{ev.title}</span>
+                <span style={{fontSize:8,color:C.textDim,whiteSpace:"nowrap"}}>{ev.time}</span>
+              </div>;})}
+              {dayEvents.length>3&&<div style={{fontSize:8,color:C.textDim,paddingLeft:6}}>+{dayEvents.length-3} more</div>}
+            </div>
+          </div>;
+        })}
+
+        {selected&&<div style={{position:"absolute",zIndex:30,left:"50%",top:68,transform:"translateX(-50%)",width:420,maxWidth:"90%",background:"#20212d",border:"1px solid #3a3c4f",borderRadius:14,boxShadow:"0 18px 50px #000a",overflow:"hidden"}}>
+          <div style={{padding:"18px 18px 14px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
+              <div>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                  <span style={{width:28,height:28,borderRadius:"50%",background:categoryColor(selected.category)+"22",color:categoryColor(selected.category),display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800}}>{categoryIcon(selected.category)}</span>
+                  <Badge label={selected.category.toUpperCase()} color={categoryColor(selected.category)}/>
+                  <Badge label={selected.impact.toUpperCase()+" IMPACT"} color={impactColor(selected.impact)}/>
+                </div>
+                <div style={{fontSize:17,fontWeight:800}}>{selected.title}</div>
+                <div style={{fontSize:10,color:C.textDim,marginTop:3}}>{selected.fullTitle}</div>
+              </div>
+              <button onClick={function(){setSelected(null)}} style={{background:"transparent",border:"none",color:C.textDim,fontSize:16,cursor:"pointer"}}>✕</button>
+            </div>
+            <div style={{height:1,background:"#3a3c4f",margin:"16px 0"}}/>
+            <div style={{display:"grid",gridTemplateColumns:"120px 1fr",rowGap:10,fontSize:11}}>
+              <span style={{color:C.textDim}}>Release</span><span style={{fontFamily:font}}>{new Date(selected.date+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})} · {selected.time} ET</span>
+              <span style={{color:C.textDim}}>Source</span><span>{selected.source}</span>
+              <span style={{color:C.textDim}}>Schedule basis</span><span>{selected.sourceType}</span>
+            </div>
+          </div>
+          <div style={{padding:"10px 18px",background:"#252632",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:9,color:C.green}}>● Scheduled</span>
+            <div style={{display:"flex",gap:7}}>
+              {selected.fredUrl&&<a href={selected.fredUrl} target="_blank" rel="noreferrer" style={{textDecoration:"none",fontSize:9,color:C.textMid,border:"1px solid #3a3c4f",padding:"5px 8px",borderRadius:6}}>FRED</a>}
+              {selected.sourceUrl&&<a href={selected.sourceUrl} target="_blank" rel="noreferrer" style={{textDecoration:"none",fontSize:9,color:C.text,border:"1px solid #3a3c4f",padding:"5px 8px",borderRadius:6}}>Official source ↗</a>}
+            </div>
+          </div>
+        </div>}
+      </div>
+
+      {warnings.length>0&&<div style={{marginTop:8,fontSize:8,color:C.textDim}}>Some release feeds were unavailable: {warnings.slice(0,2).join(" · ")}{warnings.length>2?" · +"+(warnings.length-2)+" more":""}</div>}
+      <div style={{display:"flex",gap:12,alignItems:"center",marginTop:9,fontSize:9,color:C.textDim}}>
+        {["Inflation","Labor","Growth","Fed","Survey"].map(function(c){return <span key={c} style={{display:"flex",alignItems:"center",gap:4}}><span style={{width:7,height:7,borderRadius:"50%",background:categoryColor(c)}}/>{c}</span>;})}
+        <span style={{marginLeft:"auto"}}>Curated high-value U.S. releases only — company earnings excluded</span>
+      </div>
+    </Card>
+  </div>;
+}
 
 /* ─── FINANCIALS TAB ─────────────────────────────────────────────── */
 function FinancialsTabView({ d }) {
