@@ -1146,7 +1146,7 @@ try {
       <div style={{ flex:1, overflow:"auto", padding:"13px 16px" }}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
           <div style={{ display:"flex", gap:18 }}>
-            {["Analysis","Portfolio","Financials","US Macro Calendar","Intelligence"].map(t => (
+            {["Analysis","Portfolio","Financials","US Macro Calendar","Comparables"].map(t => (
               <span key={t} onClick={function(){setTopTab(t)}} style={{ fontSize:13, color:t===topTab?C.text:C.textMid, fontWeight:t===topTab?600:400, cursor:"pointer", borderBottom:t===topTab?"2px solid " + C.blue:"none", paddingBottom:3 }}>{t}</span>
             ))}
           </div>
@@ -1174,7 +1174,8 @@ try {
         {topTab==="Portfolio" && <PortfolioTabView d={d} />}
         {topTab==="Financials" && <FinancialsTabView d={d} />}
         {topTab==="US Macro Calendar" && <USMacroCalendarTab />}
-        {topTab!=="Analysis" && topTab!=="Portfolio" && topTab!=="Financials" && topTab!=="US Macro Calendar" && (
+        {topTab==="Comparables" && <ComparablesTab />}
+        {topTab!=="Analysis" && topTab!=="Portfolio" && topTab!=="Financials" && topTab!=="US Macro Calendar" && topTab!=="Comparables" && (
           <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:400 }}>
             <div style={{ fontSize:28, opacity:0.2, marginBottom:8 }}>🚧</div>
             <div style={{ color:C.textDim, fontSize:14 }}>{topTab} — coming soon</div>
@@ -4555,6 +4556,249 @@ function USMacroCalendarTab() {
         <span style={{marginLeft:"auto"}}>Curated high-value U.S. releases only — company earnings excluded</span>
       </div>
     </Card>
+  </div>;
+}
+
+
+/* ─── COMPARABLE COMPANY ANALYSIS ───────────────────────────────── */
+function ComparablesTab() {
+  const PEER_PRESETS = {
+    AAPL:["MSFT","GOOGL","AMZN","META","NVDA"],
+    MSFT:["AAPL","GOOGL","AMZN","ORCL","CRM"],
+    NVDA:["AMD","AVGO","INTC","QCOM","MU"],
+    AMD:["NVDA","AVGO","INTC","QCOM","MU"],
+    GOOGL:["META","AMZN","MSFT","NFLX","AAPL"],
+    GOOG:["META","AMZN","MSFT","NFLX","AAPL"],
+    META:["GOOGL","AMZN","NFLX","MSFT","AAPL"],
+    AMZN:["WMT","COST","GOOGL","MSFT","META"],
+    TSLA:["GM","F","RIVN","TM","HMC"],
+    HOOD:["SCHW","IBKR","COIN","GS","MS"],
+    JPM:["BAC","WFC","C","GS","MS"],
+    BAC:["JPM","WFC","C","GS","MS"],
+    GS:["MS","JPM","BAC","C","SCHW"],
+    XOM:["CVX","COP","EOG","OXY","SLB"],
+    CVX:["XOM","COP","EOG","OXY","SLB"],
+    WMT:["COST","TGT","AMZN","KR","DG"],
+    COST:["WMT","TGT","AMZN","KR","BJ"],
+    HD:["LOW","WMT","TGT","COST","TSCO"],
+    LOW:["HD","WMT","TGT","COST","TSCO"],
+    CRM:["ORCL","MSFT","NOW","ADBE","SAP"],
+    ORCL:["MSFT","CRM","SAP","IBM","ADBE"],
+    NFLX:["DIS","WBD","PARA","GOOGL","META"]
+  };
+
+  const [ticker,setTicker]=useState("MSFT");
+  const [inputTicker,setInputTicker]=useState("MSFT");
+  const [peerInput,setPeerInput]=useState((PEER_PRESETS.MSFT||[]).join(", "));
+  const [rows,setRows]=useState([]);
+  const [loading,setLoading]=useState(false);
+  const [error,setError]=useState("");
+  const [loadedAsOf,setLoadedAsOf]=useState(null);
+
+  function fmtMoney(v){
+    if(v==null||!isFinite(Number(v)))return "—";
+    var n=Number(v),a=Math.abs(n),sign=n<0?"-":"";
+    if(a>=1e12)return sign+"$"+(a/1e12).toFixed(2)+"T";
+    if(a>=1e9)return sign+"$"+(a/1e9).toFixed(2)+"B";
+    if(a>=1e6)return sign+"$"+(a/1e6).toFixed(1)+"M";
+    return sign+"$"+a.toLocaleString(undefined,{maximumFractionDigits:0});
+  }
+  function fmtPct(v){return v==null||!isFinite(Number(v))?"—":Number(v).toFixed(1)+"%";}
+  function fmtMult(v){return v==null||!isFinite(Number(v))||Number(v)<=0?"—":Number(v).toFixed(1)+"x";}
+  function median(vals){
+    var a=(vals||[]).filter(function(v){return v!=null&&isFinite(Number(v));}).map(Number).sort(function(x,y){return x-y;});
+    if(!a.length)return null; var m=Math.floor(a.length/2); return a.length%2?a[m]:(a[m-1]+a[m])/2;
+  }
+  function pctDiff(a,b){return a!=null&&b!=null&&Number(b)!==0?(Number(a)/Number(b)-1)*100:null;}
+  function parsePeers(s,target){
+    var clean=String(s||"").toUpperCase().split(/[,\s]+/).map(function(x){return x.trim();}).filter(Boolean);
+    var seen={}; var out=[];
+    clean.forEach(function(x){if(x!==target&&!seen[x]){seen[x]=true;out.push(x);}});
+    return out.slice(0,6);
+  }
+  function presetsFor(t){return PEER_PRESETS[t]||[];}
+
+  async function fetchSec(t){
+    var r=await fetch(SEC_FINANCIALS_URL+"?ticker="+encodeURIComponent(t));
+    var j=await r.json().catch(function(){return {};});
+    if(!r.ok)throw new Error(j.error||("SEC HTTP "+r.status));
+    return j;
+  }
+
+  function buildRow(t,sec,q,isTarget){
+    var hist=(sec&&sec.historical)||[];
+    hist=hist.slice().sort(function(a,b){return String(a.periodEnd||a.year).localeCompare(String(b.periodEnd||b.year));});
+    var latest=hist.length?hist[hist.length-1]:{};
+    var prior=hist.length>1?hist[hist.length-2]:null;
+    var ratios=(sec&&sec.ratios)||{};
+    var price=q&&Number(q.price);
+    if(!isFinite(price)||price<=0)price=null;
+    var marketCap=q&&Number(q.marketCap);
+    if(!isFinite(marketCap)||marketCap<=0){
+      var shares=Number(sec&&sec.shares);
+      if(price&&isFinite(shares)&&shares>0)marketCap=price*shares; else marketCap=null;
+    }
+    var cash=sec&&sec.cash!=null?Number(sec.cash):null;
+    var debt=sec&&sec.debt!=null?Number(sec.debt):null;
+    var ev=marketCap!=null&&cash!=null&&debt!=null?marketCap+debt-cash:null;
+    var ebitda=latest&&latest.ebitda!=null?Number(latest.ebitda):null;
+    var trailingPE=q&&Number(q.trailingPE!=null?q.trailingPE:q.pe);
+    if(!isFinite(trailingPE)||trailingPE<=0)trailingPE=null;
+    var revGrowth=prior&&prior.revenue&&latest&&latest.revenue!=null?(Number(latest.revenue)/Number(prior.revenue)-1)*100:null;
+    var grossMargin=ratios.grossMargin!=null?Number(ratios.grossMargin):(latest.revenue&&latest.grossProfit!=null?Number(latest.grossProfit)/Number(latest.revenue)*100:null);
+    var operatingMargin=ratios.operatingMargin!=null?Number(ratios.operatingMargin):(latest.revenue&&latest.operatingIncome!=null?Number(latest.operatingIncome)/Number(latest.revenue)*100:null);
+    var netMargin=ratios.netMargin!=null?Number(ratios.netMargin):(latest.revenue&&latest.netIncome!=null?Number(latest.netIncome)/Number(latest.revenue)*100:null);
+    var evEbitda=ev!=null&&ebitda!=null&&ebitda>0?ev/ebitda:null;
+    return {
+      ticker:t,name:(sec&&sec.name)||t,industry:(sec&&sec.industry)||"",isTarget:isTarget,
+      price:price,marketCap:marketCap,revenueGrowth:revGrowth,grossMargin:grossMargin,operatingMargin:operatingMargin,netMargin:netMargin,
+      roe:ratios.roe!=null?Number(ratios.roe):null,roic:ratios.roic!=null?Number(ratios.roic):null,pe:trailingPE,evEbitda:evEbitda,
+      freeCashFlow:latest&&latest.freeCashFlow!=null?Number(latest.freeCashFlow):null,debtToEquity:ratios.debtToEquity!=null?Number(ratios.debtToEquity):null,
+      latestFY:latest&&latest.periodLabel||null,verifiedAsOf:sec&&sec.verifiedAsOf||null
+    };
+  }
+
+  async function analyze(raw){
+    var t=String(raw||inputTicker||"").trim().toUpperCase();
+    if(!t)return;
+    var peers=parsePeers(peerInput,t);
+    if(!peers.length){peers=presetsFor(t);setPeerInput(peers.join(", "));}
+    var symbols=[t].concat(peers).slice(0,7);
+    setTicker(t);setInputTicker(t);setLoading(true);setError("");setRows([]);
+    try{
+      var quotePromise=fetch(PORTFOLIO_URL+"?tickers="+encodeURIComponent(symbols.join(","))).then(function(r){return r.json();}).catch(function(){return {};});
+      var secResults=await Promise.all(symbols.map(function(sym,i){return new Promise(function(resolve){setTimeout(resolve,i*120);}).then(function(){return fetchSec(sym).then(function(j){return {ticker:sym,data:j};}).catch(function(e){return {ticker:sym,error:e.message};});});}));
+      var qj=await quotePromise;
+      var holdings=(qj&&qj.holdings)||{};
+      var built=[]; var failures=[];
+      secResults.forEach(function(x){
+        if(x.error){failures.push(x.ticker+": "+x.error);return;}
+        built.push(buildRow(x.ticker,x.data,holdings[x.ticker]||null,x.ticker===t));
+      });
+      built.sort(function(a,b){return a.isTarget?-1:b.isTarget?1:0;});
+      if(!built.some(function(r){return r.isTarget;}))throw new Error("Target company data could not be loaded");
+      setRows(built);setLoadedAsOf(new Date());
+      if(failures.length)setError("Some peers were unavailable: "+failures.slice(0,2).join(" · ")+(failures.length>2?" · +"+(failures.length-2)+" more":""));
+    }catch(e){setError(e.message||"Comparable-company analysis failed");}
+    setLoading(false);
+  }
+
+  useEffect(function(){analyze("MSFT");},[]);
+
+  var target=rows.find(function(r){return r.isTarget;})||null;
+  var peers=rows.filter(function(r){return !r.isTarget;});
+  var peerMedians={
+    revenueGrowth:median(peers.map(function(r){return r.revenueGrowth;})),
+    grossMargin:median(peers.map(function(r){return r.grossMargin;})),
+    operatingMargin:median(peers.map(function(r){return r.operatingMargin;})),
+    netMargin:median(peers.map(function(r){return r.netMargin;})),
+    roe:median(peers.map(function(r){return r.roe;})),
+    roic:median(peers.map(function(r){return r.roic;})),
+    pe:median(peers.map(function(r){return r.pe;})),
+    evEbitda:median(peers.map(function(r){return r.evEbitda;})),
+    freeCashFlow:median(peers.map(function(r){return r.freeCashFlow;})),
+    debtToEquity:median(peers.map(function(r){return r.debtToEquity;})),
+    marketCap:median(peers.map(function(r){return r.marketCap;}))
+  };
+  var pePremium=target?pctDiff(target.pe,peerMedians.pe):null;
+  var evPremium=target?pctDiff(target.evEbitda,peerMedians.evEbitda):null;
+  var opDelta=target&&peerMedians.operatingMargin!=null&&target.operatingMargin!=null?target.operatingMargin-peerMedians.operatingMargin:null;
+  var growthDelta=target&&peerMedians.revenueGrowth!=null&&target.revenueGrowth!=null?target.revenueGrowth-peerMedians.revenueGrowth:null;
+  var valuationText=target?(pePremium==null&&evPremium==null?"Insufficient comparable valuation data":((pePremium!=null?"P/E "+(pePremium>=0?"premium ":"discount ")+Math.abs(pePremium).toFixed(1)+"%":"P/E unavailable")+(evPremium!=null?" · EV/EBITDA "+(evPremium>=0?"premium ":"discount ")+Math.abs(evPremium).toFixed(1)+"%":""))):"—";
+  var operatingText=target?((growthDelta!=null?(growthDelta>=0?"Growth above peers":"Growth below peers"):"Growth comparison unavailable")+(opDelta!=null?" · Operating margin "+(opDelta>=0?"+":"")+opDelta.toFixed(1)+" pts vs median":"")):"—";
+
+  var metricRows=[
+    {key:"marketCap",label:"Market Cap",format:fmtMoney,higher:true},
+    {key:"revenueGrowth",label:"Revenue Growth (YoY)",format:fmtPct,higher:true},
+    {key:"grossMargin",label:"Gross Margin",format:fmtPct,higher:true},
+    {key:"operatingMargin",label:"Operating Margin",format:fmtPct,higher:true},
+    {key:"netMargin",label:"Net Margin",format:fmtPct,higher:true},
+    {key:"roe",label:"ROE",format:fmtPct,higher:true},
+    {key:"roic",label:"ROIC",format:fmtPct,higher:true},
+    {key:"pe",label:"P/E (TTM)",format:fmtMult,higher:false},
+    {key:"evEbitda",label:"EV / EBITDA",format:fmtMult,higher:false},
+    {key:"freeCashFlow",label:"Free Cash Flow",format:fmtMoney,higher:true},
+    {key:"debtToEquity",label:"Debt / Equity",format:fmtMult,higher:false}
+  ];
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:14,marginBottom:12}}>
+      <div>
+        <div style={{display:"flex",alignItems:"center",gap:9}}>
+          <div style={{fontSize:20,fontWeight:800}}>🏢 Comparable Company Analysis</div>
+          <Badge label="SEC + LIVE QUOTES" color={C.green}/>
+        </div>
+        <div style={{fontSize:10,color:C.textDim,marginTop:4}}>Benchmark valuation, growth, profitability and cash flow against a selected peer set.</div>
+      </div>
+      <div style={{display:"flex",gap:7,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+        <input value={inputTicker} onChange={function(e){setInputTicker(e.target.value.toUpperCase())}} onKeyDown={function(e){if(e.key==="Enter")analyze(inputTicker)}} style={{width:92,background:C.card,border:"1px solid "+C.border,borderRadius:7,color:C.text,padding:"8px 10px",fontFamily:font,fontSize:11}} placeholder="Ticker"/>
+        <button onClick={function(){var p=presetsFor(String(inputTicker||"").toUpperCase());if(p.length)setPeerInput(p.join(", "));}} style={{background:C.cardAlt,border:"1px solid "+C.border,borderRadius:7,color:C.textMid,padding:"8px 10px",fontSize:10,cursor:"pointer"}}>Auto Peers</button>
+        <button onClick={function(){analyze(inputTicker)}} disabled={loading} style={{background:"linear-gradient(135deg,"+C.cyan+","+C.blue+")",border:"none",borderRadius:7,color:C.bg,padding:"8px 13px",fontSize:10,fontWeight:800,cursor:loading?"wait":"pointer"}}>{loading?"Loading…":"Analyze"}</button>
+      </div>
+    </div>
+
+    <Card>
+      <div style={{display:"grid",gridTemplateColumns:"110px 1fr",gap:10,alignItems:"center"}}>
+        <div style={{fontSize:9,color:C.textDim,letterSpacing:1,textTransform:"uppercase"}}>Peer Set</div>
+        <input value={peerInput} onChange={function(e){setPeerInput(e.target.value.toUpperCase())}} style={{width:"100%",background:C.bg,border:"1px solid "+C.border,borderRadius:7,color:C.text,padding:"8px 10px",fontFamily:font,fontSize:10}} placeholder="AAPL, GOOGL, AMZN, ORCL, CRM"/>
+      </div>
+      <div style={{fontSize:8,color:C.textDim,marginTop:6}}>Up to 6 peers. You can edit the set before running the analysis.</div>
+    </Card>
+
+    {error&&<div style={{marginTop:10,background:C.red+"10",border:"1px solid "+C.red+"44",borderRadius:8,padding:"8px 10px",fontSize:10,color:C.red}}>{error}</div>}
+
+    {target&&<>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:10,marginTop:10}}>
+        <Card><div style={{fontSize:8,color:C.textDim,letterSpacing:1,textTransform:"uppercase"}}>Target Company</div><div style={{fontSize:17,fontWeight:800,marginTop:5}}><span style={{color:C.cyan,fontFamily:font}}>{target.ticker}</span> {target.name}</div><div style={{fontSize:9,color:C.textDim,marginTop:3}}>{target.latestFY||"Latest FY"}</div></Card>
+        <Card><div style={{fontSize:8,color:C.textDim,letterSpacing:1,textTransform:"uppercase"}}>Peer Median P/E</div><div style={{fontFamily:font,fontSize:20,fontWeight:800,color:C.purple,marginTop:5}}>{fmtMult(peerMedians.pe)}</div><div style={{fontSize:9,color:C.textDim,marginTop:3}}>{peers.length} loaded peers</div></Card>
+        <Card><div style={{fontSize:8,color:C.textDim,letterSpacing:1,textTransform:"uppercase"}}>Valuation vs Peers</div><div style={{fontSize:12,fontWeight:700,color:pePremium==null?C.text:pePremium>0?C.orange:C.green,marginTop:7,lineHeight:1.4}}>{valuationText}</div></Card>
+        <Card><div style={{fontSize:8,color:C.textDim,letterSpacing:1,textTransform:"uppercase"}}>Operating Position</div><div style={{fontSize:12,fontWeight:700,color:C.text,marginTop:7,lineHeight:1.4}}>{operatingText}</div></Card>
+      </div>
+
+      <Card style={{marginTop:10}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:9}}>
+          <div><div style={{fontSize:13,fontWeight:800}}>📊 Peer Benchmark</div><div style={{fontSize:9,color:C.textDim,marginTop:2}}>Target highlighted in blue · median excludes target</div></div>
+          {loadedAsOf&&<div style={{fontSize:8,color:C.textDim,fontFamily:font}}>Loaded {loadedAsOf.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}</div>}
+        </div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",minWidth:880,fontSize:10}}>
+            <thead><tr>
+              <th style={{textAlign:"left",padding:"9px 10px",color:C.textDim,borderBottom:"1px solid "+C.border,minWidth:160}}>Metric</th>
+              {rows.map(function(r){return <th key={r.ticker} style={{textAlign:"right",padding:"9px 10px",color:r.isTarget?C.cyan:C.text,borderBottom:"1px solid "+C.border,background:r.isTarget?C.cyan+"08":"transparent",minWidth:105}}><div style={{fontFamily:font,fontSize:11}}>{r.ticker}</div><div style={{fontSize:7,color:C.textDim,fontWeight:400,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:100,marginLeft:"auto"}}>{r.name}</div></th>;})}
+              <th style={{textAlign:"right",padding:"9px 10px",color:C.orange,borderBottom:"1px solid "+C.border,minWidth:105}}>Peer Median</th>
+            </tr></thead>
+            <tbody>
+              {metricRows.map(function(m,idx){return <tr key={m.key} style={{background:idx%2?C.bg+"66":"transparent"}}>
+                <td style={{padding:"9px 10px",borderBottom:"1px solid "+C.border,color:C.textMid,fontWeight:600}}>{m.label}</td>
+                {rows.map(function(r){return <td key={r.ticker+"-"+m.key} style={{padding:"9px 10px",borderBottom:"1px solid "+C.border,textAlign:"right",fontFamily:font,fontWeight:r.isTarget?800:600,color:r.isTarget?C.cyan:C.text,background:r.isTarget?C.cyan+"08":"transparent"}}>{m.format(r[m.key])}</td>;})}
+                <td style={{padding:"9px 10px",borderBottom:"1px solid "+C.border,textAlign:"right",fontFamily:font,fontWeight:800,color:C.orange}}>{m.format(peerMedians[m.key])}</td>
+              </tr>;})}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:10}}>
+        <Card>
+          <div style={{fontSize:12,fontWeight:800,marginBottom:8}}>🏆 Relative Strengths</div>
+          {[
+            {label:"Revenue growth",v:growthDelta,unit:" pts",good:function(x){return x>=0;}},
+            {label:"Operating margin",v:opDelta,unit:" pts",good:function(x){return x>=0;}},
+            {label:"Net margin",v:target.netMargin!=null&&peerMedians.netMargin!=null?target.netMargin-peerMedians.netMargin:null,unit:" pts",good:function(x){return x>=0;}},
+            {label:"Free cash flow",v:target.freeCashFlow!=null&&peerMedians.freeCashFlow!=null?pctDiff(target.freeCashFlow,peerMedians.freeCashFlow):null,unit:"% vs median",good:function(x){return x>=0;}}
+          ].map(function(x){return <div key={x.label} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid "+C.border}}><span style={{fontSize:10,color:C.textMid}}>{x.label}</span><span style={{fontFamily:font,fontSize:10,fontWeight:800,color:x.v==null?C.textDim:x.good(x.v)?C.green:C.red}}>{x.v==null?"—":(x.v>=0?"+":"")+x.v.toFixed(1)+x.unit}</span></div>;})}
+        </Card>
+        <Card>
+          <div style={{fontSize:12,fontWeight:800,marginBottom:8}}>💡 Valuation Takeaway</div>
+          <div style={{fontSize:11,color:C.textMid,lineHeight:1.65}}>
+            <span style={{color:C.cyan,fontWeight:800}}>{target.ticker}</span> {pePremium!=null?("trades at a "+Math.abs(pePremium).toFixed(1)+"% "+(pePremium>=0?"premium":"discount")+" to the peer median on trailing P/E"):"does not have enough trailing P/E data for a peer valuation comparison"}.
+            {opDelta!=null?(" Its operating margin is "+Math.abs(opDelta).toFixed(1)+" percentage points "+(opDelta>=0?"above":"below")+" the peer median."):""}
+            {growthDelta!=null?(" Latest annual revenue growth is "+Math.abs(growthDelta).toFixed(1)+" percentage points "+(growthDelta>=0?"above":"below")+" peers."):""}
+          </div>
+          <div style={{fontSize:8,color:C.textDim,marginTop:10,lineHeight:1.5}}>This is a relative-comparison summary, not an investment recommendation. SEC-derived accounting metrics may be blank when the filing taxonomy does not support a clean comparison.</div>
+        </Card>
+      </div>
+    </>}
   </div>;
 }
 
