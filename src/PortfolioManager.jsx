@@ -13,6 +13,7 @@ var PORTFOLIO_URL = "https://portfolio-proxy-ja56.vercel.app/api/portfolio";
 var SEC_FINANCIALS_URL = "https://portfolio-proxy-ja56.vercel.app/api/sec-financials";
 var EARNINGS_URL = "https://portfolio-proxy-ja56.vercel.app/api/earnings";
 var MACRO_CALENDAR_URL = "https://portfolio-proxy-ja56.vercel.app/api/macro-calendar";
+var MACRO_EVENT_URL = "https://portfolio-proxy-ja56.vercel.app/api/macro-event";
 
 /* ──────────────────────────────────────────────────────────────────── */
 
@@ -4341,17 +4342,45 @@ function USMacroCalendarTab() {
   var _selected=useState(null); var selected=_selected[0],setSelected=_selected[1];
   var _filter=useState("All"); var filter=_filter[0],setFilter=_filter[1];
   var _warnings=useState([]); var warnings=_warnings[0],setWarnings=_warnings[1];
+  var _selectedLoading=useState(false); var selectedLoading=_selectedLoading[0],setSelectedLoading=_selectedLoading[1];
+  var _selectedError=useState(""); var selectedError=_selectedError[0],setSelectedError=_selectedError[1];
 
   var year=view.getFullYear(), month=view.getMonth()+1;
   var monthName=view.toLocaleDateString("en-US",{month:"long",year:"numeric"});
 
   useEffect(function(){
     var cancelled=false;
-    setLoading(true); setError(""); setSelected(null);
-    fetch(MACRO_CALENDAR_URL+"?year="+year+"&month="+month)
-      .then(function(r){return r.json().catch(function(){return {};}).then(function(j){if(!r.ok) throw new Error(j.error||("Macro calendar HTTP "+r.status)); return j;});})
-      .then(function(j){if(cancelled)return;setEvents(Array.isArray(j.events)?j.events:[]);setWarnings(Array.isArray(j.warnings)?j.warnings:[]);setLoading(false);})
-      .catch(function(e){if(cancelled)return;setError(e.message||"Macro calendar unavailable");setEvents([]);setLoading(false);});
+    var cacheKey="pm_macro_calendar_"+year+"_"+month;
+    var url=MACRO_CALENDAR_URL+"?year="+year+"&month="+month;
+    setLoading(true); setError(""); setSelected(null); setSelectedError("");
+
+    function readResponse(r){
+      return r.json().catch(function(){return {};}).then(function(j){
+        if(!r.ok) throw new Error(j.error||("Macro calendar HTTP "+r.status));
+        return j;
+      });
+    }
+    function request(){return fetch(url,{cache:"no-store"}).then(readResponse);}
+    function apply(j){
+      if(cancelled)return;
+      var ev=Array.isArray(j.events)?j.events:[];
+      setEvents(ev); setWarnings(Array.isArray(j.warnings)?j.warnings:[]); setLoading(false); setError("");
+      try{localStorage.setItem(cacheKey,JSON.stringify({events:ev,warnings:Array.isArray(j.warnings)?j.warnings:[],savedAt:Date.now()}));}catch(e){}
+    }
+
+    request().catch(function(){
+      return new Promise(function(resolve){setTimeout(resolve,650);}).then(request);
+    }).then(apply).catch(function(e){
+      if(cancelled)return;
+      try{
+        var cached=JSON.parse(localStorage.getItem(cacheKey)||"null");
+        if(cached&&Array.isArray(cached.events)&&cached.events.length){
+          setEvents(cached.events); setWarnings(cached.warnings||[]); setLoading(false); setError("");
+          return;
+        }
+      }catch(cacheErr){}
+      setError(e.message||"Macro calendar unavailable"); setEvents([]); setLoading(false);
+    });
     return function(){cancelled=true;};
   },[year,month]);
 
@@ -4376,6 +4405,20 @@ function USMacroCalendarTab() {
   }
   function impactColor(impact){return impact==="High"?C.red:impact==="Medium"?C.orange:C.blueLight;}
   function isTodayDate(y,m,d){return today.getFullYear()===y&&today.getMonth()+1===m&&today.getDate()===d;}
+
+  function openMacroEvent(ev){
+    setSelected(ev); setSelectedError("");
+    if(!ev||!ev.releaseId){setSelectedLoading(false);return;}
+    setSelectedLoading(true);
+    fetch(MACRO_EVENT_URL+"?releaseId="+encodeURIComponent(ev.releaseId)+"&date="+encodeURIComponent(ev.date),{cache:"no-store"})
+      .then(function(r){return r.json().catch(function(){return {};}).then(function(j){if(!r.ok)throw new Error(j.error||("Macro event HTTP "+r.status));return j;});})
+      .then(function(j){
+        setSelected(function(prev){return prev&&prev.id===ev.id?{...prev,...j}:prev;});
+        setSelectedLoading(false);
+        if(j&&j.warning)setSelectedError(j.warning);
+      })
+      .catch(function(e){setSelectedLoading(false);setSelectedError(e.message||"Release values unavailable");});
+  }
 
   var categories=["All","Inflation","Labor","Growth","Fed","Survey"];
   var filtered=events.filter(function(e){return filter==="All"||e.category===filter;});
@@ -4404,7 +4447,7 @@ function USMacroCalendarTab() {
   if(error){
     return <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-        <div><div style={{fontSize:20,fontWeight:800}}>🇺🇸 US Macro Calendar</div><div style={{fontSize:10,color:C.textDim,marginTop:3}}>High-impact U.S. economic releases · Eastern Time</div></div>
+        <div><div style={{fontSize:20,fontWeight:800}}>US Macro Calendar</div><div style={{fontSize:10,color:C.textDim,marginTop:3}}>High-impact U.S. economic releases · Eastern Time</div></div>
         <Badge label="TRADINGVIEW FALLBACK" color={C.orange}/>
       </div>
       <Card>
@@ -4418,7 +4461,7 @@ function USMacroCalendarTab() {
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:12}}>
       <div>
         <div style={{display:"flex",alignItems:"center",gap:9}}>
-          <div style={{fontSize:20,fontWeight:800}}>🇺🇸 US Macro Calendar</div>
+          <div style={{fontSize:20,fontWeight:800}}>US Macro Calendar</div>
           <Badge label="OFFICIAL SCHEDULES" color={C.green}/>
         </div>
         <div style={{fontSize:10,color:C.textDim,marginTop:4}}>FRED release calendar + Federal Reserve FOMC schedule · Times shown in Eastern Time</div>
@@ -4466,7 +4509,7 @@ function USMacroCalendarTab() {
               <div style={{width:24,height:24,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,background:isTodayDate(cell.year,cell.month,cell.day)?C.red:"transparent",color:isTodayDate(cell.year,cell.month,cell.day)?"#fff":C.text}}>{cell.day}</div>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:4}}>
-              {visible.map(function(ev){var col=categoryColor(ev.category);return <div key={ev.id} onClick={function(){setSelected(ev)}} title={ev.fullTitle} style={{display:"flex",alignItems:"center",gap:5,borderLeft:"3px solid "+col,background:col+"10",borderRadius:4,padding:"4px 5px",cursor:"pointer",minWidth:0}}>
+              {visible.map(function(ev){var col=categoryColor(ev.category);return <div key={ev.id} onClick={function(){openMacroEvent(ev)}} title={ev.fullTitle} style={{display:"flex",alignItems:"center",gap:5,borderLeft:"3px solid "+col,background:col+"10",borderRadius:4,padding:"4px 5px",cursor:"pointer",minWidth:0}}>
                 <span style={{color:col,fontSize:9}}>{categoryIcon(ev.category)}</span>
                 <span style={{fontSize:9,color:C.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{ev.title}</span>
                 <span style={{fontSize:8,color:C.textDim,whiteSpace:"nowrap"}}>{ev.time}</span>
@@ -4495,8 +4538,10 @@ function USMacroCalendarTab() {
                 <div style={{minWidth:0}}>
                   <div style={{fontSize:22,fontWeight:800,lineHeight:1.15,color:C.text}}>{selected.title}</div>
                   <div style={{fontSize:12,color:C.textDim,marginTop:6}}>{periodLabel}</div>
+                  {selectedLoading&&<div style={{fontSize:10,color:C.cyan,marginTop:7,fontFamily:font}}>Loading release values…</div>}
+                  {!selectedLoading&&selectedError&&<div style={{fontSize:9,color:C.orange,marginTop:7,lineHeight:1.4}}>Some values unavailable: {selectedError}</div>}
                 </div>
-                <button onClick={function(){setSelected(null)}} style={{background:"transparent",border:"none",color:C.textDim,fontSize:16,cursor:"pointer",padding:0,lineHeight:1}}>✕</button>
+                <button onClick={function(){setSelected(null);setSelectedLoading(false);setSelectedError("")}} style={{background:"transparent",border:"none",color:C.textDim,fontSize:16,cursor:"pointer",padding:0,lineHeight:1}}>✕</button>
               </div>
 
               <div style={{height:1,background:"#3a3c4f",margin:"18px 0"}}/>
