@@ -4475,35 +4475,78 @@ function USMacroCalendarTab() {
           </div>;
         })}
 
-        {selected&&<div style={{position:"absolute",zIndex:30,left:"50%",top:68,transform:"translateX(-50%)",width:420,maxWidth:"90%",background:"#20212d",border:"1px solid #3a3c4f",borderRadius:14,boxShadow:"0 18px 50px #000a",overflow:"hidden"}}>
-          <div style={{padding:"18px 18px 14px"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
-              <div>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-                  <span style={{width:28,height:28,borderRadius:"50%",background:categoryColor(selected.category)+"22",color:categoryColor(selected.category),display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800}}>{categoryIcon(selected.category)}</span>
-                  <Badge label={selected.category.toUpperCase()} color={categoryColor(selected.category)}/>
-                  <Badge label={selected.impact.toUpperCase()+" IMPACT"} color={impactColor(selected.impact)}/>
+        {selected&&(()=>{
+          var releaseDate=new Date(selected.date+"T12:00:00");
+          var periodLabel=releaseDate.toLocaleDateString("en-US",{month:"short",year:"numeric"})+" • Macro";
+          var releaseLabel=releaseDate.toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})+" • "+selected.time+" ET";
+          var nowTs=Date.now();
+          var reported=Date.parse(selected.date+"T23:59:59")<nowTs;
+          var actual=selected.actual!=null?selected.actual:"—";
+          var forecast=selected.forecast!=null?selected.forecast:"—";
+          var surprise=selected.surprisePct!=null?((selected.surprisePct>0?"+":"")+selected.surprisePct+"%"):"—";
+          var previous=selected.previous!=null?selected.previous:"—";
+          var previousSurprise=selected.previousSurprisePct!=null?((selected.previousSurprisePct>0?"+":"")+selected.previousSurprisePct+"%"):"—";
+          var surpriseColor=selected.surprisePct==null?C.text:(selected.surprisePct>0?C.green:(selected.surprisePct<0?C.red:C.text));
+          var previousSurpriseColor=selected.previousSurprisePct==null?C.text:(selected.previousSurprisePct>0?C.green:(selected.previousSurprisePct<0?C.red:C.text));
+          return <div style={{position:"absolute",zIndex:30,left:110,top:72,width:404,maxWidth:"calc(100% - 24px)",background:"#242534",border:"1px solid #3a3c4f",borderRadius:14,boxShadow:"0 18px 50px #000b",overflow:"hidden"}}>
+            <div style={{padding:"18px 16px 16px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
+                <div style={{minWidth:0}}>
+                  <div style={{fontSize:22,fontWeight:800,lineHeight:1.15,color:C.text}}>{selected.title}</div>
+                  <div style={{fontSize:12,color:C.textDim,marginTop:6}}>{periodLabel}</div>
                 </div>
-                <div style={{fontSize:17,fontWeight:800}}>{selected.title}</div>
-                <div style={{fontSize:10,color:C.textDim,marginTop:3}}>{selected.fullTitle}</div>
+                <button onClick={function(){setSelected(null)}} style={{background:"transparent",border:"none",color:C.textDim,fontSize:16,cursor:"pointer",padding:0,lineHeight:1}}>✕</button>
               </div>
-              <button onClick={function(){setSelected(null)}} style={{background:"transparent",border:"none",color:C.textDim,fontSize:16,cursor:"pointer"}}>✕</button>
+
+              <div style={{height:1,background:"#3a3c4f",margin:"18px 0"}}/>
+
+              <div style={{display:"grid",rowGap:11,fontSize:12}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,color:C.text}}>
+                  <span style={{width:14,textAlign:"center",color:C.textDim}}>◷</span>
+                  <span style={{fontWeight:600}}>{releaseLabel}</span>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:10,color:C.text}}>
+                  <span style={{width:14,textAlign:"center",color:C.textDim}}>▥</span>
+                  <span style={{color:C.textDim}}>Actual:</span>
+                  <span style={{fontWeight:700}}>{actual}</span>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:10,color:C.text}}>
+                  <span style={{width:14,textAlign:"center",color:C.textDim}}>▥</span>
+                  <span style={{color:C.textDim}}>Forecast:</span>
+                  <span style={{fontWeight:700}}>{forecast}</span>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:10,color:C.text}}>
+                  <span style={{width:14,textAlign:"center",color:C.textDim}}>↘</span>
+                  <span style={{color:C.textDim}}>Surprise:</span>
+                  <span style={{fontWeight:700,color:surpriseColor}}>{surprise}</span>
+                </div>
+              </div>
+
+              <div style={{height:1,background:"#3a3c4f",margin:"18px 0"}}/>
+
+              <div style={{display:"grid",rowGap:11,fontSize:12}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,color:C.text}}>
+                  <span style={{width:14,textAlign:"center",color:C.textDim}}>◫</span>
+                  <span style={{color:C.textDim}}>Previous:</span>
+                  <span style={{fontWeight:700}}>{previous}</span>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:10,color:C.text}}>
+                  <span style={{width:14,textAlign:"center",color:C.textDim}}>↘</span>
+                  <span style={{color:C.textDim}}>Previous Surprise:</span>
+                  <span style={{fontWeight:700,color:previousSurpriseColor}}>{previousSurprise}</span>
+                </div>
+              </div>
             </div>
-            <div style={{height:1,background:"#3a3c4f",margin:"16px 0"}}/>
-            <div style={{display:"grid",gridTemplateColumns:"120px 1fr",rowGap:10,fontSize:11}}>
-              <span style={{color:C.textDim}}>Release</span><span style={{fontFamily:font}}>{new Date(selected.date+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})} · {selected.time} ET</span>
-              <span style={{color:C.textDim}}>Source</span><span>{selected.source}</span>
-              <span style={{color:C.textDim}}>Schedule basis</span><span>{selected.sourceType}</span>
+
+            <div style={{padding:"14px 16px",background:"rgba(255,255,255,0.035)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+              <span style={{fontSize:12,color:reported?"#b9ff56":C.green,display:"flex",alignItems:"center",gap:8}}><span style={{width:6,height:6,borderRadius:"50%",background:reported?"#b9ff56":C.green,display:"inline-block"}}/>{reported?"Reported":"Scheduled"}</span>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                {selected.fredUrl&&<a href={selected.fredUrl} target="_blank" rel="noreferrer" style={{textDecoration:"none",fontSize:10,color:C.textMid,border:"1px solid #3a3c4f",padding:"7px 10px",borderRadius:8}}>FRED</a>}
+                {selected.sourceUrl&&<a href={selected.sourceUrl} target="_blank" rel="noreferrer" style={{textDecoration:"none",fontSize:10,color:C.text,border:"1px solid #3a3c4f",padding:"7px 10px",borderRadius:8}}>Official source ↗</a>}
+              </div>
             </div>
-          </div>
-          <div style={{padding:"10px 18px",background:"#252632",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontSize:9,color:C.green}}>● Scheduled</span>
-            <div style={{display:"flex",gap:7}}>
-              {selected.fredUrl&&<a href={selected.fredUrl} target="_blank" rel="noreferrer" style={{textDecoration:"none",fontSize:9,color:C.textMid,border:"1px solid #3a3c4f",padding:"5px 8px",borderRadius:6}}>FRED</a>}
-              {selected.sourceUrl&&<a href={selected.sourceUrl} target="_blank" rel="noreferrer" style={{textDecoration:"none",fontSize:9,color:C.text,border:"1px solid #3a3c4f",padding:"5px 8px",borderRadius:6}}>Official source ↗</a>}
-            </div>
-          </div>
-        </div>}
+          </div>;
+        })()}
       </div>
 
       {warnings.length>0&&<div style={{marginTop:8,fontSize:8,color:C.textDim}}>Some release feeds were unavailable: {warnings.slice(0,2).join(" · ")}{warnings.length>2?" · +"+(warnings.length-2)+" more":""}</div>}
