@@ -23,6 +23,17 @@ const C = {
 };
 const font = "'DM Mono','Fira Code',monospace";
 const sans = "'DM Sans','Segoe UI',system-ui,sans-serif";
+
+// Prevent a slow or stalled proxy route from freezing the entire dashboard.
+// Optional feeds are allowed to fail independently so the remaining panels
+// can still load and the refresh controls always become usable again.
+function fetchWithTimeout(url, options, timeoutMs) {
+  var controller = new AbortController();
+  var timer = setTimeout(function() { controller.abort(); }, timeoutMs || 12000);
+  var requestOptions = { ...(options || {}), signal:controller.signal };
+  return fetch(url, requestOptions).finally(function() { clearTimeout(timer); });
+}
+
 const REGIME_QUADRANTS = {
   Spring: {
     phase: "Disinflationary Growth", cycle: "Growth ↑ / Inflation Momentum ↓",
@@ -274,6 +285,8 @@ function applyLiveData(d, prev) {
   if (t10&&t2) { var sp=(t10-t2).toFixed(2); var inv=parseFloat(sp)<0; out.yield={spread:(parseFloat(sp)>=0?"+":"")+sp,status:inv?"INVERTED":Math.abs(parseFloat(sp))<0.1?"FLAT":"NORMAL",recessionRisk:inv?"Elevated signal":"No inversion",recessionPct:null}; }
   // Rates
   var fr=parseFloat(d.fed); if(isFinite(fr)) out.rates={status:"Current rate",current:String(d.fed),expected:null,impliedCuts:null};
+  var forwardRate=parseFloat(d.forwardRate);
+  if(isFinite(forwardRate)) out.rates={...out.rates,expected:forwardRate.toFixed(3),forwardLabel:d.forwardRateLabel||"Front-month Fed Funds futures implied monthly average",pricingSource:"30-Day Fed Funds futures"};
   // Inflation
   if(d.cpi) { var cpiV=parseFloat(d.cpi); out.inflation={...out.inflation,cpi:d.cpi,trend:isFinite(cpiV)?(cpiV<2.5?"Below 2.5%":cpiV>3.5?"Above 3.5%":"2.5–3.5%"):(out.inflation?.trend||"—"),note:"CPI shown as the connected feed's year-over-year rate; direction requires comparable prior YoY data."}; }
   // Fear & Greed
@@ -281,7 +294,7 @@ function applyLiveData(d, prev) {
   // Credit
   if(d.move) out.credit={...out.credit,moveIndex:d.move,hyDAS:d.hyOAS||out.credit.hyDAS,tightNote:parseInt(d.hyOAS)<350?"Relatively tight spread":parseInt(d.hyOAS)>500?"Relatively wide spread":"Mid-range spread"};
   // Breadth
-  var b50=parseFloat(d.b50); if(isFinite(b50)) out.breadth={pct50:String(d.b50),pct200:String(d.b200||out.breadth.pct200),ad5d:"Flat",ad20d:b50<45?"Falling":"Rising",sentiment:b50<45?"NARROW":"BROAD",note:b50<45?"Narrow participation — fewer stocks above their 50-day averages":"Broader participation — more stocks above their 50-day averages"};
+  var b50=parseFloat(d.b50); if(isFinite(b50)) out.breadth={pct50:String(d.b50),pct200:String(d.b200||out.breadth.pct200),ad5d:"—",ad20d:"—",sentiment:b50<40?"NARROW":b50>=60?"BROAD":"MIXED",sample:d.breadthSample||null,universe:d.breadthUniverse||null,note:"Diversified tracked-ETF breadth; not the full S&P 500 constituent universe."};
   // Options
   var pcrV=parseFloat(d.pcr); if(isFinite(pcrV)&&pcrV>0) out.options={dexPCR:d.pcr,omegaPCR:null,status:pcrV>1.3?"HIGH PUT/CALL":pcrV<0.7?"LOW PUT/CALL":"MID-RANGE",conviction:null};
   // NFCI
@@ -405,7 +418,7 @@ export default function App() {
       // Attempt 1: Vercel proxy (works outside sandbox)
       try {
         setRefreshStatus("Trying Vercel proxy...");
-        var proxyRes = await fetch(PROXY_URL);
+        var proxyRes = await fetchWithTimeout(PROXY_URL);
         var proxyJson = await proxyRes.json();
         var quotes = (proxyJson.quoteResponse && proxyJson.quoteResponse.result) || [];
         if (quotes.length > 0) {
@@ -424,6 +437,19 @@ export default function App() {
           if (dx && Number.isFinite(Number(dx.regularMarketPrice))) { parsed.dxy = Number(dx.regularMarketPrice).toFixed(2); var dch=Number(dx.regularMarketChangePercent); parsed.dxyChg = Number.isFinite(dch)?(dch>=0?"+":"")+dch.toFixed(2):"—"; }
           var tn = bySymbol["^TNX"];
           if (tn && Number.isFinite(Number(tn.regularMarketPrice))) { parsed.t10y = Number(tn.regularMarketPrice).toFixed(3); }
+          var analytics = proxyJson.analytics || {};
+          if (Number.isFinite(Number(analytics.moveIndex))) parsed.move = Number(analytics.moveIndex).toFixed(2);
+          if (analytics.breadth) {
+            if (Number.isFinite(Number(analytics.breadth.pct50))) parsed.b50 = Number(analytics.breadth.pct50).toFixed(1);
+            if (Number.isFinite(Number(analytics.breadth.pct200))) parsed.b200 = Number(analytics.breadth.pct200).toFixed(1);
+            parsed.breadthSample = analytics.breadth.sample50;
+            parsed.breadthUniverse = analytics.breadth.universeSize;
+          }
+          if (Number.isFinite(Number(analytics.totalPutCallRatio))) parsed.pcr = Number(analytics.totalPutCallRatio).toFixed(2);
+          if (analytics.forwardPolicy && Number.isFinite(Number(analytics.forwardPolicy.impliedRate))) {
+            parsed.forwardRate = Number(analytics.forwardPolicy.impliedRate).toFixed(3);
+            parsed.forwardRateLabel = analytics.forwardPolicy.label;
+          }
           setRefreshStatus("Got " + quotes.length + " quotes from proxy!");
         }
       } catch(proxyErr) {
@@ -444,7 +470,7 @@ export default function App() {
       // Fetch FRED data
 try {
   setRefreshStatus("Fetching FRED data...");
-  var fredRes = await fetch(FRED_URL);
+  var fredRes = await fetchWithTimeout(FRED_URL);
   var fredJson = await fredRes.json().catch(function(){return {};});
   if(!fredRes.ok) throw new Error(fredJson.error||("FRED endpoint HTTP "+fredRes.status));
   var fredFieldCount = Object.keys(fredJson).filter(function(k){ return !k.startsWith("_") && !k.endsWith("_DATE"); }).length;
@@ -545,7 +571,7 @@ if (fredJson.GDP_GROWTH && fredJson.GDP_GROWTH_PREV) {
       var ff = parseFloat(fredJson.FEDFUNDS);
       var ffPrev = parseFloat(fredJson.FEDFUNDS_PREV);
       var rateStatus = isFinite(ffPrev) ? (ff < ffPrev ? "EASING" : ff > ffPrev ? "TIGHTENING" : "UNCHANGED") : "CURRENT RATE";
-      out.rates = { status:rateStatus, current:isFinite(ff)?ff.toFixed(2):"—", expected:null, impliedCuts:null };
+      out.rates = { ...out.rates, status:rateStatus, current:isFinite(ff)?ff.toFixed(2):"—", impliedCuts:null };
     }
     if (fredJson.NFCI) {
       var nfci = parseFloat(fredJson.NFCI);
@@ -619,7 +645,7 @@ return out;
   // independent of sector data; failure leaves the panel unavailable.
 try {
   setRefreshStatus("Fetching Fear & Greed...");
-  var fgRes = await fetch(FG_URL);
+  var fgRes = await fetchWithTimeout(FG_URL);
   var fgJson = await fgRes.json().catch(function(){return {};});
   if(!fgRes.ok) throw new Error(fgJson.error||("F&G endpoint HTTP "+fgRes.status));
   setData(function(prev) {
@@ -646,7 +672,7 @@ try {
 // Fetch OHLC history and compute recent 5D / 22D range extremes for 3 indices
 try {
   setRefreshStatus("Fetching recent OHLC ranges...");
-  var ohlcRes = await fetch(OHLC_URL);
+  var ohlcRes = await fetchWithTimeout(OHLC_URL);
   if (ohlcRes.ok) {
     var ohlcJson = await ohlcRes.json();
     setData(function(prev) {
@@ -676,7 +702,7 @@ try {
 // Fetch liquidity history (Fed, ECB, BoJ + S&P 500) for interactive chart
 try {
   setRefreshStatus("Fetching liquidity history...");
-  var liqRes = await fetch(LIQ_URL);
+  var liqRes = await fetchWithTimeout(LIQ_URL);
   if (liqRes.ok) {
     var liqJson = await liqRes.json();
     setData(function(prev) {
@@ -702,7 +728,7 @@ try {
 // Fetch live sector ETF returns and compute rotation pairs + top sectors
 try {
   setRefreshStatus("Fetching live sector data...");
-  var secLiveRes = await fetch(SECTORS_LIVE_URL);
+  var secLiveRes = await fetchWithTimeout(SECTORS_LIVE_URL);
   if (secLiveRes.ok) {
     var secLiveJson = await secLiveRes.json();
     var liveTickers = secLiveJson.tickers || {};
@@ -722,12 +748,10 @@ try {
 }
 
 // Data that is not backed by a connected deterministic feed is intentionally
-// left unavailable. Clear those fields so stale seed values cannot be
-// mistaken for current observations. Existing first-party/proxy fields remain.
+// left unavailable. Connected breadth and Cboe options values are retained;
+// only genuinely unconnected subfields remain blank.
 setData(function(prev) {
   var next={...prev};
-  next.breadth={...prev.breadth,pct50:null,pct200:null,ad5d:"—",ad20d:"—",sentiment:"Unavailable",note:"Breadth feed not connected"};
-  next.options={...prev.options,dexPCR:null,omegaPCR:null,status:"Unavailable",conviction:null};
   next.macroIndic={...prev.macroIndic};
   next.scenarioViews=buildRuleBasedViews(next);
   return next;
@@ -796,7 +820,7 @@ setTimeout(function(){setRefreshStatus("");},2500);
             <button onClick={doRefresh} disabled={p1} style={{ background:p1?C.border:"linear-gradient(135deg," + C.cyan + "dd," + C.blue + ")", border:"none", borderRadius:6, color:p1?C.textMid:C.bg, padding:"6px 13px", fontSize:11, fontWeight:700, cursor:p1?"wait":"pointer", whiteSpace:"nowrap" }}>
               {p1?"Refreshing...":"⚡ Refresh"}
             </button>
-            <button onClick={function(){setStage(1);doRefresh();}} disabled={p1} style={{ background:"linear-gradient(135deg," + C.blue + "," + C.purple + ")", border:"none", borderRadius:6, color:C.text, padding:"6px 13px", fontSize:11, fontWeight:600, cursor:p1?"wait":"pointer" }}>▶ Open Analysis</button>
+            <button onClick={function(){setTopTab("Analysis");setStage(1);}} style={{ background:"linear-gradient(135deg," + C.blue + "," + C.purple + ")", border:"none", borderRadius:6, color:C.text, padding:"6px 13px", fontSize:11, fontWeight:600, cursor:"pointer" }}>▶ Open Analysis</button>
           </div>
         </div>
 
@@ -855,6 +879,34 @@ function TVWidget({ config, scriptName, height }) {
       <div id={id} className="tradingview-widget-container__widget" style={{ height: "100%", width: "100%" }} />
     </div>
   );
+}
+
+// TradingView's compact quote widget recognizes the SPX and IXIC symbols but
+// can withhold cash-index quote fields because of redistribution restrictions.
+// Display the connected proxy quote and keep a direct TradingView link so the
+// dashboard uses the real index rather than silently substituting an ETF/CFD.
+function LiveIndexQuote({ symbol, name, price, change, tradingViewUrl }) {
+  var n=parseFloat(String(price==null?"":price).replace(/,/g,""));
+  var ch=parseFloat(String(change==null?"":change).replace("%",""));
+  var hasPrice=isFinite(n);
+  var hasChange=isFinite(ch);
+  var color=hasChange?(ch>0?C.green:ch<0?C.red:C.textMid):C.textDim;
+  return <div style={{height:140,display:"flex",flexDirection:"column",justifyContent:"space-between",padding:"5px 2px 0"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+      <div>
+        <div style={{fontSize:15,fontWeight:800,fontFamily:font,color:C.text}}>{symbol}</div>
+        <div style={{fontSize:10,color:C.textDim,marginTop:3,textTransform:"uppercase"}}>{name}</div>
+      </div>
+      <a href={tradingViewUrl} target="_blank" rel="noreferrer" title={"Open "+symbol+" on TradingView"} style={{width:30,height:30,borderRadius:"50%",background:"#2a2b31",color:C.text,display:"flex",alignItems:"center",justifyContent:"center",textDecoration:"none",fontSize:10,fontWeight:800}}>TV↗</a>
+    </div>
+    <div>
+      <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+        <span style={{fontSize:27,fontWeight:800,fontFamily:font,color:hasPrice?C.text:C.textDim}}>{hasPrice?n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}):"—"}</span>
+        <span style={{fontSize:13,fontWeight:700,fontFamily:font,color}}>{hasChange?(ch>=0?"+":"")+ch.toFixed(2)+"%":"Quote unavailable"}</span>
+      </div>
+      <div style={{fontSize:9,color:C.textDim,marginTop:5}}>Connected index quote · chart link: TradingView</div>
+    </div>
+  </div>;
 }
 
 
@@ -1229,19 +1281,7 @@ function MacroStage({ d }) {
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
         <Card>
           <SecTitle icon="📈" title="S&P 500" />
-          <TVWidget scriptName="embed-widget-mini-symbol-overview" height={140} config={{
-            "symbol": "SP:SPX",
-            "width": "100%",
-            "height": 140,
-            "locale": "en",
-            "dateRange": "1D",
-            "colorTheme": "dark",
-            "isTransparent": true,
-            "autosize": false,
-            "largeChartUrl": "",
-            "chartOnly": false,
-            "noTimeScale": true
-          }} />
+          <LiveIndexQuote symbol="SPX" name="S&P 500 Index" price={d.sp500?.price} change={d.sp500?.change} tradingViewUrl="https://www.tradingview.com/symbols/SPX/" />
           <div style={{ borderTop:"1px solid " + C.border, marginTop:8, paddingTop:8 }}>
             <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:5 }}>RECENT OHLC RANGE</div>
             <div style={{ display:"grid", gridTemplateColumns:"auto 1fr 1fr", gap:"3px 7px", fontSize:11 }}>
@@ -1258,19 +1298,7 @@ function MacroStage({ d }) {
 
         <Card>
           <SecTitle icon="💻" title="Nasdaq Composite" />
-          <TVWidget scriptName="embed-widget-mini-symbol-overview" height={140} config={{
-            "symbol": "NASDAQ:IXIC",
-            "width": "100%",
-            "height": 140,
-            "locale": "en",
-            "dateRange": "1D",
-            "colorTheme": "dark",
-            "isTransparent": true,
-            "autosize": false,
-            "largeChartUrl": "",
-            "chartOnly": false,
-            "noTimeScale": true
-          }} />
+          <LiveIndexQuote symbol="IXIC" name="Nasdaq Composite Index" price={d.nasdaq?.price} change={d.nasdaq?.change} tradingViewUrl="https://www.tradingview.com/symbols/NASDAQ-IXIC/" />
           <div style={{ borderTop:"1px solid " + C.border, marginTop:8, paddingTop:8 }}>
             <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:5 }}>RECENT OHLC RANGE</div>
             <div style={{ display:"grid", gridTemplateColumns:"auto 1fr 1fr", gap:"3px 7px", fontSize:11 }}>
@@ -1661,7 +1689,7 @@ function MacroStage({ d }) {
                 </div>
               </div>
               {d.breadth?.pct50!=null && <Bar pct={Number(d.breadth.pct50)} color={parseFloat(d.breadth.pct50)<40?C.red:parseFloat(d.breadth.pct50)<60?C.orange:C.green} height={6} />}
-              <div style={{fontSize:9,color:C.textDim,marginTop:5}}>Share of the tracked index universe trading above its 50-day moving average.</div>
+              <div style={{fontSize:9,color:C.textDim,marginTop:5}}>Share of a diversified tracked ETF universe above its 50-day moving average{d.breadth?.sample?" ("+d.breadth.sample+" usable ETFs)":""}.</div>
             </div>
 
             <div style={{ marginBottom:12 }}>
@@ -1675,7 +1703,7 @@ function MacroStage({ d }) {
                 </div>
               </div>
               {d.breadth?.pct200!=null && <Bar pct={Number(d.breadth.pct200)} color={parseFloat(d.breadth.pct200)<40?C.red:parseFloat(d.breadth.pct200)<60?C.orange:C.green} height={6} />}
-              <div style={{fontSize:9,color:C.textDim,marginTop:5}}>Share of the tracked index universe trading above its 200-day moving average.</div>
+              <div style={{fontSize:9,color:C.textDim,marginTop:5}}>Share of a diversified tracked ETF universe above its 200-day moving average. This is a proxy, not full S&P 500 constituent breadth.</div>
             </div>
 
             <div style={{ background:C.cardAlt, borderRadius:6, padding:"9px 10px", fontSize:10, color:C.textMid, lineHeight:1.5 }}>
@@ -1793,7 +1821,7 @@ function MacroStage({ d }) {
             <div style={{ fontSize:10, color:C.textDim, marginBottom:6, letterSpacing:1 }}>FORWARD POLICY PRICING</div>
             <div style={{ fontSize:30, fontWeight:700, fontFamily:font, marginBottom:8 }}>{d.rates?.expected != null ? d.rates.expected+"%" : "—"}</div>
             <div style={{ fontSize:11, color:C.textMid, background:C.cardAlt, padding:"6px 10px", borderRadius:4, lineHeight:1.4 }}>
-              {d.rates?.expected != null ? "Forward-policy estimate from connected pricing feed" : "Not shown: no validated Fed-funds futures / OIS pricing feed is connected."}
+              {d.rates?.expected != null ? (d.rates.forwardLabel||"Front-month Fed Funds futures implied monthly average")+". This is not a next-meeting probability." : "Not shown: no validated Fed-funds futures / OIS pricing feed is connected."}
             </div>
           </div>
         </div>
@@ -3453,12 +3481,12 @@ function USMacroCalendarTab() {
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:10,color:C.text}}>
                   <span style={{width:14,textAlign:"center",color:C.textDim}}>▥</span>
-                  <span style={{color:C.textDim}}>Forecast:</span>
+                  <span style={{color:C.textDim}}>{selected.forecastType==="model"?"Model Forecast:":"Forecast:"}</span>
                   <span style={{fontWeight:700}}>{forecast}</span>
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:10,color:C.text}}>
                   <span style={{width:14,textAlign:"center",color:C.textDim}}>↘</span>
-                  <span style={{color:C.textDim}}>Relative Surprise:</span>
+                  <span style={{color:C.textDim}}>{selected.forecastType==="model"?"Vs. Model Forecast:":"Relative Surprise:"}</span>
                   <span style={{fontWeight:700,color:surpriseColor}}>{surprise}</span>
                 </div>
               </div>
