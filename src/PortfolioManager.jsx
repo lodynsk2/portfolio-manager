@@ -3,12 +3,10 @@ import { useState, useCallback, useEffect } from "react";
 /* ─── CHANGE THIS to your Vercel deployment URL ─────────────────── */
 var PROXY_URL = "https://portfolio-proxy-ja56.vercel.app/api/market";
 var FRED_URL = "https://portfolio-proxy-ja56.vercel.app/api/fred";
-var SECTORS_URL = "https://portfolio-proxy-ja56.vercel.app/api/sectors";
 var FG_URL = "https://portfolio-proxy-ja56.vercel.app/api/feargreed";
 var OHLC_URL = "https://portfolio-proxy-ja56.vercel.app/api/ohlc";
 var LIQ_URL = "https://portfolio-proxy-ja56.vercel.app/api/liquidity-history";
 var SECTORS_LIVE_URL = "https://portfolio-proxy-ja56.vercel.app/api/sectors-live";
-var CLAUDE_URL = "https://portfolio-proxy-ja56.vercel.app/api/claude";
 var PORTFOLIO_URL = "https://portfolio-proxy-ja56.vercel.app/api/portfolio";
 var SEC_FINANCIALS_URL = "https://portfolio-proxy-ja56.vercel.app/api/sec-financials";
 var EARNINGS_URL = "https://portfolio-proxy-ja56.vercel.app/api/earnings";
@@ -25,42 +23,49 @@ const C = {
 };
 const font = "'DM Mono','Fira Code',monospace";
 const sans = "'DM Sans','Segoe UI',system-ui,sans-serif";
-const MIT_SEASONS = {
+const REGIME_QUADRANTS = {
   Spring: {
-    phase: "Disinflationary Boom", cycle: "Early Cycle",
-    description: "Disinflationary Boom is classic early cycle. Less credit availability leads to reduced spending, driving profit growth lower and prompting central banks to counter-ease. The yield curve steepens and risk assets begin a new bull market.",
-    keyTheme: "Central banks easing · Yield curve steepening · Credit improving · Buy the dip",
+    phase: "Disinflationary Growth", cycle: "Growth ↑ / Inflation Momentum ↓",
+    description: "Rules-based quadrant: real growth is rising while year-over-year CPI momentum is falling. This is a descriptive classification of the connected inputs, not a formal business-cycle date or a forecast of asset returns.",
+    keyTheme: "Growth rising · Inflation momentum falling · Heuristic model tilt",
     growth: "Rising", inflation: "Falling", bias: "RISK ON",
     overweight: ["Technology","Consumer Cyclical","Financials","Small Cap"],
     underweight: ["Utilities","Consumer Staples","Cash"],
   },
   Summer: {
-    phase: "Inflationary Boom", cycle: "Mid Cycle",
-    description: "Inflationary Boom is typical of mid-cycle. Central banks are still easing and the flood of liquidity creates declining interest rates and tighter risk premiums. This self-reinforcing expansion supports cash flows. Later in this stage, central banks become less accommodative and the output gap shrinks.",
-    keyTheme: "Peak liquidity · Shrinking output gap · CB becoming less accommodative · Ride the wave",
+    phase: "Inflationary Growth", cycle: "Growth ↑ / Inflation Momentum ↑",
+    description: "Rules-based quadrant: real growth is rising while year-over-year CPI momentum is also rising. The label summarizes the connected macro inputs and should not be read as an official cycle designation.",
+    keyTheme: "Growth rising · Inflation momentum rising · Heuristic model tilt",
     growth: "Rising", inflation: "Rising", bias: "RISK ON",
     overweight: ["Energy","Materials","Industrials","Real Assets","Commodities"],
     underweight: ["Long Duration Bonds","Utilities"],
   },
   Autumn: {
-    phase: "Stagflation", cycle: "Late Cycle",
-    description: "Stagflation is typical of the late cycle. Growth is above potential but peaking and central banks are turning hawkish. Risk assets are typically in their final melt-up phase. Monetary tightening pushes asset yields higher, amplifying market reactions to adverse news. The output gap is wide.",
-    keyTheme: "Hawkish central banks · Wide output gap · Tightening amplifies volatility · Reduce risk",
+    phase: "Inflationary Slowdown", cycle: "Growth ↓ / Inflation Momentum ↑",
+    description: "Rules-based quadrant: real growth momentum is slowing while year-over-year CPI momentum is rising. It is a compact signal framework, not a recession call or an investment recommendation.",
+    keyTheme: "Growth slowing · Inflation momentum rising · Heuristic defensive tilt",
     growth: "Slowing", inflation: "Rising", bias: "DEFENSIVE",
     overweight: ["Utilities","Healthcare","Consumer Staples","Gold","Cash"],
     underweight: ["Technology","Consumer Cyclical","High Beta","Crypto"],
   },
   Winter: {
-    phase: "Deflationary Bust", cycle: "Slowdown / Recession",
-    description: "Deflationary Bust is typical of slowdown/recession. Monetary drag generates wider risk premiums, filtering through to the real economy and earnings with a lag. The output gap is wide. Central banks eventually pivot to easing, setting the stage for the next Spring cycle.",
-    keyTheme: "Wide risk premiums · Earnings deterioration · Await central bank pivot · Preserve capital",
+    phase: "Disinflationary Slowdown", cycle: "Growth ↓ / Inflation Momentum ↓",
+    description: "Rules-based quadrant: real growth momentum is slowing while year-over-year CPI momentum is falling. The classification is descriptive and does not by itself establish that the economy is in recession.",
+    keyTheme: "Growth slowing · Inflation momentum falling · Heuristic defensive tilt",
     growth: "Slowing", inflation: "Falling", bias: "RISK OFF",
     overweight: ["Long Duration Bonds","Gold","Cash","Utilities"],
     underweight: ["Equities","High Yield","Crypto","Cyclicals"],
   },
+  Unclassified: {
+    phase: "Insufficient Inputs", cycle: "Awaiting comparable growth + inflation data",
+    description: "The dashboard does not assign a macro quadrant unless comparable real-growth and year-over-year inflation-momentum inputs are available.",
+    keyTheme: "Insufficient inputs · No quadrant tilt",
+    growth: "—", inflation: "—", bias: "NO TILT",
+    overweight: [], underweight: [],
+  },
 };
 
-const SC = { Summer:C.gold, Spring:C.green, Autumn:C.orange, Winter:C.blueLight };
+const SC = { Summer:C.gold, Spring:C.green, Autumn:C.orange, Winter:C.blueLight, Unclassified:C.textDim };
 
 const SECTOR_PAIRS = [
   { name:"Cyclical vs Defensive",    e1:"XLY",  e2:"XLP",  sub1:"Consumer Discretionary (XLY)", sub2:"Consumer Staples (XLP)" },
@@ -72,54 +77,35 @@ const SECTOR_PAIRS = [
 ];
 
 const SEED = {
-  macroRegime:{ season:"Autumn", phase:"Contraction", riskOn:false, confirmed:true, confidence:72, mediumTerm:"Risk Off", shortTerm:"Defensive positioning — extreme fear regime, elevated VIX, below key MAs", description:"Autumn contraction — S&P 500 at 6,408, below both 50-day (6,615) and 200-day (6,768) MAs. VIX at 27.44 (+8.3%), CNN F&G at 18 (Extreme Fear), crypto F&G at 10. Yield curve positive but rates rising. Dollar weak at 99.86." },
-  sp500:{ price:"6,408.38", change:"-2.78", sentiment:"BEARISH", dma50:"6,615.20", dma200:"6,768.50", wkSupport:"6,400.00", wkResistance:"6,573.22", moSupport:"6,350.00", moResistance:"6,591.90" },
-  nasdaq:{ price:"21,450.00", change:"-3.12", sentiment:"BEARISH", dma50:"22,100.00", dma200:"21,800.00", wkSupport:"21,200.00", wkResistance:"22,050.00", moSupport:"20,900.00", moResistance:"22,400.00" },
-  bitcoin:{ price:"68,420.00", change:"-4.85", sentiment:"BEARISH", dma50:"72,500.00", dma200:"65,800.00", wkSupport:"66,000.00", wkResistance:"72,000.00", moSupport:"62,000.00", moResistance:"75,000.00" },
-  vix:{ price:"27.44", change:"+2.11", changePct:"+8.33", level:"HIGH", note:"Elevated concern" },
-  dxy:{ price:"99.86", change:"-0.04", strength:"WEAK", note:"Tailwind for risk assets", position:49, sparkline:[] },
-  yield:{ spread:"+0.42", status:"NORMAL", recessionRisk:"LOW", recessionPct:18 },
-  fg:{ score:18, label:"Extreme Fear", vsPrev:-4, cryptoScore:10, cryptoLabel:"EXTREME FEAR" },
-  rates:{ status:"NEUTRAL", current:"4.33", expected:"4.08", impliedCuts:"-1" },
-  inflation:{ cpi:"3.3", trend:"Rising", truflation:"2.95", spread:"-0.35", note:"March CPI spike driven by energy — core stayed at 2.6%" },
-  liquidity:{ total:"17.4", score:"58", roc13w:"-0.40", roc52w:"-1.8", trend:"Contractionary" },
-  liquidityHistory: null,
-  credit:{ moveIndex:"108.0", moveSignal:"Elevated", hyDAS:"340", igHyDiff:"65", tightNote:"Tight — Complacency Risk", sloosNote:"Net Tightening", goldCopper:"850", sahmRule:"0.30", ccDelinquency:"3.1" },
-  breadth:{ pct50:"38.2", pct200:"54.6", ad5d:"Falling", ad20d:"Falling", sentiment:"BEARISH", note:"Narrow participation — majority of stocks below 50-day MA" },
-  fci:{ value:"-2.10", nfci:"-0.38", status:"Loose", fedFunds:"+0.7", t10y:"+1.1", hySpread:"0.8", sp500load:"-2.0", usd:"+0.6" },
-  options:{ dexPCR:"1.42", omegaPCR:"1.18", status:"BEARISH", conviction:"42" },
-  macroIndic:{ usM2:"$21.8T", usM2Trend:"Rising", usM2Change:"+0.3%", ismPMI:"52.7", ismStatus:"Expanding", ismLabel:"ISM Manufacturing PMI", globalM2:"$17.4T", globalM2Trend:"Falling" },
-  sectorRotation: SECTOR_PAIRS.map(function(p) {
-    var data = {
-      "Cyclical vs Defensive":{w1:"r",w1m:"r",w3m:"r",w6m:"r",bull:false,prob:"72",winner:p.sub2,diffPct:-4.2,note:"Defensive leading, risk-off trend intact"},
-      "Small Cap vs Large Cap":{w1:"r",w1m:"r",w3m:"r",w6m:"n",bull:false,prob:"68",winner:p.sub2,diffPct:-3.1,note:"Large cap outperforming, flight to quality"},
-      "Growth vs Value":{w1:"r",w1m:"r",w3m:"n",w6m:"g",bull:null,prob:"52",winner:null,diffPct:-0.8,note:"Mixed signals, rotation unclear"},
-      "Financials vs Utilities":{w1:"r",w1m:"r",w3m:"r",w6m:"r",bull:false,prob:"74",winner:p.sub2,diffPct:-5.6,note:"Utilities strongly outperforming, defensive bid"},
-      "High Beta vs Low Vol":{w1:"r",w1m:"r",w3m:"r",w6m:"r",bull:false,prob:"78",winner:p.sub2,diffPct:-7.3,note:"Low vol crushing high beta, fear regime"},
-      "US vs Emerging Markets":{w1:"r",w1m:"n",w3m:"g",w6m:"g",bull:null,prob:"55",winner:null,diffPct:1.2,note:"Mixed short-term, EM medium-term trend intact"},
-    };
-    var d = data[p.name] || {w1:"n",w1m:"n",w3m:"n",w6m:"n",bull:null,prob:"50",winner:null,diffPct:0,note:"—"};
-    return { ...p, ...d };
-  }),
-  allocation:{ stocks:{n:"60",a:"50"}, bonds:{n:"10",a:"15"}, cash:{n:"5",a:"10"}, gold:{n:"5",a:"10"}, crypto:{n:"10",a:"7"}, realAssets:{n:"10",a:"8"} },
-  topSectors:[
-    {name:"Utilities",etf:"XLU",r6m:"+11.2",r3m:"+6.8",pos:true},
-    {name:"Healthcare",etf:"XLV",r6m:"+8.4",r3m:"+3.2",pos:true},
-    {name:"Consumer Staples",etf:"XLP",r6m:"+6.1",r3m:"+4.5",pos:true},
-    {name:"Energy",etf:"XLE",r6m:"+4.8",r3m:"-2.1",pos:false},
-    {name:"Real Estate",etf:"XLRE",r6m:"+3.6",r3m:"+1.4",pos:true},
-  ],
-  sectorAlloc:{
-    season:"AUTUMN", bias:"DEFENSIVE", confidence:"72",
-    overweight:[{name:"Utilities",conviction:"HIGH",target:"8.0"},{name:"Healthcare",conviction:"HIGH",target:"14.0"},{name:"Consumer Defensive",conviction:"MEDIUM",target:"10.0"}],
-    neutral:[{name:"Energy",conviction:"LOW",target:"5.0"},{name:"Industrials",conviction:"LOW",target:"7.0"}],
-    underweight:[{name:"Technology",conviction:"HIGH",target:"6.0"},{name:"Consumer Cyclical",conviction:"MEDIUM",target:"5.0"},{name:"Financial Services",conviction:"MEDIUM",target:"8.0"}],
-  },
-  aiViews:{
-    bullish: "The setup for risk assets is stronger than headlines suggest. The S&P 500 trading at elevated levels with breadth recovering implies institutional accumulation. A weak DXY (~99) provides tailwinds for multinationals and emerging markets. With the yield curve positive and credit spreads tight at 340bp HY OAS, credit markets are not pricing in recession risk — a meaningful divergence from equity fear gauges.\n\nFed funds at 4.33% with market pricing in cuts creates a supportive backdrop. The Industrial Production reading at 103+ shows real economic activity is expanding. Historically, VIX spikes into 25-30 range have marked local bottoms, not tops. Rotating into quality growth, small caps, and cyclicals on any weakness is the higher-conviction play.\n\nTactical positioning: overweight equities (70%+), quality tech, industrials, and financials. Use options to hedge tail risk rather than reducing equity exposure wholesale.",
-    neutral: "The macro environment presents genuinely mixed signals. On the bullish side: yield curve positive, credit spreads tight, Fed easing bias. On the bearish side: VIX elevated, breadth narrowing, CPI jumped to 3.3% on energy shock. The truth is probably somewhere in between — markets consolidating through a stagflationary mini-cycle before the next directional move.\n\nThe March CPI surge to 3.3% was energy-driven; core remained tame at 2.6%. If energy stabilizes, inflation prints normalize and the Fed's easing path resumes. If energy pressures persist, stagflation risk rises materially. Bitcoin's weakness and crypto F&G at extreme fear mirror equity uncertainty but credit markets remain calm.\n\nTactical positioning: maintain balanced 60/40-style allocation with tilt toward quality. Barbell equity exposure between defensives (utilities, healthcare) and select growth. Keep 5-10% in cash for optionality. Avoid leverage until directional clarity emerges.",
-    bearish: "The macro environment has shifted decisively risk-off. The S&P 500 sits below both 50-day and 200-day moving averages — a bearish alignment not seen since 2024. CPI jumping to 3.3% combined with restrictive Fed funds at 4.33% creates stagflation risk. Industrial Production may be expanding but the monthly trend has flattened.\n\nSentiment indicators flash warning signs. CNN Fear & Greed in extreme fear territory, crypto F&G at 10, market breadth deteriorating with <40% of stocks above 50-day MA. The VIX spike confirms hedging demand. While credit spreads remain tight, credit always lags equity — complacency in credit is a classic late-cycle warning, not a bullish signal.\n\nTactical positioning: overweight defensives (utilities, staples, healthcare), gold, and cash. Reduce equity exposure to 40-50%. Underweight high-beta tech, consumer discretionary, crypto. Wait for VIX below 20, breadth above 50%, and CPI declining before re-engaging risk."
-  },
+  // Neutral startup state. The app auto-refreshes on mount; if a connected
+  // endpoint fails, the UI stays blank/unavailable instead of displaying stale
+  // market observations as though they were current.
+  macroRegime:{ season:"Unclassified", phase:"Awaiting connected macro data", riskOn:null, confirmed:false, confidence:0, mediumTerm:"Unclassified", shortTerm:"Refresh connected feeds", description:"Waiting for connected market and FRED data." },
+  sp500:{ price:"—", change:"—", sentiment:"—", dma50:null, dma200:null, wkSupport:null, wkResistance:null, moSupport:null, moResistance:null },
+  nasdaq:{ price:"—", change:"—", sentiment:"—", dma50:null, dma200:null, wkSupport:null, wkResistance:null, moSupport:null, moResistance:null },
+  bitcoin:{ price:"—", change:"—", sentiment:"—", dma50:null, dma200:null, wkSupport:null, wkResistance:null, moSupport:null, moResistance:null },
+  vix:{ price:"—", change:"—", changePct:"—", level:"—", note:"Awaiting live volatility feed" },
+  dxy:{ price:"—", change:"—", strength:"—", note:"Awaiting connected dollar feed", position:null, sparkline:[] },
+  yield:{ spread:"—", status:"—", recessionRisk:"Awaiting live curve", recessionPct:null },
+  fg:{ score:null, label:"—", vsPrev:null, cryptoScore:null, cryptoLabel:"—" },
+  rates:{ status:"Unknown", current:"—", expected:null, impliedCuts:null },
+  inflation:{ cpi:"—", trend:"Awaiting data", breakeven:null, note:"Refresh to load CPI and market inflation expectations." },
+  liquidity:{ total:"—", score:null, roc13w:null, roc52w:null, trend:"Balance-sheet proxy" },
+  liquidityHistory:null,
+  credit:{ moveIndex:null, moveSignal:"Unavailable", hyDAS:null, igHyDiff:null, tightNote:"—", sloosNote:"—", goldCopper:null, sahmRule:null, ccDelinquency:null },
+  breadth:{ pct50:null, pct200:null, ad5d:"—", ad20d:"—", sentiment:"—", note:"Awaiting market breadth feed" },
+  fci:{ value:null, nfci:null, status:"—", fedFunds:null, t10y:null, hySpread:null, sp500load:null, usd:null },
+  options:{ dexPCR:null, omegaPCR:null, status:"Unavailable", conviction:null },
+  macroIndic:{ usM2:"—", usM2Trend:"Unknown", usM2Change:null, industrialProduction:null, industrialProductionDate:null, cbBalanceProxy:"—", cbBalanceProxyTrend:"Unknown" },
+  sectorRotation:SECTOR_PAIRS.map(function(p){return {...p,w1:"u",w1m:"u",w3m:"u",w6m:"u",bull:null,leadShare:null,winner:null,diffPct:null,note:"Awaiting sector-return feed",coverage:"0/4"};}),
+  allocation:{ stocks:{n:"60",a:"—"}, bonds:{n:"10",a:"—"}, cash:{n:"5",a:"—"}, gold:{n:"5",a:"—"}, crypto:{n:"10",a:"—"}, realAssets:{n:"10",a:"—"} },
+  topSectors:[],
+  sectorAlloc:{season:"—",bias:"—",confidence:"—",overweight:[],neutral:[],underweight:[]},
+  scenarioViews:{
+    bullish:"Starting template only. Refresh connected market and macro feeds to build the rules-based bullish scenario.",
+    neutral:"Starting template only. Refresh connected market and macro feeds to build the rules-based base-case scenario.",
+    bearish:"Starting template only. Refresh connected market and macro feeds to build the rules-based bearish scenario."
+  }
 };
 
 function parseFGLabel(score) {
@@ -134,17 +120,21 @@ function parseFGLabel(score) {
 // Compute live sector rotation pair data from raw ETF returns
 // PAIRS: each entry is { name, e1, e2, sub1, sub2 }
 // For each pair: winner is the better-performing ETF over 6M,
-// "bullish" means risk-on side wins (the FIRST etf in each pair is risk-on)
+// Internal bull flag means the first, designated risk-on ETF wins the rule-based comparison
 function computeSectorRotation(tickers, PAIRS) {
   return PAIRS.map(function(p) {
     var t1 = tickers[p.e1], t2 = tickers[p.e2];
     if (!t1 || !t2 || t1.error || t2.error) {
-      // Fallback to neutral if data missing
-      return { ...p, w1:"n", w1m:"n", w3m:"n", w6m:"n", bull:null, prob:"50", winner:null, diffPct:0, note:"Data unavailable" };
+      // Preserve unavailable state if data is missing
+      return { ...p, w1:"u", w1m:"u", w3m:"u", w6m:"u", bull:null, leadShare:null, winner:null, diffPct:null, note:"Data unavailable", coverage:"0/4" };
     }
-    // Per-period winner: "g" = e1 wins (risk-on), "r" = e2 wins (defensive), "n" = within 0.2%
+    // Per-period winner: "g" = first ETF wins, "r" = second ETF wins,
+    // "n" = within 0.2%, and "u" = unavailable. Missing data never counts
+    // as evidence for either side.
     function period(r1, r2) {
-      var diff = r1 - r2;
+      var a=Number(r1), b=Number(r2);
+      if(!isFinite(a)||!isFinite(b)) return "u";
+      var diff = a - b;
       if (Math.abs(diff) < 0.2) return "n";
       return diff > 0 ? "g" : "r";
     }
@@ -152,22 +142,28 @@ function computeSectorRotation(tickers, PAIRS) {
     var w1m = period(t1.r1m,  t2.r1m);
     var w3m = period(t1.r3m,  t2.r3m);
     var w6m = period(t1.r6m,  t2.r6m);
-    // Aggregate bullishness from 4 periods (g=+1, r=-1, n=0)
+    var windows=[w1,w1m,w3m,w6m];
     function score(w) { return w === "g" ? 1 : w === "r" ? -1 : 0; }
-    var totalScore = score(w1) + score(w1m) + score(w3m) + score(w6m);
-    var bull, winner, prob;
-    if (totalScore >= 2) { bull = true;  winner = p.sub1; }
-    else if (totalScore <= -2) { bull = false; winner = p.sub2; }
-    else { bull = null; winner = null; }
-    // Probability: scale magnitude to 50-85% range
-    prob = String(Math.min(85, 50 + Math.abs(totalScore) * 9));
-    var diffPct = +(t1.r6m - t2.r6m).toFixed(1);
-    // Generate a contextual note
+    var available=windows.filter(function(w){return w!=="u";}).length;
+    var totalScore = windows.reduce(function(sum,w){return sum+score(w);},0);
+    var bull=null, winner=null, leadShare=null;
+    if (available>=2 && totalScore >= 2) { bull = true;  winner = p.sub1; }
+    else if (available>=2 && totalScore <= -2) { bull = false; winner = p.sub2; }
+    // Lead share = fraction of usable windows won by the leading side.
+    // It is descriptive agreement across timeframes, not a probability.
+    if(available>=2 && winner){
+      var firstWins=windows.filter(function(w){return w==="g";}).length;
+      var secondWins=windows.filter(function(w){return w==="r";}).length;
+      leadShare=Math.round(Math.max(firstWins,secondWins)/available*100);
+    }
+    var r6a=Number(t1.r6m), r6b=Number(t2.r6m);
+    var diffPct=isFinite(r6a)&&isFinite(r6b)?+(r6a-r6b).toFixed(1):null;
     var note;
-    if (bull === true) note = p.sub1.split(" (")[0] + " leading across timeframes";
-    else if (bull === false) note = p.sub2.split(" (")[0] + " outperforming, " + (Math.abs(diffPct) > 5 ? "strong " : "") + "defensive bid";
-    else note = "Mixed signals across timeframes";
-    return { ...p, w1, w1m, w3m, w6m, bull, prob, winner, diffPct, note };
+    if(available<2) note="Insufficient comparable return history";
+    else if (bull === true) note = p.sub1.split(" (")[0] + " leading across usable timeframes";
+    else if (bull === false) note = p.sub2.split(" (")[0] + " leading across usable timeframes";
+    else note = "Mixed/neutral signals across usable timeframes";
+    return { ...p, w1, w1m, w3m, w6m, bull, leadShare, winner, diffPct, note, coverage:available+"/4" };
   });
 }
 
@@ -189,14 +185,15 @@ function computeTopSectors(tickers) {
   var sectors = SECTOR_INFO
     .map(function(s) {
       var t = tickers[s.etf];
-      if (!t || t.error) return null;
+      var r6=Number(t&&t.r6m), r3=Number(t&&t.r3m);
+      if (!t || t.error || !isFinite(r6) || !isFinite(r3)) return null;
       return {
         name: s.name,
         etf: s.etf,
-        r6m: (t.r6m >= 0 ? "+" : "") + t.r6m.toFixed(1),
-        r3m: (t.r3m >= 0 ? "+" : "") + t.r3m.toFixed(1),
-        pos: t.r3m >= 0,
-        r6mNum: t.r6m,
+        r6m: (r6 >= 0 ? "+" : "") + r6.toFixed(1),
+        r3m: (r3 >= 0 ? "+" : "") + r3.toFixed(1),
+        pos: r3 >= 0,
+        r6mNum: r6,
       };
     })
     .filter(function(s) { return s !== null; })
@@ -205,9 +202,9 @@ function computeTopSectors(tickers) {
   return sectors;
 }
 
-// Compute support/resistance from recent swing highs/lows
+// Compute simple recent OHLC range lows/highs (not technical support/resistance)
 // candles: array of {t, h, l, c} — daily OHLC
-// Returns { wkSupport, wkResistance, moSupport, moResistance } formatted strings
+// Backward-compatible field names hold 5D/22D range lows/highs.
 function computeSwingSR(candles) {
   if (!candles || candles.length < 5) return null;
 
@@ -220,9 +217,8 @@ function computeSwingSR(candles) {
   var weekly = sorted.slice(-5);
   var monthly = sorted.slice(-22);
 
-  // For swing S/R: find highest high and lowest low in the window.
-  // Support = lowest low below current price (or just the lowest low).
-  // Resistance = highest high above current price (or just the highest high).
+  // Use the observed high/low extremes in each window. These are descriptive
+  // ranges and should not be interpreted as validated support/resistance levels.
   function findSR(window, cur) {
     var highsAbove = window.filter(function(c) { return c.h > cur; }).map(function(c) { return c.h; });
     var lowsBelow = window.filter(function(c) { return c.l < cur; }).map(function(c) { return c.l; });
@@ -253,44 +249,63 @@ function applyLiveData(d, prev) {
   // S&P 500
   if (d.sp500) {
     var chg = d.sp500Chg||"—";
-    out.sp500 = { ...out.sp500, price:d.sp500, change:chg, sentiment:String(chg).startsWith("-")?"BEARISH":"BULLISH" };
+    out.sp500 = { ...out.sp500, price:d.sp500, change:chg, sentiment:chg==="—"?"—":String(chg).startsWith("-")?"DOWN":"UP" };
     if (d.dma50) out.sp500.dma50 = d.dma50;
     if (d.dma200) out.sp500.dma200 = d.dma200;
   }
   // Nasdaq
   if (d.nasdaq) {
     var ndxChg = d.nasdaqChg||"—";
-    out.nasdaq = { ...out.nasdaq, price:d.nasdaq, change:ndxChg, sentiment:String(ndxChg).startsWith("-")?"BEARISH":"BULLISH" };
+    out.nasdaq = { ...out.nasdaq, price:d.nasdaq, change:ndxChg, sentiment:ndxChg==="—"?"—":String(ndxChg).startsWith("-")?"DOWN":"UP" };
   }
   // Bitcoin
   if (d.bitcoin) {
     var btcChg = d.bitcoinChg||"—";
-    out.bitcoin = { ...out.bitcoin, price:d.bitcoin, change:btcChg, sentiment:String(btcChg).startsWith("-")?"BEARISH":"BULLISH" };
+    out.bitcoin = { ...out.bitcoin, price:d.bitcoin, change:btcChg, sentiment:btcChg==="—"?"—":String(btcChg).startsWith("-")?"DOWN":"UP" };
   }
   // VIX
   var vv = parseFloat(d.vix);
   if (vv) out.vix = { price:d.vix, change:d.vixChg||"—", changePct:d.vixChg||"—", level:vv>35?"EXTREME":vv>25?"HIGH":vv>15?"MODERATE":"LOW", note:vv>35?"Extreme stress":vv>25?"Elevated concern":vv>15?"Moderate concern":"Low vol regime" };
   // DXY
   var dv = parseFloat(d.dxy);
-  if (dv) out.dxy = { price:d.dxy, change:d.dxyChg||"—", strength:dv<98?"WEAK":dv>103?"STRONG":"NEUTRAL", note:dv<98?"Tailwind for risk assets":dv>103?"Headwind for risk assets":"Neutral for markets", position:Math.round(Math.max(5,Math.min(95,((dv-90)/20)*100))), sparkline:[] };
+  if (dv) out.dxy = { price:d.dxy, change:d.dxyChg||"—", strength:dv<98?"WEAK":dv>103?"STRONG":"NEUTRAL", note:dv<98?"Below the displayed heuristic range":dv>103?"Above the displayed heuristic range":"Within the displayed heuristic range", position:Math.round(Math.max(5,Math.min(95,((dv-90)/20)*100))), sparkline:[] };
   // Yields
   var t10=parseFloat(d.t10y), t2=parseFloat(d.t2y);
-  if (t10&&t2) { var sp=(t10-t2).toFixed(2); var inv=parseFloat(sp)<0; out.yield={spread:(parseFloat(sp)>=0?"+":"")+sp,status:inv?"INVERTED":Math.abs(parseFloat(sp))<0.1?"FLAT":"NORMAL",recessionRisk:inv?"MEDIUM":"LOW",recessionPct:inv?35:15}; }
+  if (t10&&t2) { var sp=(t10-t2).toFixed(2); var inv=parseFloat(sp)<0; out.yield={spread:(parseFloat(sp)>=0?"+":"")+sp,status:inv?"INVERTED":Math.abs(parseFloat(sp))<0.1?"FLAT":"NORMAL",recessionRisk:inv?"Elevated signal":"No inversion",recessionPct:null}; }
   // Rates
-  var fr=parseFloat(d.fed); if(fr) out.rates={status:fr>5?"TIGHTENING":fr<3?"EASING":"NEUTRAL",current:String(d.fed),expected:(fr-0.25).toFixed(2),impliedCuts:"-1"};
+  var fr=parseFloat(d.fed); if(isFinite(fr)) out.rates={status:"Current rate",current:String(d.fed),expected:null,impliedCuts:null};
   // Inflation
-  if(d.cpi) { var trufV=parseFloat(d.truf)||0; var cpiV=parseFloat(d.cpi)||0; var spr=trufV&&cpiV?(trufV-cpiV).toFixed(2):"—"; out.inflation={cpi:d.cpi,trend:cpiV<2.5?"Falling":cpiV>3.5?"Rising":"Stable",truflation:d.truf||out.inflation.truflation,spread:spr,note:trufV<cpiV?"Lead indicators point to falling inflation":"Inflation indicators stable"}; }
+  if(d.cpi) { var cpiV=parseFloat(d.cpi); out.inflation={...out.inflation,cpi:d.cpi,trend:isFinite(cpiV)?(cpiV<2.5?"Below 2.5%":cpiV>3.5?"Above 3.5%":"2.5–3.5%"):(out.inflation?.trend||"—"),note:"CPI shown as the connected feed's year-over-year rate; direction requires comparable prior YoY data."}; }
   // Fear & Greed
   if(d.fg!=null) out.fg={score:d.fg,label:d.fgLabel||parseFGLabel(d.fg),vsPrev:null,cryptoScore:d.cryptoFG!=null?d.cryptoFG:out.fg.cryptoScore,cryptoLabel:d.cryptoLabel||parseFGLabel(d.cryptoFG)};
   // Credit
-  if(d.move) out.credit={...out.credit,moveIndex:d.move,hyDAS:d.hyOAS||out.credit.hyDAS,tightNote:parseInt(d.hyOAS)<350?"Tight — Complacency Risk":parseInt(d.hyOAS)>500?"Wide — Stress":"Normal"};
+  if(d.move) out.credit={...out.credit,moveIndex:d.move,hyDAS:d.hyOAS||out.credit.hyDAS,tightNote:parseInt(d.hyOAS)<350?"Relatively tight spread":parseInt(d.hyOAS)>500?"Relatively wide spread":"Mid-range spread"};
   // Breadth
-  var b50=parseFloat(d.b50); if(b50) out.breadth={pct50:String(d.b50),pct200:String(d.b200||out.breadth.pct200),ad5d:"Flat",ad20d:b50<45?"Falling":"Rising",sentiment:b50<45?"BEARISH":"BULLISH",note:b50<45?"Narrow participation — majority of stocks below 50-day MA":"Broad participation — healthy market internals"};
+  var b50=parseFloat(d.b50); if(isFinite(b50)) out.breadth={pct50:String(d.b50),pct200:String(d.b200||out.breadth.pct200),ad5d:"Flat",ad20d:b50<45?"Falling":"Rising",sentiment:b50<45?"NARROW":"BROAD",note:b50<45?"Narrow participation — fewer stocks above their 50-day averages":"Broader participation — more stocks above their 50-day averages"};
   // Options
-  var pcrV=parseFloat(d.pcr); if(pcrV) out.options={dexPCR:d.pcr,omegaPCR:(pcrV*0.85).toFixed(3),status:pcrV>1.3?"BEARISH":pcrV<0.7?"BULLISH":"NEUTRAL",conviction:Math.round(Math.abs((pcrV-1.0))*100).toString()};
+  var pcrV=parseFloat(d.pcr); if(isFinite(pcrV)&&pcrV>0) out.options={dexPCR:d.pcr,omegaPCR:null,status:pcrV>1.3?"HIGH PUT/CALL":pcrV<0.7?"LOW PUT/CALL":"MID-RANGE",conviction:null};
   // NFCI
-  if(d.nfci) out.fci={...out.fci,nfci:d.nfci,status:parseFloat(d.nfci)<-0.3?"Loose":parseFloat(d.nfci)>0.3?"Tight":"Neutral"};
+  if(d.nfci!=null&&isFinite(parseFloat(d.nfci))) out.fci={...out.fci,nfci:d.nfci,status:parseFloat(d.nfci)<0?"Looser than historical average":parseFloat(d.nfci)>0?"Tighter than historical average":"Near historical average"};
   return out;
+}
+
+function buildRuleBasedViews(d) {
+  function n(v){var x=parseFloat(String(v==null?"":v).replace(/,/g,""));return isFinite(x)?x:null;}
+  function show(v,suffix){return v==null?"unavailable":v+(suffix||"");}
+  var sp=d&&d.sp500||{}, vix=n(d&&d.vix&&d.vix.price), curve=n(d&&d.yield&&d.yield.spread);
+  var fg=n(d&&d.fg&&d.fg.score), hy=n(d&&d.credit&&d.credit.hyDAS), cpi=n(d&&d.inflation&&d.inflation.cpi);
+  var season=d&&d.macroRegime&&d.macroRegime.season||"Unclassified";
+  var bias=d&&d.macroRegime&&d.macroRegime.bias||d&&d.macroRegime&&d.macroRegime.mediumTerm||"Mixed";
+  var bull=[] , bear=[];
+  if(vix!=null){(vix<20?bull:bear).push("VIX "+vix.toFixed(1));}
+  if(curve!=null){(curve>0?bull:bear).push("10Y-2Y curve "+(curve>=0?"+":"")+curve.toFixed(2)+"%");}
+  if(hy!=null){(hy<400?bull:bear).push("HY spread "+hy.toFixed(0)+" bp");}
+  if(fg!=null){(fg<30?bull:fg>70?bear:bull).push("Fear & Greed "+fg.toFixed(0));}
+  var bullSignals=bull.length, bearSignals=bear.length;
+  var bullish="Bull case: "+(bull.length?bull.join(", ")+" support a constructive risk backdrop.":"The connected feeds do not currently provide enough positive confirmation for a strong bull case.")+" The current four-season regime is "+season+" with a "+bias+" bias. Treat this as a rules-based scenario, not a forecast.";
+  var bearish="Bear case: "+(bear.length?bear.join(", ")+" argue for tighter risk controls.":"The connected feeds do not currently show a concentrated cluster of classic stress signals.")+" Inflation is "+show(cpi,"%")+" and the S&P 500 is "+(sp.price||"unavailable")+". A deterioration in volatility, credit or the yield curve would strengthen this case.";
+  var neutral="Balanced case: the dashboard currently registers "+bullSignals+" constructive and "+bearSignals+" cautionary signals from the directly connected feeds. Rather than forcing a directional call, use the regime, rates, credit and price trend together and keep unavailable indicators excluded from the conclusion.";
+  return {bullish:bullish,neutral:neutral,bearish:bearish,_timestamp:new Date().toISOString(),_method:"rules"};
 }
 
 /* ─── UI HELPERS ─────────────────────────────────────────────────── */
@@ -377,7 +392,7 @@ export default function App() {
   const [data, setData] = useState(SEED);
   const [stage, setStage] = useState(1);
   const [p1, setP1] = useState(false);
-  const [ts, setTs] = useState("Mar 27, 2026");
+  const [ts, setTs] = useState("Waiting for live refresh");
   const [err, setErr] = useState(null);
 
   const [refreshStatus, setRefreshStatus] = useState("");
@@ -398,227 +413,161 @@ export default function App() {
           var bySymbol = {};
           quotes.forEach(function(q) { bySymbol[q.symbol] = q; });
           var sp = bySymbol["^GSPC"];
-          if (sp) { parsed.sp500 = sp.regularMarketPrice.toFixed(2); parsed.sp500Chg = (sp.regularMarketChangePercent >= 0 ? "+" : "") + sp.regularMarketChangePercent.toFixed(2); }
+          if (sp && Number.isFinite(Number(sp.regularMarketPrice))) { parsed.sp500 = Number(sp.regularMarketPrice).toFixed(2); var ch=Number(sp.regularMarketChangePercent); parsed.sp500Chg = Number.isFinite(ch)?(ch>=0?"+":"")+ch.toFixed(2):"—"; }
           var ndx = bySymbol["^IXIC"];
-          if (ndx) { parsed.nasdaq = ndx.regularMarketPrice.toFixed(2); parsed.nasdaqChg = (ndx.regularMarketChangePercent >= 0 ? "+" : "") + ndx.regularMarketChangePercent.toFixed(2); }
+          if (ndx && Number.isFinite(Number(ndx.regularMarketPrice))) { parsed.nasdaq = Number(ndx.regularMarketPrice).toFixed(2); var nch=Number(ndx.regularMarketChangePercent); parsed.nasdaqChg = Number.isFinite(nch)?(nch>=0?"+":"")+nch.toFixed(2):"—"; }
           var btc = bySymbol["BTC-USD"];
-          if (btc) { parsed.bitcoin = btc.regularMarketPrice.toFixed(2); parsed.bitcoinChg = (btc.regularMarketChangePercent >= 0 ? "+" : "") + btc.regularMarketChangePercent.toFixed(2); }
+          if (btc && Number.isFinite(Number(btc.regularMarketPrice))) { parsed.bitcoin = Number(btc.regularMarketPrice).toFixed(2); var bch=Number(btc.regularMarketChangePercent); parsed.bitcoinChg = Number.isFinite(bch)?(bch>=0?"+":"")+bch.toFixed(2):"—"; }
           var vx = bySymbol["^VIX"];
-          if (vx) { parsed.vix = vx.regularMarketPrice.toFixed(2); parsed.vixChg = (vx.regularMarketChangePercent >= 0 ? "+" : "") + vx.regularMarketChangePercent.toFixed(2); }
+          if (vx && Number.isFinite(Number(vx.regularMarketPrice))) { parsed.vix = Number(vx.regularMarketPrice).toFixed(2); var vch=Number(vx.regularMarketChangePercent); parsed.vixChg = Number.isFinite(vch)?(vch>=0?"+":"")+vch.toFixed(2):"—"; }
           var dx = bySymbol["DX-Y.NYB"];
-          if (dx) { parsed.dxy = dx.regularMarketPrice.toFixed(2); parsed.dxyChg = (dx.regularMarketChangePercent >= 0 ? "+" : "") + dx.regularMarketChangePercent.toFixed(2); }
+          if (dx && Number.isFinite(Number(dx.regularMarketPrice))) { parsed.dxy = Number(dx.regularMarketPrice).toFixed(2); var dch=Number(dx.regularMarketChangePercent); parsed.dxyChg = Number.isFinite(dch)?(dch>=0?"+":"")+dch.toFixed(2):"—"; }
           var tn = bySymbol["^TNX"];
-          if (tn) { parsed.t10y = tn.regularMarketPrice.toFixed(3); }
+          if (tn && Number.isFinite(Number(tn.regularMarketPrice))) { parsed.t10y = Number(tn.regularMarketPrice).toFixed(3); }
           setRefreshStatus("Got " + quotes.length + " quotes from proxy!");
         }
       } catch(proxyErr) {
-        setRefreshStatus("Proxy blocked, trying Claude API...");
+        setRefreshStatus("Market quote endpoint unavailable");
       }
 
-      // Supplemental: if we got S&P but missing NDX or BTC, fetch them from Claude API
-      if (parsed && (parsed.sp500 || parsed.vix) && (!parsed.nasdaq || !parsed.bitcoin)) {
-        try {
-          setRefreshStatus("Fetching Nasdaq + Bitcoin...");
-          var dSupp = new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
-          var suppRes = await fetch(CLAUDE_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model: "claude-sonnet-4-6",
-              max_tokens: 800,
-              tools: [{ type: "web_search_20250305", name: "web_search" }],
-              messages: [{ role: "user", content: "Today is " + dSupp + ". Search the web for the CURRENT live price of the Nasdaq Composite Index (^IXIC) and Bitcoin (BTC-USD). I need today's price and today's percent change. Respond with ONLY a JSON object and no other text: {\"nasdaq\":\"PRICE_AS_STRING\",\"nasdaqChg\":\"SIGNED_PCT_CHANGE\",\"bitcoin\":\"PRICE_AS_STRING\",\"bitcoinChg\":\"SIGNED_PCT_CHANGE\"}. Example format: {\"nasdaq\":\"18450.25\",\"nasdaqChg\":\"+0.85\",\"bitcoin\":\"87300.50\",\"bitcoinChg\":\"-1.20\"}" }]
-            })
-          });
-          setRefreshStatus("NDX/BTC API HTTP " + suppRes.status + "...");
-          var suppJson = await suppRes.json();
-          // Extract all text blocks (ignore tool_use/tool_result blocks)
-          var suppText = "";
-          if (suppJson.content && Array.isArray(suppJson.content)) {
-            suppJson.content.forEach(function(b) {
-              if (b.type === "text" && b.text) suppText += b.text + "\n";
-            });
-          }
-          setRefreshStatus("NDX/BTC got " + suppText.length + " chars, parsing...");
-          var suppClean = suppText.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
-          var suppParsed = null;
-          try { suppParsed = JSON.parse(suppClean); } catch(eS) {}
-          if (!suppParsed) {
-            // Brace matching to find last complete JSON object
-            var depth2 = 0, start2 = -1, lastFound = null;
-            for (var j = 0; j < suppClean.length; j++) {
-              if (suppClean[j]==="{") { if (depth2===0) start2=j; depth2++; }
-              else if (suppClean[j]==="}") { depth2--; if (depth2===0 && start2>=0) { try { lastFound = JSON.parse(suppClean.slice(start2,j+1)); } catch(eS2){} start2=-1; } }
-            }
-            suppParsed = lastFound;
-          }
-          if (suppParsed && (suppParsed.nasdaq || suppParsed.bitcoin)) {
-            if (suppParsed.nasdaq) { parsed.nasdaq = String(suppParsed.nasdaq).replace(/,/g,""); parsed.nasdaqChg = suppParsed.nasdaqChg || ""; }
-            if (suppParsed.bitcoin) { parsed.bitcoin = String(suppParsed.bitcoin).replace(/,/g,""); parsed.bitcoinChg = suppParsed.bitcoinChg || ""; }
-            setRefreshStatus("Got NDX=" + parsed.nasdaq + " BTC=" + parsed.bitcoin);
-          } else {
-            setRefreshStatus("NDX/BTC: no JSON in response");
-          }
-        } catch(eSupp) {
-          setRefreshStatus("NDX/BTC fetch error: " + eSupp.message);
-        }
+      // Accuracy-first: do not substitute AI/web-researched prices for the quote feed.
+      // If the market proxy cannot return quotes, leave the dashboard clearly unavailable
+      // instead of presenting stale seed values as current.
+      if (!parsed || !Object.keys(parsed).length) {
+        parsed = null;
+        setErr("Connected market quote feed is unavailable. Macro/FRED and other independent feeds will still refresh; price-based panels remain unavailable.");
+      } else {
+        setRefreshStatus("Applying " + Object.keys(parsed).length + " market data points...");
+        setData(function(prev) { return applyLiveData(parsed, prev); });
+        setTs(new Date().toLocaleString("en-US",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",timeZoneName:"short"}));
       }
-
-      // Attempt 2: Claude API with web_search (works in sandbox)
-      if (!parsed) {
-        var d = new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
-        var response = await fetch(CLAUDE_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-6",
-            max_tokens: 1000,
-            tools: [{ type: "web_search_20250305", name: "web_search" }],
-            messages: [{ role: "user", content: "Today is " + d + ". Search for current S&P 500, Nasdaq Composite, Bitcoin (BTC-USD), VIX, DXY, 10Y yield prices. Return ONLY JSON, no other text: {\"sp500\":\"6xxx.xx\",\"sp500Chg\":\"-x.xx\",\"nasdaq\":\"2xxxx.xx\",\"nasdaqChg\":\"-x.xx\",\"bitcoin\":\"xxxxx.xx\",\"bitcoinChg\":\"-x.xx\",\"vix\":\"xx.xx\",\"vixChg\":\"+x.xx\",\"dxy\":\"xxx.xx\",\"t10y\":\"x.xx\"}" }]
-          })
-        });
-        setRefreshStatus("API responded HTTP " + response.status + "...");
-        if (response.status === 429) {
-          setErr("Rate limited — try again in a few minutes");
-          setP1(false); setRefreshStatus(""); return;
-        }
-        var apiJson = await response.json();
-        var text = (apiJson.content || []).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("\n");
-        setRefreshStatus("Got " + text.length + " chars, extracting JSON...");
-        var clean = text.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
-        try { parsed = JSON.parse(clean); } catch(e1) {}
-        if (!parsed) {
-          var last = null, depth = 0, start = -1;
-          for (var i = 0; i < clean.length; i++) {
-            if (clean[i]==="{"){if(depth===0)start=i;depth++}
-            else if (clean[i]==="}"){depth--;if(depth===0&&start>=0){try{last=JSON.parse(clean.slice(start,i+1))}catch(e2){}start=-1}}
-          }
-          parsed = last;
-        }
-        if (!parsed) {
-          setErr("Got response but no JSON. First 200 chars: " + text.slice(0,200));
-          setP1(false); setRefreshStatus(""); return;
-        }
-      }
-
-      // Apply data
-      setRefreshStatus("Applying " + Object.keys(parsed).length + " data points...");
-      setData(function(prev) { return applyLiveData(parsed, prev); });
-      setTs(new Date().toLocaleString("en-US",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",timeZoneName:"short"}));
-      setRefreshStatus("Updated!");
-      setTimeout(function(){ setRefreshStatus(""); }, 4000);
       // Fetch FRED data
 try {
   setRefreshStatus("Fetching FRED data...");
   var fredRes = await fetch(FRED_URL);
-  var fredJson = await fredRes.json();
+  var fredJson = await fredRes.json().catch(function(){return {};});
+  if(!fredRes.ok) throw new Error(fredJson.error||("FRED endpoint HTTP "+fredRes.status));
   var fredFieldCount = Object.keys(fredJson).filter(function(k){ return !k.startsWith("_") && !k.endsWith("_DATE"); }).length;
   setRefreshStatus("FRED loaded: " + fredFieldCount + " fields");
   setData(function(prev) {
     var out = { ...prev };
     // Auto-detect Macro Season from live data
-if (fredJson.GDPC1 && fredJson.GDPC1_PREV && fredJson.CPIAUCSL && fredJson.CPI_PREV) {
-  var gdpCurrent = parseFloat(fredJson.GDPC1);
-  var gdpPrev = parseFloat(fredJson.GDPC1_PREV);
-  var cpiCurrent = parseFloat(fredJson.CPIAUCSL);
-  var cpiPrev = parseFloat(fredJson.CPI_PREV);
+if (fredJson.GDP_GROWTH && fredJson.GDP_GROWTH_PREV) {
+  var gdpCurrent = parseFloat(fredJson.GDP_GROWTH);
+  var gdpPrev = parseFloat(fredJson.GDP_GROWTH_PREV);
   var fedCurrent = parseFloat(fredJson.FEDFUNDS);
   var fedPrev = parseFloat(fredJson.FEDFUNDS_PREV);
   var yieldCurve = parseFloat(fredJson.T10Y2Y);
   var hySpreadVal = parseFloat(fredJson.BAMLH0A0HYM2);
   var sahmVal = parseFloat(fredJson.SAHMREALTIME);
 
-  // Determine growth and inflation direction
-  var growthRising = gdpCurrent > gdpPrev;
-  var inflationRising = cpiCurrent > cpiPrev;
-  var fedTightening = fedCurrent >= fedPrev;
-  var creditStress = hySpreadVal > 4.0;
-  var recessionSignal = sahmVal > 0.5;
+  // This is a coarse, rules-based quadrant — not a claim that the business
+  // cycle can be precisely dated from two observations. Growth momentum compares
+  // BEA real GDP quarter-over-quarter annualized growth with the prior quarter. Inflation momentum is used only
+  // when the FRED proxy provides comparable YoY readings; otherwise the
+  // regime is deliberately lower-coverage rather than treating CPI index
+  // levels as an inflation acceleration signal.
+  var growthExpanding = isFinite(gdpCurrent) && isFinite(gdpPrev) ? gdpCurrent > gdpPrev : null; // true = growth accelerating, false = growth slowing
+  var inflationNow = parseFloat(fredJson.CPI_YOY);
+  var inflationPrev = parseFloat(fredJson.CPI_YOY_PREV);
+  var hasInflationMomentum = isFinite(inflationNow) && isFinite(inflationPrev);
+  var inflationRising = hasInflationMomentum ? inflationNow > inflationPrev : null;
+  var fedTightening = isFinite(fedCurrent) && isFinite(fedPrev) ? fedCurrent >= fedPrev : null;
+  var creditStress = isFinite(hySpreadVal) ? hySpreadVal > 4.0 : false;
+  var recessionSignal = isFinite(sahmVal) ? sahmVal > 0.5 : false;
 
-  // MIT Season Detection
-  var detectedSeason;
-  var detectedPhase;
-  var detectedConfidence;
+  var detectedSeason = "Unclassified";
+  var detectedPhase = "Insufficient comparable growth/inflation inputs";
 
-  if (recessionSignal || (creditStress && !growthRising)) {
-    // Override to Winter if recession signals are present
-    detectedSeason = "Winter";
-    detectedPhase = "Deflationary Bust";
-    detectedConfidence = Math.round(60 + sahmVal * 20);
-  } else if (growthRising && !inflationRising) {
-    detectedSeason = "Spring";
-    detectedPhase = "Disinflationary Boom";
-    detectedConfidence = Math.round(65 + (gdpCurrent - gdpPrev) / gdpPrev * 1000);
-  } else if (growthRising && inflationRising) {
-    detectedSeason = "Summer";
-    detectedPhase = "Inflationary Boom";
-    detectedConfidence = Math.round(65 + (cpiCurrent - cpiPrev) / cpiPrev * 500);
-  } else if (!growthRising && inflationRising) {
-    detectedSeason = "Autumn";
-    detectedPhase = "Stagflation";
-    detectedConfidence = Math.round(65 + hySpreadVal * 3);
-  } else {
-    detectedSeason = "Winter";
-    detectedPhase = "Deflationary Bust";
-    detectedConfidence = 60;
+  // Quadrant classification is driven only by comparable growth and inflation
+  // momentum. Credit/Sahm inputs are shown as separate stress indicators rather
+  // than changing the quadrant label.
+  if (growthExpanding !== null && hasInflationMomentum) {
+    if (growthExpanding && !inflationRising) {
+      detectedSeason = "Spring";
+      detectedPhase = "Growth accelerating / inflation momentum falling";
+    } else if (growthExpanding && inflationRising) {
+      detectedSeason = "Summer";
+      detectedPhase = "Growth accelerating / inflation momentum rising";
+    } else if (!growthExpanding && inflationRising) {
+      detectedSeason = "Autumn";
+      detectedPhase = "Growth slowing / inflation momentum rising";
+    } else {
+      detectedSeason = "Winter";
+      detectedPhase = "Growth slowing / inflation momentum falling";
+    }
   }
 
-  // Cap confidence at 95
-  detectedConfidence = Math.min(95, Math.max(50, detectedConfidence));
+  // This field is retained for UI compatibility, but it is strictly DATA
+  // COVERAGE — not statistical confidence or probability.
+  var coverageInputs = [gdpCurrent,gdpPrev,inflationNow,inflationPrev,fedCurrent,yieldCurve,hySpreadVal,sahmVal];
+  var detectedConfidence = Math.round(coverageInputs.filter(function(v){return isFinite(v);}).length / coverageInputs.length * 100);
 
-  // Additional signals to boost confidence
-  if (detectedSeason === "Autumn" && fedTightening) detectedConfidence = Math.min(95, detectedConfidence + 5);
-  if (detectedSeason === "Summer" && yieldCurve > 0.3) detectedConfidence = Math.min(95, detectedConfidence + 5);
-  if (detectedSeason === "Winter" && yieldCurve < 0) detectedConfidence = Math.min(95, detectedConfidence + 5);
+  var spxDisplay = (out.sp500 && out.sp500.price) || (prev.sp500 && prev.sp500.price) || "—";
+  var vixDisplay = (out.vix && out.vix.price) || (prev.vix && prev.vix.price) || "—";
+  var parts = [
+    "Rule-based macro quadrant: " + detectedPhase + ".",
+    "S&P 500 " + spxDisplay + "; VIX " + vixDisplay + ".",
+    "Real GDP growth " + (growthExpanding === true ? "accelerated" : growthExpanding === false ? "slowed" : "was unavailable") +
+      (isFinite(gdpCurrent) && isFinite(gdpPrev) ? " (" + gdpCurrent.toFixed(1) + "% SAAR vs " + gdpPrev.toFixed(1) + "% prior quarter)." : ".")
+  ];
+  if (hasInflationMomentum) parts.push("CPI YoY " + (inflationRising ? "accelerated" : "decelerated") + " (" + inflationNow.toFixed(2) + "% vs " + inflationPrev.toFixed(2) + "% prior comparable reading)." );
+  else parts.push("Comparable CPI YoY momentum was unavailable from the connected FRED feed, so inflation direction did not drive the quadrant classification.");
+  if (isFinite(fedCurrent)) parts.push("Fed funds " + fedCurrent.toFixed(2) + "%" + (fedTightening == null ? "." : " (" + (fedTightening ? "not lower than prior reading" : "lower than prior reading") + ")."));
+  if (isFinite(yieldCurve)) parts.push("10Y–2Y curve " + (yieldCurve >= 0 ? "+" : "") + yieldCurve.toFixed(2) + " pp.");
+  if (isFinite(hySpreadVal)) parts.push("High-yield OAS " + hySpreadVal.toFixed(2) + " pp.");
+  if (isFinite(sahmVal)) parts.push("Sahm Rule indicator " + sahmVal.toFixed(2) + ".");
 
   out.macroRegime = { ...out.macroRegime,
     season: detectedSeason,
     phase: detectedPhase,
     confidence: detectedConfidence,
-    riskOn: detectedSeason === "Spring" || detectedSeason === "Summer",
-    confirmed: true,
-    mediumTerm: detectedSeason === "Spring" || detectedSeason === "Summer" ? "Risk On" : "Risk Off",
-    shortTerm: detectedSeason === "Autumn" ? "Defensive positioning — slowing growth, rising inflation" :
-               detectedSeason === "Winter" ? "Capital preservation — recession risk elevated" :
-               detectedSeason === "Summer" ? "Risk on — inflationary boom, peak liquidity" :
-               "Early cycle — disinflationary boom, central banks easing",
-    description: detectedSeason + " " + detectedPhase.toLowerCase() + " — " +
-      "S&P 500 at " + (out.spx?.price || prev.spx?.price || "—") + ", " +
-      "VIX at " + (out.vix?.price || prev.vix?.price || "—") +
-      (out.fg?.score != null ? ", CNN F&G at " + out.fg.score + " (" + (out.fg.label||"") + ")" : "") +
-      (out.fg?.cryptoScore != null ? ", crypto F&G at " + out.fg.cryptoScore : "") +
-      ". GDP " + (growthRising ? "rising " : "slowing ") + "(" + gdpCurrent.toFixed(0) + " vs " + gdpPrev.toFixed(0) + " prior). " +
-      "CPI " + (inflationRising ? "rising " : "easing ") + "(" + cpiCurrent.toFixed(1) + " vs " + cpiPrev.toFixed(1) + " YoY). " +
-      "Fed Funds " + fedCurrent.toFixed(2) + "% (" + (fedTightening ? "tightening" : "easing") + "). " +
-      "Yield curve " + (yieldCurve >= 0 ? "+" : "") + yieldCurve.toFixed(2) + ". " +
-      "HY spread " + hySpreadVal.toFixed(2) + "%. " +
-      "Sahm Rule " + sahmVal.toFixed(2) + "."
+    riskOn: detectedSeason === "Unclassified" ? null : (detectedSeason === "Spring" || detectedSeason === "Summer"),
+    confirmed: detectedSeason !== "Unclassified",
+    mediumTerm: detectedSeason === "Unclassified" ? "Unclassified" : (detectedSeason === "Spring" || detectedSeason === "Summer" ? "Model risk-on tilt" : "Model defensive tilt"),
+    shortTerm: detectedSeason === "Autumn" ? "Model defensive tilt — slowing growth / firmer inflation" :
+               detectedSeason === "Winter" ? "Model defensive tilt — slowing growth / disinflation" :
+               detectedSeason === "Summer" ? "Model cyclical tilt — accelerating growth / firmer inflation" :
+               detectedSeason === "Spring" ? "Model cyclical tilt — accelerating growth / disinflation" :
+               "Insufficient comparable growth/inflation inputs",
+    description: parts.join(" ")
   };
 }
     if (fredJson.T10Y2Y) {
       var sp = parseFloat(fredJson.T10Y2Y);
-      out.yield = { spread:(sp>=0?"+":"")+sp.toFixed(2), status:sp<0?"INVERTED":Math.abs(sp)<0.1?"FLAT":"NORMAL", recessionRisk:sp<0?"MEDIUM":"LOW", recessionPct:sp<0?35:15 };
+      out.yield = { spread:(sp>=0?"+":"")+sp.toFixed(2), status:sp<0?"INVERTED":Math.abs(sp)<0.1?"FLAT":"NORMAL", recessionRisk:sp<0?"Elevated signal":"No inversion", recessionPct:null };
     }
     if (fredJson.BAMLH0A0HYM2) {
       var hy = parseFloat(fredJson.BAMLH0A0HYM2) * 100;
-      out.credit = { ...out.credit, hyDAS:Math.round(hy).toString(), tightNote:hy<350?"Tight — Complacency Risk":hy>500?"Wide — Stress Signal":"Normal Range" };
+      out.credit = { ...out.credit, hyDAS:Math.round(hy).toString(), tightNote:hy<350?"Tight spread":hy>500?"Wide spread":"Mid-range spread" };
     }
     if (fredJson.FEDFUNDS) {
       var ff = parseFloat(fredJson.FEDFUNDS);
-      out.rates = { status:ff>5?"TIGHTENING":ff<3?"EASING":"NEUTRAL", current:ff.toFixed(2), expected:(ff-0.25).toFixed(2), impliedCuts:"-1" };
+      var ffPrev = parseFloat(fredJson.FEDFUNDS_PREV);
+      var rateStatus = isFinite(ffPrev) ? (ff < ffPrev ? "EASING" : ff > ffPrev ? "TIGHTENING" : "UNCHANGED") : "CURRENT RATE";
+      out.rates = { status:rateStatus, current:isFinite(ff)?ff.toFixed(2):"—", expected:null, impliedCuts:null };
     }
     if (fredJson.NFCI) {
       var nfci = parseFloat(fredJson.NFCI);
-      out.fci = { ...out.fci, nfci:fredJson.NFCI, status:nfci<-0.3?"Loose":nfci>0.3?"Tight":"Neutral" };
+      out.fci = { ...out.fci, nfci:fredJson.NFCI, status:nfci<0?"Looser than historical average":nfci>0?"Tighter than historical average":"Near historical average" };
     }
     if (fredJson.SAHMREALTIME) {
       out.credit = { ...out.credit, sahmRule:parseFloat(fredJson.SAHMREALTIME).toFixed(2) };
     }
+    if (fredJson.CPI_YOY) {
+      var cpiYoY = parseFloat(fredJson.CPI_YOY);
+      var cpiYoYPrev = parseFloat(fredJson.CPI_YOY_PREV);
+      out.inflation = { ...out.inflation,
+        cpi:isFinite(cpiYoY)?cpiYoY.toFixed(2):out.inflation.cpi,
+        trend:isFinite(cpiYoY)&&isFinite(cpiYoYPrev)?(cpiYoY>cpiYoYPrev?"Accelerating":cpiYoY<cpiYoYPrev?"Decelerating":"Stable"):"Trend unavailable",
+        note:isFinite(cpiYoY)&&isFinite(cpiYoYPrev)?("CPI YoY " + (cpiYoY>cpiYoYPrev?"accelerated":"did not accelerate") + " versus the prior comparable reading."):"CPI YoY prior comparison unavailable."
+      };
+    }
     if (fredJson.T10YIE) {
       var inf = parseFloat(fredJson.T10YIE);
-      out.inflation = { ...out.inflation, truflation:fredJson.T10YIE, trend:inf<2?"Falling":inf>3?"Rising":"Stable" };
+      out.inflation = { ...out.inflation, breakeven:fredJson.T10YIE };
     }
-    // Macro Indicators: M2 (US + Global proxy) & Industrial Production (ISM substitute)
+    // Macro Indicators: US M2, central-bank balance-sheet proxy, and Industrial Production
     // US M2 — series M2SL (billions USD, monthly)
     if (fredJson.M2SL) {
       var m2Val = parseFloat(fredJson.M2SL);
@@ -632,181 +581,71 @@ if (fredJson.GDPC1 && fredJson.GDPC1_PREV && fredJson.CPIAUCSL && fredJson.CPI_P
         usM2Change: m2PctChange != null ? (m2PctChange >= 0 ? "+" : "") + m2PctChange + "%" : null
       };
     }
-    // Global M2 proxy — sum of major central bank balance sheets (USD equivalent, $T)
-    // Use WALCL (Fed, $M) + ECBASSETSW (ECB, €M) + JPNASSETS (BoJ, ¥B)
-    if (fredJson.WALCL) {
-      var fedM2 = parseFloat(fredJson.WALCL) / 1000000; // $M → $T
-      var ecbM2 = fredJson.ECBASSETSW ? parseFloat(fredJson.ECBASSETSW) / 1000000 * 1.08 : 0; // €M → $T (approx EUR/USD)
-      var bojM2 = fredJson.JPNASSETS ? parseFloat(fredJson.JPNASSETS) * 0.0067 / 1000 : 0; // ¥B → $T
-      var globalM2Total = fedM2 + ecbM2 + bojM2;
-      // Compute trend from Fed prev if available
-      var fedPrev = parseFloat(fredJson.WALCL_PREV);
-      var hasGlobalPrev = !isNaN(fedPrev) && fedPrev > 0;
+    // Central-bank balance-sheet proxy — NOT global M2. The audited FRED
+    // endpoint performs the unit/FX conversion and returns USD trillions.
+    if (fredJson.CB_PROXY_USD_T) {
+      var cbAssetsTotal = parseFloat(fredJson.CB_PROXY_USD_T);
+      var cbAssetsPrev = parseFloat(fredJson.CB_PROXY_USD_T_PREV);
       out.macroIndic = { ...out.macroIndic,
-        globalM2: "$" + globalM2Total.toFixed(1) + "T",
-        globalM2Trend: hasGlobalPrev ? (parseFloat(fredJson.WALCL) > fedPrev ? "Rising" : "Falling") : "Unknown"
+        cbBalanceProxy: isFinite(cbAssetsTotal) ? "$" + cbAssetsTotal.toFixed(2) + "T" : "—",
+        cbBalanceProxyTrend: isFinite(cbAssetsTotal)&&isFinite(cbAssetsPrev) ? (cbAssetsTotal>cbAssetsPrev?"Rising":cbAssetsTotal<cbAssetsPrev?"Falling":"Flat") : "Unknown"
+      };
+      out.liquidity = { ...out.liquidity,
+        total:isFinite(cbAssetsTotal)?cbAssetsTotal.toFixed(2):"—",
+        score:null,
+        trend:"Central-bank balance-sheet proxy",
+        fedTotal:fredJson.WALCL? (parseFloat(fredJson.WALCL)/1000000).toFixed(2):null,
+        ecbTotal:null,
+        bojTotal:null,
+        pbocTotal:null
       };
     }
-    // ISM Manufacturing PMI is fetched separately via Claude API web search (see below)
-    // because ISM data is licensed and not available on FRED.
-  // Global Liquidity
-if (fredJson.WALCL) {
-  var fed = parseFloat(fredJson.WALCL) / 1000000;
-  var ecb = parseFloat(fredJson.ECBASSETSW) / 1000000;
-  var boj = parseFloat(fredJson.JPNASSETS) / 1000000;
-  var total = (fed + ecb + (boj * 0.0067)).toFixed(1);
-  out.liquidity = { ...out.liquidity,
-    total: total,
-    score: Math.round(Math.min(100, Math.max(0, (parseFloat(total) / 25) * 100))).toString(),
-    trend: parseFloat(total) > 17 ? "Expansionary" : "Contractionary",
-    fedTotal: fed.toFixed(1),
-    ecbTotal: ecb.toFixed(1),
-    bojTotal: (boj * 0.0067).toFixed(1),
-    pbocTotal: "6.0"
-  };
-}
+    // Industrial Production — FRED INDPRO transformed to monthly percent change.
+    if (fredJson.INDPRO_MOM != null) {
+      var indMom = parseFloat(fredJson.INDPRO_MOM);
+      out.macroIndic = { ...out.macroIndic,
+        industrialProduction:isFinite(indMom)?indMom:null,
+        industrialProductionDate:fredJson.INDPRO_DATE||null
+      };
+    }
 return out;
 });
-  setRefreshStatus("FRED data applied!");;
-  // Fetch Sector data
-try {
-  setRefreshStatus("Fetching sector data...");
-  var secRes = await fetch(SECTORS_URL);
-  var secJson = await secRes.json();
-  if (secJson.sectors && secJson.sectors.length > 0) {
-    setData(function(prev) {
-      var out = { ...prev };
-      var sectors = secJson.sectors;
-      var season = prev.macroRegime?.season || "Autumn";
+  setRefreshStatus("FRED data applied!");
+} catch(fredErr) {
+  console.warn("FRED fetch failed:", fredErr.message);
+}
 
-      // Top Sectors — top 5 by 6M return
-      out.topSectors = sectors.slice(0, 5).map(function(s) {
-        return { name:s.name, etf:s.etf, r6m:s.r6m, r3m:s.r3m, pos:s.pos };
-      });
-
-      // ─── MIT SEASON PREFERENCE MAPPING ───
-      var seasonalBias = {
-        "Spring": ["Technology", "Industrials", "Consumer Discretionary", "Financials", "Small Cap"],
-        "Summer": ["Energy", "Materials", "Industrials", "Financials", "Real Assets"],
-        "Autumn": ["Utilities", "Healthcare", "Consumer Staples", "Gold", "Cash"],
-        "Winter": ["Long Duration Bonds", "Gold", "Utilities", "Healthcare", "Cash"]
-      };
-
-      var preferred = seasonalBias[season] || seasonalBias["Autumn"];
-      var avoided = season === "Spring" || season === "Summer" 
-        ? ["Utilities", "Consumer Staples", "Bonds"]
-        : ["Technology", "Consumer Cyclical", "High Beta"];
-
-      // Score each sector: momentum + seasonal preference
-      var scored = sectors.map(function(s) {
-        var momentum = parseFloat(s.r6m) || 0;
-        var isPreferred = preferred.some(p => s.name.includes(p));
-        var isAvoided = avoided.some(a => s.name.includes(a));
-        
-        var score = momentum;
-        if (isPreferred) score += 5;  // Boost preferred sectors
-        if (isAvoided) score -= 5;    // Penalize avoided sectors
-        
-        return { ...s, score, momentum, isPreferred };
-      });
-
-      // Sort by composite score
-      scored.sort(function(a, b) { return b.score - a.score; });
-
-      // Allocate: top 3 overweight, next 3 neutral, bottom 3 underweight
-      var overweight = scored.slice(0, 3).map(function(s) {
-        var conviction = s.isPreferred ? "HIGH" : s.momentum > 5 ? "MEDIUM" : "LOW";
-        var target = (12 + s.momentum * 0.3).toFixed(1);
-        return { name:s.name, conviction, target };
-      });
-
-      var neutral = scored.slice(3, 6).map(function(s) {
-        return { name:s.name, conviction:"LOW", target:"7.0" };
-      });
-
-      var underweight = scored.slice(6, 9).map(function(s) {
-        var conviction = s.isAvoided ? "HIGH" : s.momentum < -5 ? "MEDIUM" : "LOW";
-        var target = Math.max(2, (5 + s.momentum * 0.15)).toFixed(1);
-        return { name:s.name, conviction, target };
-      });
-
-      out.sectorAlloc = { 
-        ...out.sectorAlloc, 
-        season: season.toUpperCase(),
-        bias: season === "Spring" || season === "Summer" ? "OFFENSIVE" : "DEFENSIVE",
-        confidence: prev.macroRegime?.confidence || "72",
-        overweight, 
-        neutral, 
-        underweight 
-      };
-
-      // Asset Allocation — adjust based on market conditions
-      var vix = parseFloat(prev.vix?.price || "20");
-      var hySpread = parseFloat(prev.credit?.hyDAS || "300");
-      var bullSectors = sectors.filter(function(s) { return parseFloat(s.r6m) > 0; }).length;
-      var bearish = vix > 25 || hySpread > 400 || bullSectors < 5;
-      var veryBearish = vix > 35 || hySpread > 500 || bullSectors < 3;
-
-      out.allocation = {
-        stocks:    { n:"60", a: veryBearish?"35": bearish?"45":"55" },
-        bonds:     { n:"10", a: veryBearish?"20": bearish?"15":"10" },
-        cash:      { n:"5",  a: veryBearish?"20": bearish?"15":"8"  },
-        gold:      { n:"5",  a: veryBearish?"15": bearish?"12":"7"  },
-        crypto:    { n:"10", a: veryBearish?"3":  bearish?"5":"10"  },
-        realAssets:{ n:"10", a: veryBearish?"7":  bearish?"8":"10"  },
-      };
-
-      return out;
-   });
-  
-    setRefreshStatus("Sector data applied!");
-    // Fetch Fear & Greed data
+  // Fear & Greed is an optional external proxy feed. It is deliberately
+  // independent of sector data; failure leaves the panel unavailable.
 try {
   setRefreshStatus("Fetching Fear & Greed...");
   var fgRes = await fetch(FG_URL);
-  var fgJson = await fgRes.json();
+  var fgJson = await fgRes.json().catch(function(){return {};});
+  if(!fgRes.ok) throw new Error(fgJson.error||("F&G endpoint HTTP "+fgRes.status));
   setData(function(prev) {
     var out = { ...prev };
     if (fgJson.cnnScore != null || fgJson.cryptoScore != null) {
-      var cnnScore = fgJson.cnnScore != null ? fgJson.cnnScore : prev.fg.score;
-      var cryptoScore = fgJson.cryptoScore != null ? fgJson.cryptoScore : prev.fg.cryptoScore;
-      var prevScore = fgJson.cnnScore != null && prev.fg.score != null
-        ? fgJson.cnnScore - prev.fg.score : null;
+      var cnnScore = fgJson.cnnScore != null && isFinite(Number(fgJson.cnnScore)) ? Number(fgJson.cnnScore) : null;
+      var cryptoScore = fgJson.cryptoScore != null && isFinite(Number(fgJson.cryptoScore)) ? Number(fgJson.cryptoScore) : null;
+      var prevScore = cnnScore != null && prev.fg.score != null ? cnnScore - Number(prev.fg.score) : null;
       out.fg = {
         score: cnnScore,
-        label: fgJson.cnnLabel || prev.fg.label,
+        label: cnnScore!=null ? (fgJson.cnnLabel || parseFGLabel(cnnScore)) : "—",
         vsPrev: prevScore,
         cryptoScore: cryptoScore,
-        cryptoLabel: fgJson.cryptoLabel || prev.fg.cryptoLabel,
+        cryptoLabel: cryptoScore!=null ? (fgJson.cryptoLabel || parseFGLabel(cryptoScore)) : "—",
         timestamp: fgJson.timestamp || new Date().toISOString(),
       };
     }
     return out;
   });
-  if (fgJson.cnnScore != null && fgJson.cryptoScore != null) {
-    setRefreshStatus("F&G LIVE: CNN " + fgJson.cnnScore + " · Crypto " + fgJson.cryptoScore);
-  } else if (fgJson.cnnScore != null) {
-    setRefreshStatus("F&G partial: CNN " + fgJson.cnnScore + " (crypto failed)");
-  } else if (fgJson.cryptoScore != null) {
-    setRefreshStatus("F&G partial: Crypto " + fgJson.cryptoScore + " (CNN failed)");
-  } else {
-    setRefreshStatus("F&G fetch returned no data — check proxy");
-  }
 } catch(fgErr) {
   console.warn("F&G fetch failed:", fgErr.message);
-  setRefreshStatus("F&G error: " + fgErr.message);
-}
-  }
-} catch(secErr) {
-  console.warn("Sector fetch failed:", secErr.message);
-}
-} catch(fredErr) {
-  console.warn("FRED fetch failed:", fredErr.message);
 }
 
-// Fetch OHLC history and compute swing support/resistance for 3 indices
+// Fetch OHLC history and compute recent 5D / 22D range extremes for 3 indices
 try {
-  setRefreshStatus("Fetching price history for S/R levels...");
+  setRefreshStatus("Fetching recent OHLC ranges...");
   var ohlcRes = await fetch(OHLC_URL);
   if (ohlcRes.ok) {
     var ohlcJson = await ohlcRes.json();
@@ -828,7 +667,7 @@ try {
       });
       return out;
     });
-    setRefreshStatus("S/R levels updated!");
+    setRefreshStatus("Recent OHLC ranges updated!");
   }
 } catch(ohlcErr) {
   console.warn("OHLC fetch failed:", ohlcErr.message);
@@ -841,7 +680,18 @@ try {
   if (liqRes.ok) {
     var liqJson = await liqRes.json();
     setData(function(prev) {
-      return { ...prev, liquidityHistory: liqJson };
+      var totalSeries=Array.isArray(liqJson.total)?liqJson.total:[];
+      var latestTotal=totalSeries.length?Number(totalSeries[totalSeries.length-1].value):null;
+      var r13=Number(liqJson.roc13w), r52=Number(liqJson.roc52w);
+      return { ...prev,
+        liquidityHistory: liqJson,
+        liquidity:{...prev.liquidity,
+          total:isFinite(latestTotal)?latestTotal.toFixed(1):prev.liquidity.total,
+          roc13w:isFinite(r13)?r13.toFixed(2):null,
+          roc52w:isFinite(r52)?r52.toFixed(2):null,
+          trend:isFinite(r13)?(r13>0?"Expanding proxy":r13<0?"Contracting proxy":"Flat proxy"):"Balance-sheet proxy"
+        }
+      };
     });
     setRefreshStatus("Liquidity history loaded!");
   }
@@ -871,230 +721,19 @@ try {
   console.warn("Sectors-live fetch failed:", secErr.message);
 }
 
-// Fetch live breadth + options + credit data via Claude API web search
-try {
-  await new Promise(function(r){setTimeout(r, 2000)});
-  setRefreshStatus("Fetching breadth, options & credit data...");
-  var mktDate = new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
-  var mktRes = await fetch(CLAUDE_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 600,
-      tools: [{ type: "web_search_20250305", name: "web_search" }],
-      messages: [{ role: "user", content: "Today is " + mktDate + ". Search for latest S&P 500 market breadth, CBOE put/call ratio, and MOVE index. Return ONLY JSON with no other text: {\"pct50\":\"xx.x\",\"pct200\":\"xx.x\",\"pcr\":\"x.xx\",\"move\":\"xxx.x\"} where pct50 is percent of S&P 500 stocks above 50-day moving average, pct200 is percent above 200-day MA, pcr is CBOE total put/call ratio, move is ICE BofA MOVE index value." }]
-    })
-  });
-  if (mktRes.ok) {
-    var mktJson = await mktRes.json();
-    var mktText = (mktJson.content || []).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("\n");
-    var mktClean = mktText.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
-    var mktParsed = null;
-    try { mktParsed = JSON.parse(mktClean); } catch(e1) {}
-    if (!mktParsed) {
-      var last2 = null, depth2 = 0, start2 = -1;
-      for (var ii = 0; ii < mktClean.length; ii++) {
-        if (mktClean[ii]==="{"){if(depth2===0)start2=ii;depth2++}
-        else if (mktClean[ii]==="}"){depth2--;if(depth2===0&&start2>=0){try{last2=JSON.parse(mktClean.slice(start2,ii+1))}catch(e2){}start2=-1}}
-      }
-      mktParsed = last2;
-    }
-    if (mktParsed) {
-      setData(function(prev) {
-        var out = { ...prev };
-        // Breadth
-        var b50 = parseFloat(mktParsed.pct50);
-        var b200 = parseFloat(mktParsed.pct200);
-        if (b50) {
-          out.breadth = {
-            pct50: String(b50.toFixed(1)),
-            pct200: String((b200 || parseFloat(prev.breadth?.pct200 || "50")).toFixed(1)),
-            ad5d: b50 < 45 ? "Falling" : b50 > 55 ? "Rising" : "Flat",
-            ad20d: b50 < 45 ? "Falling" : b50 > 55 ? "Rising" : "Flat",
-            sentiment: b50 < 45 ? "BEARISH" : b50 > 55 ? "BULLISH" : "NEUTRAL",
-            note: b50 < 45 ? "Narrow participation — majority of stocks below 50-day MA" : b50 > 55 ? "Broad participation — healthy market internals" : "Mixed breadth signals",
-            timestamp: new Date().toISOString(),
-          };
-        }
-        // Options PCR
-        var pcrV = parseFloat(mktParsed.pcr);
-        if (pcrV) {
-          out.options = {
-            dexPCR: String(pcrV.toFixed(2)),
-            omegaPCR: String((pcrV * 0.85).toFixed(2)),
-            status: pcrV > 1.1 ? "BEARISH" : pcrV < 0.7 ? "BULLISH" : "NEUTRAL",
-            conviction: String(Math.round(Math.abs(pcrV - 0.9) * 100)),
-            timestamp: new Date().toISOString(),
-          };
-        }
-        // MOVE Index
-        var moveV = parseFloat(mktParsed.move);
-        if (moveV) {
-          out.credit = { ...out.credit,
-            moveIndex: String(moveV.toFixed(1)),
-            moveSignal: moveV > 120 ? "High" : moveV > 100 ? "Elevated" : "Normal",
-            timestamp: new Date().toISOString(),
-          };
-        }
-        return out;
-      });
-      setRefreshStatus("Breadth/options/credit updated!");
-    }
-  }
-} catch(mktErr) {
-  console.warn("Breadth/options/credit fetch failed:", mktErr.message);
-}
-
-// Fetch latest ISM Manufacturing PMI via Claude API (ISM data is licensed, not on FRED)
-try {
-  await new Promise(function(r){setTimeout(r, 4000)});
-  setRefreshStatus("Fetching ISM PMI...");
-  var ismDate = new Date().toLocaleDateString("en-US",{month:"long",year:"numeric"});
-  var ismRes = await fetch(CLAUDE_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 400,
-      tools: [{ type: "web_search_20250305", name: "web_search" }],
-      messages: [{ role: "user", content: "What is the most recent United States ISM Manufacturing PMI reading? Search for the latest monthly release as of " + ismDate + ". Return ONLY this JSON, no other text: {\"pmi\":\"NUMBER_AS_STRING\",\"month\":\"MONTH_YEAR\",\"prev\":\"PREVIOUS_MONTH_PMI\"}. Example: {\"pmi\":\"52.7\",\"month\":\"March 2026\",\"prev\":\"52.4\"}" }]
-    })
-  });
-  var ismJson = await ismRes.json();
-  var ismText = "";
-  if (ismJson.content && Array.isArray(ismJson.content)) {
-    ismJson.content.forEach(function(b) { if (b.type === "text" && b.text) ismText += b.text + "\n"; });
-  }
-  var ismClean = ismText.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
-  var ismParsed = null;
-  try { ismParsed = JSON.parse(ismClean); } catch(eIsm) {
-    var dIsm = 0, sIsm = -1;
-    for (var ki = 0; ki < ismClean.length; ki++) {
-      if (ismClean[ki]==="{") { if (dIsm===0) sIsm=ki; dIsm++; }
-      else if (ismClean[ki]==="}") { dIsm--; if (dIsm===0 && sIsm>=0) { try { ismParsed = JSON.parse(ismClean.slice(sIsm,ki+1)); } catch(eIsm2){} sIsm=-1; } }
-    }
-  }
-  if (ismParsed && ismParsed.pmi) {
-    var pmiVal = parseFloat(ismParsed.pmi);
-    var prevVal = parseFloat(ismParsed.prev);
-    setData(function(prev) {
-      return { ...prev, macroIndic: { ...prev.macroIndic,
-        ismPMI: pmiVal.toFixed(1),
-        ismStatus: pmiVal >= 50 ? "Expanding" : "Contracting",
-        ismLabel: "ISM Manufacturing PMI",
-        ismMonth: ismParsed.month || "",
-        ismPrev: !isNaN(prevVal) ? prevVal.toFixed(1) : null,
-      }};
-    });
-    setRefreshStatus("ISM PMI: " + pmiVal.toFixed(1));
-  }
-} catch(ismErr) {
-  console.warn("ISM PMI fetch failed:", ismErr.message);
-}
-
-// Generate AI analysis with bull/bear/neutral viewpoints
-try {
-  await new Promise(function(r){setTimeout(r, 6000)});
-  setRefreshStatus("Generating AI analysis...");
-  // Build snapshot from CURRENT state (after all data fetches above)
-  await new Promise(function(r) { setTimeout(r, 200); }); // Let React flush state updates
-  var snapshot = null;
-  setData(function(prev) { snapshot = { ...prev }; return prev; });
-  await new Promise(function(r) { setTimeout(r, 100); });
-  var snap = snapshot || SEED;
-  
-  var todayStr = new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
-  var contextStr =
-    "Today is " + todayStr + ". Generate a macro analysis based on this LIVE market data:\n\n" +
-    "PRICES & INDICES:\n" +
-    "- S&P 500: " + (snap.sp500?.price||"?") + " (" + (snap.sp500?.change||"?") + "% daily)\n" +
-    "- VIX: " + (snap.vix?.price||"?") + " (" + (snap.vix?.level||"?") + ")\n" +
-    "- DXY (Dollar): " + (snap.dxy?.price||"?") + " (" + (snap.dxy?.strength||"?") + ")\n\n" +
-    "RATES & YIELDS:\n" +
-    "- 10Y-2Y Yield Spread: " + (snap.yield?.spread||"?") + " (" + (snap.yield?.status||"?") + ")\n" +
-    "- Fed Funds Rate: " + (snap.rates?.current||"?") + "% (" + (snap.rates?.status||"?") + ")\n\n" +
-    "INFLATION:\n" +
-    "- CPI YoY: " + (snap.inflation?.cpi||"?") + "% (trend: " + (snap.inflation?.trend||"?") + ")\n" +
-    "- Truflation: " + (snap.inflation?.truflation||"?") + "%\n\n" +
-    "SENTIMENT:\n" +
-    "- CNN Fear & Greed: " + (snap.fg?.score != null ? snap.fg.score : "?") + " (" + (snap.fg?.label||"?") + ")\n" +
-    "- Crypto F&G: " + (snap.fg?.cryptoScore != null ? snap.fg.cryptoScore : "?") + " (" + (snap.fg?.cryptoLabel||"?") + ")\n\n" +
-    "BREADTH & CREDIT:\n" +
-    "- Market Breadth (% above 50DMA): " + (snap.breadth?.pct50||"?") + "%\n" +
-    "- HY Credit Spread: " + (snap.credit?.hyDAS||"?") + "bp\n" +
-    "- MOVE Index: " + (snap.credit?.moveIndex||"?") + "\n" +
-    "- Sahm Rule: " + (snap.credit?.sahmRule||"?") + "\n" +
-    "- NFCI: " + (snap.fci?.nfci||"?") + " (" + (snap.fci?.status||"?") + ")\n\n" +
-    "MACRO:\n" +
-    "- Global M2: " + (snap.macroIndic?.globalM2||"?") + " (" + (snap.macroIndic?.globalM2Trend||"?") + ")\n" +
-    "- ISM Manufacturing PMI: " + (snap.macroIndic?.ismPMI||"?") + " (" + (snap.macroIndic?.ismStatus||"?") + ")\n" +
-    "- MIT Macro Season: " + (snap.macroRegime?.season||"?") + " / " + (snap.macroRegime?.phase||"?") + "\n\n" +
-    "SECTOR ROTATION:\n" +
-    "- Top sectors (6M): " + (snap.topSectors||[]).slice(0,3).map(function(s){return s.name + " (" + s.r6m + "%)"}).join(", ") + "\n" +
-    "- Bull pairs: " + (snap.sectorRotation||[]).filter(function(p){return p.bull===true}).map(function(p){return p.name}).join(", ") + "\n" +
-    "- Bear pairs: " + (snap.sectorRotation||[]).filter(function(p){return p.bull===false}).map(function(p){return p.name}).join(", ") + "\n";
-
-  var aiRes = await fetch(CLAUDE_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 3000,
-      messages: [{ role: "user", content:
-        contextStr +
-        "\nYou are a professional macro strategist. Using ONLY the specific numbers above (cite them), generate THREE distinct investment viewpoints. Each should be 2-3 paragraphs. Be specific — reference actual values. Return ONLY valid JSON (no markdown fences, no other text):\n" +
-        '{"bullish":"the bull case for risk-on, equities, growth","neutral":"balanced view weighing both sides","bearish":"the bear case for caution, defensives, risk-off"}'
-      }]
-    })
-  });
-  if (aiRes.status === 429) {
-    setRefreshStatus("AI rate limited — using cached analysis");
-  } else {
-    var aiJson = await aiRes.json();
-    var aiText = (aiJson.content || []).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("\n");
-    console.log("AI raw response length:", aiText.length, "First 300 chars:", aiText.slice(0,300));
-    var aiClean = aiText.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
-    
-    // Try direct parse first
-    var views = null;
-    try { views = JSON.parse(aiClean); } catch(eAI) {
-      // Try to find JSON object with brace matching
-      var dAI = 0, sAI = -1;
-      for (var k = 0; k < aiClean.length; k++) {
-        if (aiClean[k]==="{"){if(dAI===0)sAI=k;dAI++}
-        else if (aiClean[k]==="}"){dAI--;if(dAI===0&&sAI>=0){try{views=JSON.parse(aiClean.slice(sAI,k+1))}catch(eAI2){}sAI=-1}}
-      }
-    }
-    
-    // If still no views, try to extract each key individually with regex
-    if (!views || (!views.bullish && !views.bearish && !views.neutral)) {
-      console.log("Brace matching failed, trying regex extraction...");
-      var bullMatch = aiClean.match(/"bullish"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
-      var neutralMatch = aiClean.match(/"neutral"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
-      var bearMatch = aiClean.match(/"bearish"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
-      if (bullMatch || neutralMatch || bearMatch) {
-        views = {
-          bullish: bullMatch ? bullMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, '"') : "",
-          neutral: neutralMatch ? neutralMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, '"') : "",
-          bearish: bearMatch ? bearMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, '"') : "",
-        };
-      }
-    }
-    
-    if (views && (views.bullish || views.bearish || views.neutral)) {
-      views._timestamp = new Date().toISOString();
-      setData(function(prev) { return { ...prev, aiViews: views }; });
-      setRefreshStatus("AI analysis ready!");
-    } else {
-      console.log("AI parse failed. Clean text:", aiClean.slice(0, 500));
-      setRefreshStatus("AI returned unexpected format — using cached");
-    }
-  }
-} catch(aiErr) {
-  console.warn("AI analysis failed:", aiErr.message);
-  setRefreshStatus("AI analysis failed: " + aiErr.message);
-}
+// Data that is not backed by a connected deterministic feed is intentionally
+// left unavailable. Clear those fields so stale seed values cannot be
+// mistaken for current observations. Existing first-party/proxy fields remain.
+setData(function(prev) {
+  var next={...prev};
+  next.breadth={...prev.breadth,pct50:null,pct200:null,ad5d:"—",ad20d:"—",sentiment:"Unavailable",note:"Breadth feed not connected"};
+  next.options={...prev.options,dexPCR:null,omegaPCR:null,status:"Unavailable",conviction:null};
+  next.macroIndic={...prev.macroIndic};
+  next.scenarioViews=buildRuleBasedViews(next);
+  return next;
+});
+setRefreshStatus("Live data refreshed · scenario analysis updated");
+setTimeout(function(){setRefreshStatus("");},2500);
     } catch(e) {
       setErr("Refresh error: " + e.message);
       setRefreshStatus("");
@@ -1124,22 +763,22 @@ try {
           </div>
         </div>
         <div style={{ padding:"10px 8px 5px" }}>
-          <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:5 }}>Pipeline</div>
+          <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:5 }}>Analysis Workflow</div>
           <div style={{ height:3, background:C.border, borderRadius:2, marginBottom:8 }}>
             <div style={{ width:(stage/5)*100 + "%", height:"100%", background:"linear-gradient(90deg," + C.blue + "," + C.purple + ")", borderRadius:2, transition:"width .3s" }} />
           </div>
-          <div style={{ fontSize:10, color:C.textDim, marginBottom:10 }}>5/5 stages</div>
+          <div style={{ fontSize:10, color:C.textDim, marginBottom:10 }}>Module {stage} of 5</div>
           {stages.map(st => (
             <div key={st.n} onClick={()=>setStage(st.n)} style={{ display:"flex", alignItems:"center", gap:7, padding:"6px 7px", borderRadius:6, marginBottom:3, background:stage===st.n?C.blue+"20":"transparent", border:stage===st.n?"1px solid " + C.blue + "44":"1px solid transparent", cursor:"pointer" }}>
               <div style={{ width:16, height:16, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", background:stage===st.n?C.blue:C.border, fontSize:9, fontWeight:700, flexShrink:0 }}>{st.n}</div>
               <span style={{ fontSize:11, color:stage===st.n?C.text:C.textMid, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{st.label}</span>
-              <span style={{ fontSize:9, color:C.green }}>✓</span>
+              <span style={{ fontSize:9, color:stage===st.n?C.cyan:C.textDim }}>{stage===st.n?"●":""}</span>
             </div>
           ))}
         </div>
         <div style={{ flex:1 }} />
-        <div style={{ padding:"5px 13px", fontSize:9, color:C.textDim, display:"flex", gap:8 }}>
-          <span style={{ color:C.green }}>● Done</span><span style={{ color:C.orange }}>◌ Running</span><span>○ Pending</span>
+        <div style={{ padding:"5px 13px", fontSize:9, color:C.textDim, lineHeight:1.4 }}>
+          Accuracy-first display · unavailable data stays blank
         </div>
       </div>
 
@@ -1153,11 +792,11 @@ try {
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
             {refreshStatus && <span style={{ fontSize:10, color:C.cyan, fontFamily:font, maxWidth:300, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{refreshStatus}</span>}
-            {!refreshStatus && <span style={{ fontSize:10, color:C.green, fontFamily:font }}>● {ts}</span>}
+            {!refreshStatus && <span style={{ fontSize:10, color:C.green, fontFamily:font }}>● Market refresh: {ts}</span>}
             <button onClick={doRefresh} disabled={p1} style={{ background:p1?C.border:"linear-gradient(135deg," + C.cyan + "dd," + C.blue + ")", border:"none", borderRadius:6, color:p1?C.textMid:C.bg, padding:"6px 13px", fontSize:11, fontWeight:700, cursor:p1?"wait":"pointer", whiteSpace:"nowrap" }}>
               {p1?"Refreshing...":"⚡ Refresh"}
             </button>
-            <button style={{ background:"linear-gradient(135deg," + C.blue + "," + C.purple + ")", border:"none", borderRadius:6, color:C.text, padding:"6px 13px", fontSize:11, fontWeight:600, cursor:"pointer" }}>▶ Run Pipeline</button>
+            <button onClick={function(){setStage(1);doRefresh();}} disabled={p1} style={{ background:"linear-gradient(135deg," + C.blue + "," + C.purple + ")", border:"none", borderRadius:6, color:C.text, padding:"6px 13px", fontSize:11, fontWeight:600, cursor:p1?"wait":"pointer" }}>▶ Open Analysis</button>
           </div>
         </div>
 
@@ -1503,8 +1142,8 @@ function LiquidityChart({ history }) {
 
 
 function MacroStage({ d }) {
-  const sc = SC[d.macroRegime?.season] || C.gold;
-  const [aiView, setAiView] = useState("neutral");
+  const sc = SC[d.macroRegime?.season] || C.textDim;
+  const [scenarioView, setAiView] = useState("neutral");
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
@@ -1515,68 +1154,71 @@ function MacroStage({ d }) {
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
             <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase" }}>Macro Regime</div>
             <Badge
-              label={d.macroRegime?.description && d.macroRegime.description.indexOf(d.macroRegime.season) === 0 ? "LIVE" : "SEED"}
-              color={d.macroRegime?.description && d.macroRegime.description.indexOf(d.macroRegime.season) === 0 ? C.green : C.textDim}
+              label={d.macroRegime?.season!=="Unclassified" ? "CONNECTED INPUTS" : "INSUFFICIENT INPUTS"}
+              color={d.macroRegime?.season!=="Unclassified" ? C.green : C.textDim}
             />
           </div>
           <div style={{ display:"flex", gap:13 }}>
             <div style={{ width:44, height:44, borderRadius:10, background:sc+"20", border:"1px solid " + sc + "40", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>
-              {d.macroRegime?.season==="Summer"?"☀️":d.macroRegime?.season==="Spring"?"🌱":d.macroRegime?.season==="Autumn"?"🍂":"❄️"}
+              {d.macroRegime?.season==="Summer"?"☀️":d.macroRegime?.season==="Spring"?"🌱":d.macroRegime?.season==="Autumn"?"🍂":d.macroRegime?.season==="Winter"?"❄️":"◌"}
             </div>
             <div style={{ flex:1 }}>
               <div style={{ fontSize:21, fontWeight:700, color:sc, marginBottom:7 }}>{d.macroRegime?.season} ({d.macroRegime?.phase})</div>
               <div style={{ display:"flex", gap:7, alignItems:"center", marginBottom:7, flexWrap:"wrap" }}>
-                <Badge label={d.macroRegime?.riskOn?"RISK ON":"RISK OFF"} color={d.macroRegime?.riskOn?C.green:C.red} />
-                <span style={{ fontSize:11, color:C.textMid }}>{d.macroRegime?.confirmed?"Confirmed":"Unconfirmed"}</span>
+                <Badge label={d.macroRegime?.riskOn===true?"MODEL RISK-ON TILT":d.macroRegime?.riskOn===false?"MODEL DEFENSIVE TILT":"NO TILT"} color={d.macroRegime?.riskOn===true?C.green:d.macroRegime?.riskOn===false?C.orange:C.textDim} />
+                <span style={{ fontSize:11, color:C.textMid }}>{d.macroRegime?.confirmed?"Growth + inflation inputs available":"Quadrant inputs incomplete"}</span>
                 <span style={{ fontSize:11, color:C.textMid }}>│</span>
-                <span style={{ fontSize:11, color:C.textMid }}>{d.macroRegime?.confidence}% confidence</span>
+                <span style={{ fontSize:11, color:C.textMid }}>{d.macroRegime?.confidence}% data coverage</span>
               </div>
               <div style={{ height:3, background:C.border, borderRadius:2, marginBottom:8 }}>
-                <div style={{ width:(d.macroRegime?.confidence||63) + "%", height:"100%", background:sc, borderRadius:2 }} />
+                <div style={{ width:(d.macroRegime?.confidence ?? 0) + "%", height:"100%", background:sc, borderRadius:2 }} />
               </div>
-              <div style={{ marginBottom:3 }}><span style={{ fontSize:12, color:C.textDim }}>Medium term: </span><span style={{ fontSize:12, color:C.green }}>{d.macroRegime?.mediumTerm}</span></div>
+              <div style={{ marginBottom:3 }}><span style={{ fontSize:12, color:C.textDim }}>Medium term: </span><span style={{ fontSize:12, color:d.macroRegime?.riskOn===true?C.green:d.macroRegime?.riskOn===false?C.orange:C.textDim }}>{d.macroRegime?.mediumTerm}</span></div>
               <div style={{ marginBottom:8 }}><span style={{ fontSize:12, color:C.textDim }}>Short term: </span><span style={{ fontSize:12, color:C.orange }}>{d.macroRegime?.shortTerm}</span></div>
             <p style={{ fontSize:11, color:C.textMid, lineHeight:1.6, margin:"0 0 10px" }}>
-  {MIT_SEASONS[d.macroRegime?.season]?.description || d.macroRegime?.description}
+  {REGIME_QUADRANTS[d.macroRegime?.season]?.description || d.macroRegime?.description}
 </p>
 <div style={{ display:"flex", gap:8, marginBottom:8, flexWrap:"wrap" }}>
   <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"3px 8px", fontSize:11 }}>
     <span style={{ color:C.textDim }}>Growth: </span>
-    <span style={{ color:MIT_SEASONS[d.macroRegime?.season]?.growth==="Rising"?C.green:C.red, fontWeight:700 }}>{MIT_SEASONS[d.macroRegime?.season]?.growth} ▲</span>
+    <span style={{ color:REGIME_QUADRANTS[d.macroRegime?.season]?.growth==="Rising"?C.green:REGIME_QUADRANTS[d.macroRegime?.season]?.growth==="Slowing"?C.red:C.textDim, fontWeight:700 }}>{REGIME_QUADRANTS[d.macroRegime?.season]?.growth} {REGIME_QUADRANTS[d.macroRegime?.season]?.growth==="Rising"?"▲":REGIME_QUADRANTS[d.macroRegime?.season]?.growth==="Slowing"?"▼":""}</span>
   </div>
   <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"3px 8px", fontSize:11 }}>
     <span style={{ color:C.textDim }}>Inflation: </span>
-    <span style={{ color:MIT_SEASONS[d.macroRegime?.season]?.inflation==="Rising"?C.red:C.green, fontWeight:700 }}>{MIT_SEASONS[d.macroRegime?.season]?.inflation} {MIT_SEASONS[d.macroRegime?.season]?.inflation==="Rising"?"▲":"▼"}</span>
+    <span style={{ color:REGIME_QUADRANTS[d.macroRegime?.season]?.inflation==="Rising"?C.red:REGIME_QUADRANTS[d.macroRegime?.season]?.inflation==="Falling"?C.green:C.textDim, fontWeight:700 }}>{REGIME_QUADRANTS[d.macroRegime?.season]?.inflation} {REGIME_QUADRANTS[d.macroRegime?.season]?.inflation==="Rising"?"▲":REGIME_QUADRANTS[d.macroRegime?.season]?.inflation==="Falling"?"▼":""}</span>
   </div>
   <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"3px 8px", fontSize:11 }}>
     <span style={{ color:C.textDim }}>Bias: </span>
-    <span style={{ color:sc, fontWeight:700 }}>{MIT_SEASONS[d.macroRegime?.season]?.bias}</span>
+    <span style={{ color:sc, fontWeight:700 }}>{REGIME_QUADRANTS[d.macroRegime?.season]?.bias}</span>
   </div>
   <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"3px 8px", fontSize:11 }}>
     <span style={{ color:C.textDim }}>Cycle: </span>
-    <span style={{ color:C.text, fontWeight:700 }}>{MIT_SEASONS[d.macroRegime?.season]?.cycle}</span>
+    <span style={{ color:C.text, fontWeight:700 }}>{REGIME_QUADRANTS[d.macroRegime?.season]?.cycle}</span>
   </div>
 </div>
 <div style={{ background:C.cardAlt, border:"1px solid " + sc + "33", borderRadius:6, padding:"7px 10px", marginBottom:8 }}>
   <div style={{ fontSize:10, color:C.textDim, marginBottom:4, letterSpacing:1 }}>🔑 KEY THEME</div>
-  <div style={{ fontSize:11, color:sc }}>{MIT_SEASONS[d.macroRegime?.season]?.keyTheme}</div>
+  <div style={{ fontSize:11, color:sc }}>{REGIME_QUADRANTS[d.macroRegime?.season]?.keyTheme}</div>
 </div>
 <div style={{ display:"flex", gap:10 }}>
   <div style={{ flex:1, background:C.cardAlt, border:"1px solid " + C.green + "33", borderRadius:6, padding:"7px 10px" }}>
-    <div style={{ fontSize:10, color:C.green, marginBottom:4, letterSpacing:1 }}>↑ OVERWEIGHT</div>
-    {(MIT_SEASONS[d.macroRegime?.season]?.overweight||[]).map(function(s) {
+    <div style={{ fontSize:10, color:C.green, marginBottom:4, letterSpacing:1 }}>↑ MODEL TILT</div>
+    {(REGIME_QUADRANTS[d.macroRegime?.season]?.overweight||[]).map(function(s) {
       return <div key={s} style={{ fontSize:11, color:C.textMid, marginBottom:2 }}>• {s}</div>;
     })}
   </div>
   <div style={{ flex:1, background:C.cardAlt, border:"1px solid " + C.red + "33", borderRadius:6, padding:"7px 10px" }}>
-    <div style={{ fontSize:10, color:C.red, marginBottom:4, letterSpacing:1 }}>↓ UNDERWEIGHT</div>
-    {(MIT_SEASONS[d.macroRegime?.season]?.underweight||[]).map(function(s) {
+    <div style={{ fontSize:10, color:C.red, marginBottom:4, letterSpacing:1 }}>↓ MODEL UNDERWEIGHT</div>
+    {(REGIME_QUADRANTS[d.macroRegime?.season]?.underweight||[]).map(function(s) {
       return <div key={s} style={{ fontSize:11, color:C.textMid, marginBottom:2 }}>• {s}</div>;
     })}
   </div>
 </div>
 <div style={{ marginTop:8, fontSize:10, color:C.textDim, fontFamily:font }}>
   {d.macroRegime?.description}
+</div>
+<div style={{ marginTop:6, fontSize:9, color:C.textDim }}>
+  Framework labels and asset tilts are heuristic model outputs. They are not official NBER cycle dates, statistical probabilities, or investment recommendations.
 </div>
             </div>
           </div>
@@ -1588,7 +1230,7 @@ function MacroStage({ d }) {
         <Card>
           <SecTitle icon="📈" title="S&P 500" />
           <TVWidget scriptName="embed-widget-mini-symbol-overview" height={140} config={{
-            "symbol": "FOREXCOM:SPXUSD",
+            "symbol": "SP:SPX",
             "width": "100%",
             "height": 140,
             "locale": "en",
@@ -1601,13 +1243,13 @@ function MacroStage({ d }) {
             "noTimeScale": true
           }} />
           <div style={{ borderTop:"1px solid " + C.border, marginTop:8, paddingTop:8 }}>
-            <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:5 }}>SUPPORT / RESISTANCE</div>
+            <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:5 }}>RECENT OHLC RANGE</div>
             <div style={{ display:"grid", gridTemplateColumns:"auto 1fr 1fr", gap:"3px 7px", fontSize:11 }}>
-              <span /><span style={{ color:C.textDim, textAlign:"right" }}>Support</span><span style={{ color:C.textDim, textAlign:"right" }}>Resistance</span>
-              <span style={{ color:C.textMid }}>Weekly</span>
+              <span /><span style={{ color:C.textDim, textAlign:"right" }}>Low</span><span style={{ color:C.textDim, textAlign:"right" }}>High</span>
+              <span style={{ color:C.textMid }}>5D</span>
               <span style={{ textAlign:"right", fontFamily:font, color:C.blueLight }}>{d.sp500?.wkSupport}</span>
               <span style={{ textAlign:"right", fontFamily:font, color:C.orange }}>{d.sp500?.wkResistance}</span>
-              <span style={{ color:C.textMid }}>Monthly</span>
+              <span style={{ color:C.textMid }}>22D</span>
               <span style={{ textAlign:"right", fontFamily:font, color:C.blueLight }}>{d.sp500?.moSupport}</span>
               <span style={{ textAlign:"right", fontFamily:font, color:C.orange }}>{d.sp500?.moResistance}</span>
             </div>
@@ -1615,9 +1257,9 @@ function MacroStage({ d }) {
         </Card>
 
         <Card>
-          <SecTitle icon="💻" title="Nasdaq 100" />
+          <SecTitle icon="💻" title="Nasdaq Composite" />
           <TVWidget scriptName="embed-widget-mini-symbol-overview" height={140} config={{
-            "symbol": "OANDA:NAS100USD",
+            "symbol": "NASDAQ:IXIC",
             "width": "100%",
             "height": 140,
             "locale": "en",
@@ -1630,13 +1272,13 @@ function MacroStage({ d }) {
             "noTimeScale": true
           }} />
           <div style={{ borderTop:"1px solid " + C.border, marginTop:8, paddingTop:8 }}>
-            <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:5 }}>SUPPORT / RESISTANCE</div>
+            <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:5 }}>RECENT OHLC RANGE</div>
             <div style={{ display:"grid", gridTemplateColumns:"auto 1fr 1fr", gap:"3px 7px", fontSize:11 }}>
-              <span /><span style={{ color:C.textDim, textAlign:"right" }}>Support</span><span style={{ color:C.textDim, textAlign:"right" }}>Resistance</span>
-              <span style={{ color:C.textMid }}>Weekly</span>
+              <span /><span style={{ color:C.textDim, textAlign:"right" }}>Low</span><span style={{ color:C.textDim, textAlign:"right" }}>High</span>
+              <span style={{ color:C.textMid }}>5D</span>
               <span style={{ textAlign:"right", fontFamily:font, color:C.blueLight }}>{d.nasdaq?.wkSupport}</span>
               <span style={{ textAlign:"right", fontFamily:font, color:C.orange }}>{d.nasdaq?.wkResistance}</span>
-              <span style={{ color:C.textMid }}>Monthly</span>
+              <span style={{ color:C.textMid }}>22D</span>
               <span style={{ textAlign:"right", fontFamily:font, color:C.blueLight }}>{d.nasdaq?.moSupport}</span>
               <span style={{ textAlign:"right", fontFamily:font, color:C.orange }}>{d.nasdaq?.moResistance}</span>
             </div>
@@ -1646,7 +1288,7 @@ function MacroStage({ d }) {
         <Card>
           <SecTitle icon="₿" title="Bitcoin" />
           <TVWidget scriptName="embed-widget-mini-symbol-overview" height={140} config={{
-            "symbol": "CRYPTO:BTCUSD",
+            "symbol": "COINBASE:BTCUSD",
             "width": "100%",
             "height": 140,
             "locale": "en",
@@ -1659,13 +1301,13 @@ function MacroStage({ d }) {
             "noTimeScale": true
           }} />
           <div style={{ borderTop:"1px solid " + C.border, marginTop:8, paddingTop:8 }}>
-            <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:5 }}>SUPPORT / RESISTANCE</div>
+            <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:5 }}>RECENT OHLC RANGE</div>
             <div style={{ display:"grid", gridTemplateColumns:"auto 1fr 1fr", gap:"3px 7px", fontSize:11 }}>
-              <span /><span style={{ color:C.textDim, textAlign:"right" }}>Support</span><span style={{ color:C.textDim, textAlign:"right" }}>Resistance</span>
-              <span style={{ color:C.textMid }}>Weekly</span>
+              <span /><span style={{ color:C.textDim, textAlign:"right" }}>Low</span><span style={{ color:C.textDim, textAlign:"right" }}>High</span>
+              <span style={{ color:C.textMid }}>5D</span>
               <span style={{ textAlign:"right", fontFamily:font, color:C.blueLight }}>{d.bitcoin?.wkSupport}</span>
               <span style={{ textAlign:"right", fontFamily:font, color:C.orange }}>{d.bitcoin?.wkResistance}</span>
-              <span style={{ color:C.textMid }}>Monthly</span>
+              <span style={{ color:C.textMid }}>22D</span>
               <span style={{ textAlign:"right", fontFamily:font, color:C.blueLight }}>{d.bitcoin?.moSupport}</span>
               <span style={{ textAlign:"right", fontFamily:font, color:C.orange }}>{d.bitcoin?.moResistance}</span>
             </div>
@@ -1679,9 +1321,9 @@ function MacroStage({ d }) {
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8 }}>
             <span style={{ fontSize:13 }}>🧠</span>
-            <span style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase" }}>AI-Enhanced Macro Analysis</span>
+            <span style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase" }}>Macro Scenario Analysis</span>
           </div>
-          <Badge label={d.aiViews?._timestamp ? "Live · Sonnet" : "SEED"} color={d.aiViews?._timestamp ? C.purple : C.textDim} />
+          <Badge label={d.scenarioViews?._timestamp ? "RULE-BASED" : "STARTING TEMPLATE"} color={d.scenarioViews?._timestamp ? C.purple : C.textDim} />
         </div>
 
         {/* Tab switcher */}
@@ -1691,7 +1333,7 @@ function MacroStage({ d }) {
             { key:"neutral", label:"⚖ Neutral", color:C.yellow },
             { key:"bearish", label:"🐻 Bearish", color:C.red },
           ].map(function(tab) {
-            var active = aiView === tab.key;
+            var active = scenarioView === tab.key;
             return (
               <button key={tab.key} onClick={function(){ setAiView(tab.key); }} style={{
                 background: active ? tab.color + "22" : "transparent",
@@ -1716,21 +1358,21 @@ function MacroStage({ d }) {
           fontSize:12,
           lineHeight:1.7,
           color:C.textMid,
-          background: (aiView==="bullish"?C.green:aiView==="bearish"?C.red:C.yellow) + "08",
-          border: "1px solid " + (aiView==="bullish"?C.green:aiView==="bearish"?C.red:C.yellow) + "22",
+          background: (scenarioView==="bullish"?C.green:scenarioView==="bearish"?C.red:C.yellow) + "08",
+          border: "1px solid " + (scenarioView==="bullish"?C.green:scenarioView==="bearish"?C.red:C.yellow) + "22",
           borderRadius: 6,
           padding: "10px 12px",
           maxHeight: 380,
           overflowY: "auto",
         }}>
-          {(d.aiViews?.[aiView] || "Click ⚡ Refresh to load AI analysis.").split("\n\n").map(function(para,i) {
+          {(d.scenarioViews?.[scenarioView] || "Click ⚡ Refresh to build scenario analysis from connected data.").split("\n\n").map(function(para,i) {
             return <p key={i} style={{ margin:"0 0 10px" }}>{para}</p>;
           })}
         </div>
 
         <div style={{ display:"flex", gap:4, marginTop:10, alignItems:"center", flexWrap:"wrap" }}>
           <span style={{ fontSize:9, color:C.textDim, letterSpacing:1 }}>FRAMEWORKS:</span>
-          {["mit_macro","liquidity","ray_dalio"].map(function(t) {
+          {["four-season regime","liquidity","credit + rates"].map(function(t) {
             return <span key={t} style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:4, padding:"2px 6px", fontSize:10, color:C.textDim }}>{t}</span>;
           })}
         </div>
@@ -1743,44 +1385,38 @@ function MacroStage({ d }) {
           ) : (
             <div>
               <div style={{ fontSize:25, fontWeight:700, fontFamily:font, marginBottom:3 }}>{d.dxy?.price}</div>
-              <div style={{ fontSize:11, color:C.textMid, marginBottom:8, fontFamily:font }}>— {d.dxy?.change}%</div>
+              <div style={{ fontSize:11, color:C.textMid, marginBottom:8, fontFamily:font }}>{d.dxy?.change!=null&&d.dxy?.change!=="—"?d.dxy.change+"%":"—"}</div>
             </div>
           )}
-          <div style={{ marginBottom:10, height:40, background:C.cardAlt, borderRadius:4, overflow:"hidden" }}>
-            <div style={{ height:40, display:"flex", alignItems:"center", justifyContent:"center" }}>
-              <svg width="100%" height="30" viewBox="0 0 260 30" preserveAspectRatio="none">
-                <polyline points="0,20 26,18 52,22 78,15 104,17 130,14 156,16 182,12 208,14 234,11 260,13" fill="none" stroke={C.blueLight} strokeWidth="1.5" />
-              </svg>
-            </div>
-          </div>
+<div style={{ marginBottom:10, fontSize:9, color:C.textDim }}>Historical DXY sparkline is withheld unless a real time-series feed is connected.</div>
           <div style={{ marginBottom:10 }}>
             <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:C.textDim, marginBottom:3 }}><span>Weak</span><span>Neutral</span><span>Strong</span></div>
             <div style={{ position:"relative", height:5, background:"linear-gradient(90deg," + C.red + "," + C.textDim + "," + C.green + ")", borderRadius:3 }}>
-              <div style={{ position:"absolute", width:10, height:10, borderRadius:"50%", background:C.blue, border:"2px solid " + C.text, top:-3, left:(d.dxy?.position||48) + "%", transform:"translateX(-50%)" }} />
+              {d.dxy?.position != null && <div style={{ position:"absolute", width:10, height:10, borderRadius:"50%", background:C.blue, border:"2px solid " + C.text, top:-3, left:d.dxy.position + "%", transform:"translateX(-50%)" }} />}
             </div>
             <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:C.textDim, marginTop:2 }}><span>90</span><span>100</span><span>110</span></div>
           </div>
           <div style={{ display:"flex", gap:7, alignItems:"center" }}>
-            <Badge label={d.dxy?.strength||"NEUTRAL"} color={d.dxy?.strength==="WEAK"?C.red:d.dxy?.strength==="STRONG"?C.green:C.yellow} />
+            <Badge label={d.dxy?.strength&&d.dxy.strength!=="—"?d.dxy.strength:"UNAVAILABLE"} color={d.dxy?.strength==="WEAK"?C.red:d.dxy?.strength==="STRONG"?C.green:d.dxy?.strength==="NEUTRAL"?C.yellow:C.textDim} />
             <span style={{ fontSize:11, color:C.textMid }}>{false?"...":d.dxy?.note}</span>
           </div>
         </Card>
 
     <Card>
-          <SecTitle icon="📊" title="Macro Indicators" badge="LIVE" bc={C.cyan} />
+          <SecTitle icon="📊" title="Macro Indicators" badge={(d.macroIndic?.usM2!=="—"||d.macroIndic?.cbBalanceProxy!=="—")?"FRED":"UNAVAILABLE"} bc={(d.macroIndic?.usM2!=="—"||d.macroIndic?.cbBalanceProxy!=="—")?C.cyan:C.textDim} />
           
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12, marginBottom:12 }}>
-            {/* Global M2 */}
+            {/* Central-bank balance-sheet proxy */}
             <div style={{ background:C.cardAlt, borderRadius:6, padding:10 }}>
-              <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>Global M2 (CB Balance Sheets)</div>
-              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color: d.macroIndic?.globalM2Trend==="Rising" ? C.green : d.macroIndic?.globalM2Trend==="Falling" ? C.red : C.orange, marginBottom:6 }}>
-                {d.macroIndic?.globalM2Trend==="Rising" ? "▲ " : d.macroIndic?.globalM2Trend==="Falling" ? "▼ " : ""}{d.macroIndic?.globalM2 || "—"}
+              <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>Central Bank Balance-Sheet Proxy</div>
+              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color: d.macroIndic?.cbBalanceProxyTrend==="Rising" ? C.green : d.macroIndic?.cbBalanceProxyTrend==="Falling" ? C.red : C.orange, marginBottom:6 }}>
+                {d.macroIndic?.cbBalanceProxyTrend==="Rising" ? "▲ " : d.macroIndic?.cbBalanceProxyTrend==="Falling" ? "▼ " : ""}{d.macroIndic?.cbBalanceProxy || "—"}
               </div>
               <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.4 }}>
-                {d.macroIndic?.globalM2Trend==="Rising" 
-                  ? "Global liquidity expanding. Supports asset prices."
-                  : d.macroIndic?.globalM2Trend==="Falling"
-                  ? "Global liquidity contracting. Pressure on valuations."
+                {d.macroIndic?.cbBalanceProxyTrend==="Rising" 
+                  ? "Aggregate tracked central-bank assets increased on the available comparison; this is not global M2."
+                  : d.macroIndic?.cbBalanceProxyTrend==="Falling"
+                  ? "Aggregate tracked central-bank assets decreased on the available comparison; this is not global M2."
                   : "Sum of Fed + ECB + BoJ balance sheets"}
               </p>
             </div>
@@ -1796,43 +1432,29 @@ function MacroStage({ d }) {
               )}
               <p style={{ fontSize:11, color:C.textMid, margin:d.macroIndic?.usM2Change?0:"6px 0 0", lineHeight:1.4 }}>
                 {d.macroIndic?.usM2Trend==="Rising"
-                  ? "More dollars in circulation. Bullish for risk assets."
+                  ? "M2 is higher than the prior connected monthly observation; this is descriptive, not a market-direction signal."
                   : d.macroIndic?.usM2Trend==="Falling"
-                  ? "Money supply contracting. Headwind for equities."
-                  : "Monitor M2 growth rate for inflation signals"}
+                  ? "M2 is lower than the prior connected monthly observation; interpretation depends on the broader macro context."
+                  : "M2 direction is unavailable from the connected observations."}
               </p>
             </div>
 
-            {/* ISM Manufacturing PMI */}
+            {/* Industrial Production — official FRED series */}
             <div style={{ background:C.cardAlt, borderRadius:6, padding:10 }}>
-              <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>{d.macroIndic?.ismLabel || "ISM Manufacturing PMI"}</div>
-              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color: d.macroIndic?.ismStatus==="Expanding" ? C.green : d.macroIndic?.ismStatus==="Contracting" ? C.red : C.orange, marginBottom:2 }}>
-                {d.macroIndic?.ismStatus==="Expanding" ? "▲ " : d.macroIndic?.ismStatus==="Contracting" ? "▼ " : ""}{d.macroIndic?.ismPMI || "—"}
+              <div style={{ fontSize:10, color:C.textDim, marginBottom:4, fontWeight:700 }}>Industrial Production</div>
+              <div style={{ fontSize:20, fontWeight:700, fontFamily:font, color:d.macroIndic?.industrialProduction==null?C.textDim:d.macroIndic.industrialProduction>0?C.green:d.macroIndic.industrialProduction<0?C.red:C.textMid, marginBottom:2 }}>
+                {d.macroIndic?.industrialProduction==null?"—":((d.macroIndic.industrialProduction>0?"+":"")+Number(d.macroIndic.industrialProduction).toFixed(2)+"%")}
               </div>
-              {d.macroIndic?.ismMonth && (
-                <div style={{ fontSize:10, color:C.textDim, fontFamily:font, marginBottom:4 }}>
-                  {d.macroIndic.ismMonth}{d.macroIndic.ismPrev ? " · prev " + d.macroIndic.ismPrev : ""}
-                </div>
-              )}
-              <p style={{ fontSize:11, color:C.textMid, margin:d.macroIndic?.ismMonth?0:"6px 0 0", lineHeight:1.4 }}>
-                {d.macroIndic?.ismStatus==="Expanding"
-                  ? "Above 50 — manufacturing in expansion. Bullish signal."
-                  : d.macroIndic?.ismStatus==="Contracting"
-                  ? "Below 50 — manufacturing contracting. Recession risk."
-                  : ">50 = expansion · <50 = contraction"}
-              </p>
+              <div style={{fontSize:9,color:C.textDim,marginBottom:5}}>{d.macroIndic?.industrialProductionDate?"Observation "+d.macroIndic.industrialProductionDate:"Latest monthly observation unavailable"}</div>
+              <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.4 }}>Monthly percent change in the Federal Reserve Industrial Production Index from FRED. A single monthly move is not treated as a recession or market-timing signal.</p>
             </div>
           </div>
 
           {/* Summary */}
           <div style={{ background:C.cardAlt, borderRadius:6, padding:10, borderTop:"1px solid " + C.border, marginTop:8, paddingTop:10 }}>
-            <div style={{ fontSize:10, color:C.textDim, marginBottom:6, fontWeight:700 }}>📋 Summary</div>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:6, fontWeight:700 }}>📋 Data Readout</div>
             <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.5 }}>
-              {d.macroIndic?.ismStatus==="Expanding" && d.macroIndic?.usM2Trend==="Rising"
-                ? "✓ Tailwinds: Manufacturing expanding, M2 rising. Risk-on backdrop."
-                : d.macroIndic?.ismStatus==="Contracting" || d.macroIndic?.usM2Trend==="Falling"
-                ? "⚠ Headwinds: Manufacturing weak or M2 contracting. Economic caution warranted."
-                : "Live macro data pending. Monitor both growth (ISM) and liquidity (M2)."}
+              This panel separates money supply, central-bank balance sheets and industrial production. These indicators are descriptive macro inputs; none is a standalone equity recommendation or official business-cycle classification.
             </p>
           </div>
         </Card>
@@ -1841,7 +1463,7 @@ function MacroStage({ d }) {
       {/* ROW 3: F&G + VIX + Inflation */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
         <Card>
-          <SecTitle icon="🎯" title="Fear & Greed Index" badge={d.fg?.timestamp ? "LIVE" : "SEED"} bc={d.fg?.timestamp ? C.green : C.textDim} />
+          <SecTitle icon="🎯" title="Fear & Greed Index" badge={d.fg?.timestamp ? "RETRIEVED" : "UNAVAILABLE"} bc={d.fg?.timestamp ? C.green : C.textDim} />
           <div style={{ textAlign:"center", marginBottom:4 }}>
             {false ? <div><Skel w="80px" h={46} mb={7} /><Skel w="120px" h={15} mb={0} /></div> : (
               <div>
@@ -1855,7 +1477,7 @@ function MacroStage({ d }) {
             )}
           </div>
           <div style={{ height:6, background:"linear-gradient(90deg," + C.red + "," + C.orange + ",#888," + C.green + "," + C.cyan + ")", borderRadius:3, marginBottom:3, position:"relative" }}>
-            <div style={{ position:"absolute", width:7, height:11, background:C.text, top:-3, left:(d.fg?.score != null ? d.fg.score : 50) + "%", transform:"translateX(-50%)", borderRadius:2 }} />
+            {d.fg?.score != null && isFinite(Number(d.fg.score)) && <div style={{ position:"absolute", width:7, height:11, background:C.text, top:-3, left:Math.min(100,Math.max(0,Number(d.fg.score))) + "%", transform:"translateX(-50%)", borderRadius:2 }} />}
           </div>
           <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:C.textDim, marginBottom:10 }}><span>Extreme Fear</span><span>Neutral</span><span>Extreme Greed</span></div>
           <Row label="vs Previous" val={d.fg?.vsPrev != null ? (d.fg.vsPrev >= 0 ? "+" : "") + d.fg.vsPrev : "—"} />
@@ -1868,48 +1490,44 @@ function MacroStage({ d }) {
               <Badge label={d.fg?.cryptoLabel||"—"} color={d.fg?.cryptoScore==null?C.textDim:d.fg?.cryptoScore<25?C.red:d.fg?.cryptoScore<45?C.orange:C.green} />
             </div>
             <div style={{ height:5, background:"linear-gradient(90deg," + C.red + "," + C.orange + ",#888," + C.green + "," + C.cyan + ")", borderRadius:3, marginTop:7, position:"relative" }}>
-              <div style={{ position:"absolute", width:7, height:9, background:C.text, top:-2, left:(d.fg?.cryptoScore != null ? d.fg.cryptoScore : 50) + "%", transform:"translateX(-50%)", borderRadius:2 }} />
+              {d.fg?.cryptoScore != null && <div style={{ position:"absolute", width:7, height:9, background:C.text, top:-2, left:d.fg.cryptoScore + "%", transform:"translateX(-50%)", borderRadius:2 }} />}
             </div>
           </div>
         </Card>
 
         <Card>
-          <SecTitle icon="📉" title="VIX (Volatility)" />
-          {false ? (
-            <div><Skel w="58%" h={32} mb={5} /><Skel w="38%" h={13} mb={12} /></div>
-          ) : (
-            <div>
-              <div style={{ fontSize:32, fontWeight:700, fontFamily:font, marginBottom:3 }}>{d.vix?.price}</div>
-              <div style={{ fontSize:12, color:String(d.vix?.change||"").startsWith("-")?C.green:C.red, fontFamily:font, marginBottom:12 }}>{d.vix?.change} ({d.vix?.changePct}%)</div>
-            </div>
-          )}
-          <div style={{ background:(d.vix?.level==="HIGH"||d.vix?.level==="EXTREME"?C.orange:d.vix?.level==="LOW"?C.green:C.yellow)+"18", border:"1px solid " + (d.vix?.level==="HIGH"||d.vix?.level==="EXTREME"?C.orange:d.vix?.level==="LOW"?C.green:C.yellow) + "38", borderRadius:6, padding:"8px 11px", marginBottom:10 }}>
+          <SecTitle icon="📉" title="VIX (Volatility)" badge={d.vix?.price!=null&&d.vix?.price!=="—"?"CONNECTED":"UNAVAILABLE"} bc={d.vix?.price!=null&&d.vix?.price!=="—"?C.green:C.textDim} />
+          <div>
+            <div style={{ fontSize:32, fontWeight:700, fontFamily:font, marginBottom:3, color:d.vix?.price!=null&&d.vix?.price!=="—"?C.text:C.textDim }}>{d.vix?.price||"—"}</div>
+            <div style={{ fontSize:12, color:d.vix?.changePct!=null&&d.vix?.changePct!=="—"?(String(d.vix?.changePct).startsWith("-")?C.green:C.red):C.textDim, fontFamily:font, marginBottom:12 }}>{d.vix?.changePct!=null&&d.vix?.changePct!=="—"?((Number(d.vix.changePct)>=0?"+":"")+Number(d.vix.changePct).toFixed(2)+"%") : "Change unavailable"}</div>
+          </div>
+          {d.vix?.level&&d.vix.level!=="—" ? <div style={{ background:(d.vix?.level==="HIGH"||d.vix?.level==="EXTREME"?C.orange:d.vix?.level==="LOW"?C.green:C.yellow)+"18", border:"1px solid " + (d.vix?.level==="HIGH"||d.vix?.level==="EXTREME"?C.orange:d.vix?.level==="LOW"?C.green:C.yellow) + "38", borderRadius:6, padding:"8px 11px", marginBottom:10 }}>
             <span style={{ color:d.vix?.level==="HIGH"||d.vix?.level==="EXTREME"?C.orange:d.vix?.level==="LOW"?C.green:C.yellow, fontWeight:700, fontSize:13 }}>{d.vix?.level}</span>
             <span style={{ color:C.textMid, fontSize:11, marginLeft:10 }}>{d.vix?.note}</span>
-          </div>
+          </div> : <div style={{background:C.cardAlt,border:"1px solid "+C.border,borderRadius:6,padding:"8px 11px",marginBottom:10,color:C.textDim,fontSize:11}}>Volatility feed unavailable.</div>}
  
           <div style={{ fontSize:11, color:C.textDim }}>Fear gauge: &lt;15 low · 15-25 moderate · 25-35 high · &gt;35 extreme</div>
         </Card>
 
         <Card>
           <SecTitle icon="🌡" title="Inflation" badge={d.inflation?.trend} bc={d.inflation?.trend==="Falling"?C.green:d.inflation?.trend==="Rising"?C.red:C.yellow} />
-          {false ? <Skel w="55%" h={29} mb={4} /> : <div style={{ fontSize:29, fontWeight:700, fontFamily:font, marginBottom:2 }}>{d.inflation?.cpi}%</div>}
+          {false ? <Skel w="55%" h={29} mb={4} /> : <div style={{ fontSize:29, fontWeight:700, fontFamily:font, marginBottom:2 }}>{d.inflation?.cpi!=null&&d.inflation?.cpi!=="—"?d.inflation.cpi+"%":"—"}</div>}
           <div style={{ fontSize:11, color:C.textDim, marginBottom:10 }}>CPI YoY (official rate)</div>
           <div style={{ display:"flex", justifyContent:"space-between", marginBottom:5 }}>
-            <span style={{ fontSize:12, color:C.textMid }}>Truflation (real-time)</span>
-            <span style={{ fontSize:12, fontFamily:font }}>{d.inflation?.truflation}%</span>
+            <span style={{ fontSize:12, color:C.textMid }}>10Y Breakeven Inflation</span>
+            <span style={{ fontSize:12, fontFamily:font }}>{d.inflation?.breakeven != null ? d.inflation.breakeven+"%" : "—"}</span>
           </div>
-          <div style={{ background:(parseFloat(d.inflation?.spread)<0?C.green:C.red)+"18", border:"1px solid " + (parseFloat(d.inflation?.spread)<0?C.green:C.red) + "28", borderRadius:4, padding:"4px 8px", marginBottom:9, textAlign:"center" }}>
-            <span style={{ fontSize:11, color:parseFloat(d.inflation?.spread)<0?C.green:C.red }}>Spread: {parseFloat(d.inflation?.spread)<0?"▼":"▲"} {d.inflation?.spread}%</span>
+          <div style={{ background:C.blue+"10", border:"1px solid "+C.blue+"28", borderRadius:4, padding:"5px 8px", marginBottom:9, textAlign:"center" }}>
+            <span style={{ fontSize:10, color:C.textMid }}>Breakeven = market-implied average CPI inflation over 10 years; it is not a real-time CPI estimate.</span>
           </div>
           <p style={{ fontSize:11, color:C.orange, margin:"0 0 10px", lineHeight:1.5 }}>{d.inflation?.note}</p>
           <div>
             <div style={{ height:6, background:"linear-gradient(90deg," + C.blue + "," + C.green + "," + C.yellow + "," + C.orange + "," + C.red + ")", borderRadius:3, position:"relative", marginBottom:3 }}>
-              <div style={{ position:"absolute", width:9, height:9, background:C.text, border:"2px solid " + C.card, top:-2, left:Math.min(90,Math.max(5,(parseFloat(d.inflation?.cpi||2.4)/6)*100)) + "%", transform:"translateX(-50%)", borderRadius:"50%" }} />
+              {d.inflation?.cpi != null && isFinite(parseFloat(d.inflation.cpi)) && <div style={{ position:"absolute", width:9, height:9, background:C.text, border:"2px solid " + C.card, top:-2, left:Math.min(90,Math.max(5,(parseFloat(d.inflation.cpi)/6)*100)) + "%", transform:"translateX(-50%)", borderRadius:"50%" }} />}
             </div>
             <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim }}><span>Deflation</span><span>2% target</span><span>High</span></div>
           </div>
-          <div style={{ fontSize:10, color:C.textDim, marginTop:8 }}>Truflation leads CPI by ~90 days</div>
+          <div style={{ fontSize:10, color:C.textDim, marginTop:8 }}>CPI is official BLS inflation; breakevens reflect Treasury market pricing.</div>
         </Card>
       </div>
 
@@ -1917,29 +1535,29 @@ function MacroStage({ d }) {
       <Card>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:14, flexWrap:"wrap", gap:14 }}>
           <div style={{ flex:"1 1 auto", minWidth:0 }}>
-            <SecTitle icon="💧" title="Global Liquidity" badge={d.liquidity?.trend} bc={d.liquidity?.trend==="Contractionary"?C.red:d.liquidity?.trend==="Expansionary"?C.green:C.yellow} />
+            <SecTitle icon="💧" title="Central-Bank Balance-Sheet Proxy" badge="PROXY" bc={C.yellow} />
             <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
               <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:6, padding:"10px 14px", minWidth:120 }}>
                 <div style={{ fontSize:9, color:C.textDim, letterSpacing:1.2, marginBottom:4, textTransform:"uppercase" }}>Total</div>
                 <div style={{ fontSize:24, fontWeight:700, fontFamily:font, lineHeight:1, color:C.text }}>${d.liquidity?.total}T</div>
-                <div style={{ fontSize:10, color:C.textDim, marginTop:3 }}>Stack of CB assets</div>
+                <div style={{ fontSize:10, color:C.textDim, marginTop:3 }}>Tracked central-bank assets</div>
               </div>
-              <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:6, padding:"10px 14px", minWidth:120 }}>
-                <div style={{ fontSize:9, color:C.textDim, letterSpacing:1.2, marginBottom:4, textTransform:"uppercase" }}>Score</div>
-                <div style={{ fontSize:24, fontWeight:700, fontFamily:font, lineHeight:1, color:d.liquidity?.trend==="Contractionary"?C.red:C.green }}>{d.liquidity?.score}<span style={{ fontSize:13, color:C.textDim, fontWeight:400 }}>/100</span></div>
-                <div style={{ fontSize:10, color:C.textDim, marginTop:3 }}>0=tight · 100=loose</div>
+              <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:6, padding:"10px 14px", minWidth:150 }}>
+                <div style={{ fontSize:9, color:C.textDim, letterSpacing:1.2, marginBottom:4, textTransform:"uppercase" }}>Coverage</div>
+                <div style={{ fontSize:16, fontWeight:700, fontFamily:font, lineHeight:1.2, color:C.text }}>Fed + ECB + BoJ</div>
+                <div style={{ fontSize:10, color:C.textDim, marginTop:3 }}>Approx. USD conversion</div>
               </div>
               <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:6, padding:"10px 14px", minWidth:100 }}>
                 <div style={{ fontSize:9, color:C.textDim, letterSpacing:1.2, marginBottom:4, textTransform:"uppercase" }}>13-Week</div>
-                <div style={{ fontSize:20, fontWeight:700, fontFamily:font, lineHeight:1, color:String(d.liquidity?.roc13w||"").startsWith("-")?C.red:C.green }}>
-                  {String(d.liquidity?.roc13w||"").startsWith("-")?"▼":"▲"} {String(d.liquidity?.roc13w||"").replace("-","")}%
+                <div style={{ fontSize:20, fontWeight:700, fontFamily:font, lineHeight:1, color:d.liquidity?.roc13w==null?C.textDim:String(d.liquidity.roc13w).startsWith("-")?C.red:C.green }}>
+                  {d.liquidity?.roc13w==null?"—":(String(d.liquidity.roc13w).startsWith("-")?"▼ ":"▲ ")+String(d.liquidity.roc13w).replace("-","")+"%"}
                 </div>
                 <div style={{ fontSize:10, color:C.textDim, marginTop:3 }}>Rate of change</div>
               </div>
               <div style={{ background:C.cardAlt, border:"1px solid " + C.border, borderRadius:6, padding:"10px 14px", minWidth:100 }}>
                 <div style={{ fontSize:9, color:C.textDim, letterSpacing:1.2, marginBottom:4, textTransform:"uppercase" }}>52-Week</div>
-                <div style={{ fontSize:20, fontWeight:700, fontFamily:font, lineHeight:1, color:String(d.liquidity?.roc52w||"").startsWith("-")?C.red:C.green }}>
-                  {String(d.liquidity?.roc52w||"").startsWith("-")?"▼":"▲"} {String(d.liquidity?.roc52w||"").replace("-","")}%
+                <div style={{ fontSize:20, fontWeight:700, fontFamily:font, lineHeight:1, color:d.liquidity?.roc52w==null?C.textDim:String(d.liquidity.roc52w).startsWith("-")?C.red:C.green }}>
+                  {d.liquidity?.roc52w==null?"—":(String(d.liquidity.roc52w).startsWith("-")?"▼ ":"▲ ")+String(d.liquidity.roc52w).replace("-","")+"%"}
                 </div>
                 <div style={{ fontSize:10, color:C.textDim, marginTop:3 }}>Rate of change</div>
               </div>
@@ -1961,42 +1579,31 @@ function MacroStage({ d }) {
           
           <div style={{ marginBottom:12, paddingBottom:12, borderBottom:"1px solid " + C.border }}>
             <div style={{ fontSize:11, color:C.textDim, marginBottom:6 }}>10-Year vs 2-Year Spread</div>
-            <div style={{ fontSize:26, fontWeight:700, fontFamily:font, color:d.yield?.status==="INVERTED"?C.red:C.green, marginBottom:4 }}>
+            <div style={{ fontSize:26, fontWeight:700, fontFamily:font, color:d.yield?.status==="INVERTED"?C.red:d.yield?.status==="NORMAL"?C.green:d.yield?.status==="FLAT"?C.orange:C.textDim, marginBottom:4 }}>
               {d.yield?.spread}
             </div>
             <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.4 }}>
               {d.yield?.status==="INVERTED"
-                ? "🔴 INVERTED - This is a serious recession warning. Investors expect tough times ahead."
+                ? "INVERTED — the 10Y yield is below the 2Y yield. Historically this has been monitored as a recession-risk indicator, but it is not a timing signal by itself."
                 : d.yield?.status==="FLAT"
-                ? "🟡 FLAT - Market is uncertain. Changes coming."
-                : "🟢 NORMAL - Healthy curve. Long-term rates higher than short-term (as they should be)."}
+                ? "FLAT — the 10Y and 2Y yields are close together."
+                : d.yield?.status==="NORMAL"
+                ? "POSITIVE — the 10Y yield is above the 2Y yield."
+                : "Yield-curve data unavailable."}
             </p>
           </div>
 
-          <div style={{ background:(d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red)+"15", border:"1px solid " + (d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red) + "40", borderRadius:6, padding:"10px 12px" }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-              <div style={{ fontSize:11, fontWeight:700, color:C.textDim }}>Recession Risk</div>
-              <span style={{ background:(d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red)+"25", color:(d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red), padding:"2px 8px", borderRadius:4, fontSize:11, fontWeight:700 }}>
-                {d.yield?.recessionRisk || "LOW"}
-              </span>
-            </div>
-            <Bar pct={d.yield?.recessionPct || 15} color={d.yield?.recessionRisk==="LOW"?C.green:d.yield?.recessionRisk==="MEDIUM"?C.orange:C.red} height={5} />
-            <div style={{ display:"flex", justifyContent:"space-between", marginTop:6, fontSize:10 }}>
-              <span style={{ color:C.textDim }}>Probability</span>
-              <span style={{ fontFamily:font, fontWeight:700, color:C.text }}>{d.yield?.recessionPct || 15}%</span>
-            </div>
-            <p style={{ fontSize:10, color:C.textMid, margin:"8px 0 0", lineHeight:1.4 }}>
-              {d.yield?.recessionRisk==="LOW" 
-                ? "Economy looks healthy. Normal times ahead."
-                : d.yield?.recessionRisk==="MEDIUM"
-                ? "Be cautious. Recession risk is elevated."
-                : "🔴 Serious recession risk. Major economic slowdown likely."}
+          <div style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"10px 12px", maxWidth:250 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:C.textDim, marginBottom:6 }}>Curve Signal</div>
+            <div style={{ fontSize:12, fontWeight:700, color:d.yield?.status==="INVERTED"?C.orange:d.yield?.status==="NORMAL"?C.green:C.textDim }}>{d.yield?.recessionRisk || "—"}</div>
+            <p style={{ fontSize:10, color:C.textMid, margin:"7px 0 0", lineHeight:1.45 }}>
+              The 10Y–2Y spread is a recession indicator, not a standalone recession probability. No percentage is shown unless a validated probability model is connected.
             </p>
           </div>
         </Card>
 
         <Card>
-          <SecTitle icon="⚠" title="Credit & Stress" badge={d.credit?.timestamp ? "LIVE" : "SEED"} bc={d.credit?.timestamp ? C.green : C.textDim} />
+          <SecTitle icon="⚠" title="Credit & Stress" badge={(d.credit?.hyDAS!=null||d.credit?.sahmRule!=null) ? "FRED" : "UNAVAILABLE"} bc={(d.credit?.hyDAS!=null||d.credit?.sahmRule!=null) ? C.green : C.textDim} />
           
           {/* HY Spread — live from FRED */}
           <div style={{ marginBottom:12 }}>
@@ -2004,117 +1611,77 @@ function MacroStage({ d }) {
             <div style={{ fontSize:24, fontWeight:700, fontFamily:font, color:parseInt(d.credit?.hyDAS)>500?C.red:parseInt(d.credit?.hyDAS)>350?C.orange:C.green, marginBottom:4 }}>
               {d.credit?.hyDAS || "—"}<span style={{ fontSize:12, color:C.textDim, fontWeight:400 }}> bp</span>
             </div>
-            <Bar pct={Math.min(100, (parseInt(d.credit?.hyDAS)||300) / 8)} color={parseInt(d.credit?.hyDAS)>500?C.red:parseInt(d.credit?.hyDAS)>350?C.orange:C.green} height={4} />
+            {d.credit?.hyDAS != null ? <Bar pct={Math.min(100, parseInt(d.credit.hyDAS) / 8)} color={parseInt(d.credit.hyDAS)>500?C.red:parseInt(d.credit.hyDAS)>350?C.orange:C.green} height={4} /> : <div style={{height:4,background:C.border,borderRadius:2}} />}
             <div style={{ fontSize:10, color:C.textMid, marginTop:4 }}>
-              {parseInt(d.credit?.hyDAS)<300 ? "Tight — complacency risk" : parseInt(d.credit?.hyDAS)>500 ? "Wide — credit stress" : "Normal range"}
+              {d.credit?.hyDAS == null ? "Unavailable" : parseInt(d.credit.hyDAS)<300 ? "Relatively tight spread" : parseInt(d.credit.hyDAS)>500 ? "Relatively wide spread" : "Mid-range spread"}
             </div>
           </div>
 
-          {/* MOVE Index — live from Claude web search */}
+          {/* MOVE Index — shown only when a connected market-stress feed provides it */}
           <div style={{ marginBottom:12, paddingTop:10, borderTop:"1px solid " + C.border }}>
             <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:4 }}>MOVE INDEX (BOND VOLATILITY)</div>
-            <div style={{ fontSize:24, fontWeight:700, fontFamily:font, color:parseFloat(d.credit?.moveIndex)>120?C.red:parseFloat(d.credit?.moveIndex)>100?C.orange:C.green, marginBottom:4 }}>
-              {d.credit?.moveIndex || "—"}
+            <div style={{ fontSize:24, fontWeight:700, fontFamily:font, color:d.credit?.moveIndex==null?C.textDim:parseFloat(d.credit.moveIndex)>120?C.red:parseFloat(d.credit.moveIndex)>100?C.orange:C.green, marginBottom:4 }}>
+              {d.credit?.moveIndex != null ? d.credit.moveIndex : "—"}
             </div>
             <div style={{ fontSize:10, color:C.textMid }}>
-              {parseFloat(d.credit?.moveIndex)>120 ? "High — bond market stressed" : parseFloat(d.credit?.moveIndex)>100 ? "Elevated — watch for spillover" : "Normal — bond market calm"}
+              {d.credit?.moveIndex==null ? "Unavailable — no validated MOVE feed is connected" : parseFloat(d.credit.moveIndex)>120 ? "High bond-volatility reading" : parseFloat(d.credit.moveIndex)>100 ? "Elevated bond-volatility reading" : "Lower bond-volatility reading"}
             </div>
           </div>
 
-          {/* Sahm Rule — live from FRED */}
+          {/* Sahm Rule — live from FRED when available */}
           <div style={{ paddingTop:10, borderTop:"1px solid " + C.border }}>
-            <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:4 }}>SAHM RULE (RECESSION SIGNAL)</div>
+            <div style={{ fontSize:10, color:C.textDim, letterSpacing:1, marginBottom:4 }}>SAHM RULE RECESSION INDICATOR</div>
             <div style={{ display:"flex", alignItems:"baseline", gap:8, marginBottom:4 }}>
-              <div style={{ fontSize:24, fontWeight:700, fontFamily:font, color:parseFloat(d.credit?.sahmRule)>0.5?C.red:parseFloat(d.credit?.sahmRule)>0.3?C.orange:C.green }}>
-                {d.credit?.sahmRule || "—"}
+              <div style={{ fontSize:24, fontWeight:700, fontFamily:font, color:d.credit?.sahmRule==null?C.textDim:parseFloat(d.credit.sahmRule)>=0.5?C.red:parseFloat(d.credit.sahmRule)>=0.3?C.orange:C.green }}>
+                {d.credit?.sahmRule != null ? d.credit.sahmRule : "—"}
               </div>
-              <Badge label={parseFloat(d.credit?.sahmRule)>0.5?"TRIGGERED":parseFloat(d.credit?.sahmRule)>0.3?"ELEVATED":"SAFE"} color={parseFloat(d.credit?.sahmRule)>0.5?C.red:parseFloat(d.credit?.sahmRule)>0.3?C.orange:C.green} />
+              <Badge label={d.credit?.sahmRule==null?"UNAVAILABLE":parseFloat(d.credit.sahmRule)>=0.5?"TRIGGERED":parseFloat(d.credit.sahmRule)>=0.3?"ELEVATED":"BELOW TRIGGER"} color={d.credit?.sahmRule==null?C.textDim:parseFloat(d.credit.sahmRule)>=0.5?C.red:parseFloat(d.credit.sahmRule)>=0.3?C.orange:C.green} />
             </div>
             <div style={{ fontSize:10, color:C.textMid, lineHeight:1.4 }}>
-              Recession triggers at 0.50. Currently {parseFloat(d.credit?.sahmRule)<0.3 ? "well below" : parseFloat(d.credit?.sahmRule)<0.5 ? "approaching" : "above"} threshold.
+              {d.credit?.sahmRule==null ? "No Sahm Rule reading is currently loaded." : "The commonly used Sahm Rule trigger is 0.50 percentage points; the displayed value is an indicator, not a guarantee of recession."}
             </div>
           </div>
         </Card>
 
         <Card>
-          <SecTitle icon="📊" title="Market Breadth" badge={d.breadth?.timestamp ? "LIVE" : "SEED"} bc={d.breadth?.timestamp ? C.green : C.textDim} />
-          
-          {/* SHORT TERM: 50-day MA */}
-          <div style={{ marginBottom:12 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:5 }}>
-              <div>
-                <div style={{ fontSize:11, color:C.textDim, marginBottom:2 }}>📈 SHORT TERM (50-day)</div>
-                <div style={{ fontSize:24, fontWeight:700, fontFamily:font, color:parseFloat(d.breadth?.pct50) < 40 ? C.red : parseFloat(d.breadth?.pct50) < 60 ? C.orange : C.green }}>{d.breadth?.pct50}%</div>
-              </div>
-              <div style={{ textAlign:"right", fontSize:10, color:C.textMid }}>
-                {parseFloat(d.breadth?.pct50) < 40 
-                  ? "🔴 Weak — mostly down" 
-                  : parseFloat(d.breadth?.pct50) < 60 
-                  ? "🟡 Mixed — some weakness" 
-                  : "🟢 Strong — mostly up"}
-              </div>
+          <SecTitle icon="📊" title="Market Breadth" badge={d.breadth?.pct50!=null||d.breadth?.pct200!=null ? "CONNECTED" : "UNAVAILABLE"} bc={d.breadth?.pct50!=null||d.breadth?.pct200!=null ? C.green : C.textDim} />
+          {d.breadth?.pct50==null && d.breadth?.pct200==null ? (
+            <div style={{minHeight:235,display:"flex",alignItems:"center",justifyContent:"center",textAlign:"center",padding:18,color:C.textDim,fontSize:11,lineHeight:1.6}}>
+              Breadth values are withheld because no validated breadth feed is connected. This panel will not infer breadth from index returns or substitute stale values.
             </div>
-            <Bar pct={d.breadth?.pct50} color={parseFloat(d.breadth?.pct50) < 40 ? C.red : parseFloat(d.breadth?.pct50) < 60 ? C.orange : C.green} height={6} />
-            <div style={{ fontSize:10, color:C.textDim, marginTop:4, lineHeight:1.4 }}>
-              Out of 500 stocks, {d.breadth?.pct50} are performing better than their recent 50-day trend
-            </div>
-          </div>
-
-          {/* LONG TERM: 200-day MA */}
-          <div style={{ marginBottom:12 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:5 }}>
-              <div>
-                <div style={{ fontSize:11, color:C.textDim, marginBottom:2 }}>📅 LONG TERM (200-day)</div>
-                <div style={{ fontSize:24, fontWeight:700, fontFamily:font, color:parseFloat(d.breadth?.pct200) < 40 ? C.red : parseFloat(d.breadth?.pct200) < 70 ? C.orange : C.green }}>{d.breadth?.pct200}%</div>
-              </div>
-              <div style={{ textAlign:"right", fontSize:10, color:C.textMid }}>
-                {parseFloat(d.breadth?.pct200) < 40 
-                  ? "🔴 Downtrend" 
-                  : parseFloat(d.breadth?.pct200) < 70 
-                  ? "🟡 Shaky" 
-                  : "🟢 Uptrend"}
-              </div>
-            </div>
-            <Bar pct={d.breadth?.pct200} color={parseFloat(d.breadth?.pct200) < 40 ? C.red : parseFloat(d.breadth?.pct200) < 70 ? C.orange : C.green} height={6} />
-            <div style={{ fontSize:10, color:C.textDim, marginTop:4, lineHeight:1.4 }}>
-              {parseFloat(d.breadth?.pct200) >= 70 
-                ? "Most stocks are in long-term uptrends — healthy"
-                : parseFloat(d.breadth?.pct200) >= 40
-                ? "Mixed — some stocks in uptrends, some in downtrends"
-                : "Most stocks are in downtrends — weak foundation"}
-            </div>
-          </div>
-
-          {/* MOMENTUM: A/D Indicators */}
-          <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px", marginBottom:12 }}>
-            <div style={{ fontSize:10, color:C.textDim, marginBottom:6, fontWeight:700 }}>📊 MOMENTUM (Gaining vs Losing Stocks)</div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
-              <div>
-                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Last 5 days</div>
-                <div style={{ fontSize:12, fontWeight:700, color:d.breadth?.ad5d==="Falling"?C.red:d.breadth?.ad5d==="Rising"?C.green:C.orange }}>
-                  {d.breadth?.ad5d==="Falling" ? "📉 Selling" : d.breadth?.ad5d==="Rising" ? "📈 Buying" : "➡️ Flat"}
+          ) : <>
+            <div style={{ marginBottom:12 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:5 }}>
+                <div>
+                  <div style={{ fontSize:11, color:C.textDim, marginBottom:2 }}>SHORT TERM · % ABOVE 50-DAY MA</div>
+                  <div style={{ fontSize:24, fontWeight:700, fontFamily:font, color:d.breadth?.pct50==null?C.textDim:parseFloat(d.breadth.pct50)<40?C.red:parseFloat(d.breadth.pct50)<60?C.orange:C.green }}>{d.breadth?.pct50!=null?Number(d.breadth.pct50).toFixed(1)+"%":"—"}</div>
+                </div>
+                <div style={{ textAlign:"right", fontSize:10, color:C.textMid }}>
+                  {d.breadth?.pct50==null?"Unavailable":parseFloat(d.breadth.pct50)<40?"Narrow participation":parseFloat(d.breadth.pct50)<60?"Mixed participation":"Broad participation"}
                 </div>
               </div>
-              <div>
-                <div style={{ fontSize:10, color:C.textDim, marginBottom:3 }}>Last 20 days</div>
-                <div style={{ fontSize:12, fontWeight:700, color:d.breadth?.ad20d==="Falling"?C.red:d.breadth?.ad20d==="Rising"?C.green:C.orange }}>
-                  {d.breadth?.ad20d==="Falling" ? "📉 Selling" : d.breadth?.ad20d==="Rising" ? "📈 Buying" : "➡️ Flat"}
+              {d.breadth?.pct50!=null && <Bar pct={Number(d.breadth.pct50)} color={parseFloat(d.breadth.pct50)<40?C.red:parseFloat(d.breadth.pct50)<60?C.orange:C.green} height={6} />}
+              <div style={{fontSize:9,color:C.textDim,marginTop:5}}>Share of the tracked index universe trading above its 50-day moving average.</div>
+            </div>
+
+            <div style={{ marginBottom:12 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:5 }}>
+                <div>
+                  <div style={{ fontSize:11, color:C.textDim, marginBottom:2 }}>LONG TERM · % ABOVE 200-DAY MA</div>
+                  <div style={{ fontSize:24, fontWeight:700, fontFamily:font, color:d.breadth?.pct200==null?C.textDim:parseFloat(d.breadth.pct200)<40?C.red:parseFloat(d.breadth.pct200)<60?C.orange:C.green }}>{d.breadth?.pct200!=null?Number(d.breadth.pct200).toFixed(1)+"%":"—"}</div>
+                </div>
+                <div style={{ textAlign:"right", fontSize:10, color:C.textMid }}>
+                  {d.breadth?.pct200==null?"Unavailable":parseFloat(d.breadth.pct200)<40?"Narrow long-term participation":parseFloat(d.breadth.pct200)<60?"Mixed long-term participation":"Broad long-term participation"}
                 </div>
               </div>
+              {d.breadth?.pct200!=null && <Bar pct={Number(d.breadth.pct200)} color={parseFloat(d.breadth.pct200)<40?C.red:parseFloat(d.breadth.pct200)<60?C.orange:C.green} height={6} />}
+              <div style={{fontSize:9,color:C.textDim,marginTop:5}}>Share of the tracked index universe trading above its 200-day moving average.</div>
             </div>
-          </div>
 
-          {/* OVERALL SIGNAL */}
-          <div style={{ background:(d.breadth?.sentiment==="BEARISH"?C.red:C.green)+"15", border:"1px solid " + (d.breadth?.sentiment==="BEARISH"?C.red:C.green) + "40", borderRadius:6, padding:"10px 12px" }}>
-            <div style={{ fontSize:12, fontWeight:700, color:d.breadth?.sentiment==="BEARISH"?C.red:C.green, marginBottom:4 }}>
-              {d.breadth?.sentiment==="BEARISH" ? "⚠️ WEAK LEADERSHIP" : "✓ HEALTHY BREADTH"}
+            <div style={{ background:C.cardAlt, borderRadius:6, padding:"9px 10px", fontSize:10, color:C.textMid, lineHeight:1.5 }}>
+              <strong style={{color:C.text}}>Breadth interpretation:</strong> {d.breadth?.sentiment==="NARROW"?"Participation is relatively narrow on the connected measure.":d.breadth?.sentiment==="BROAD"?"Participation is relatively broad on the connected measure.":"The connected measures are mixed."} Breadth is descriptive and is not a standalone market-direction forecast.
             </div>
-            <div style={{ fontSize:11, color:C.textMid, lineHeight:1.5 }}>
-              {d.breadth?.sentiment==="BEARISH" 
-                ? "Only a few big stocks are pulling the market up. Most individual stocks are struggling. This is fragile — watch for a reversal."
-                : "Most stocks are performing well alongside the index. Strong, healthy market participation. This is sustainable."}
-            </div>
-          </div>
+          </>}
         </Card>
       </div>
 
@@ -2126,8 +1693,8 @@ function MacroStage({ d }) {
             <span style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase" }}>Options Sentiment</span>
           </div>
           <div style={{ display:"flex", gap:6 }}>
-            <Badge label={d.options?.timestamp ? "LIVE" : "SEED"} color={d.options?.timestamp ? C.green : C.textDim} />
-            <Badge label={d.options?.status||"NEUTRAL"} color={d.options?.status==="BULLISH"?C.green:d.options?.status==="BEARISH"?C.red:C.textMid} />
+            <Badge label={d.options?.dexPCR!=null ? "CONNECTED" : "UNAVAILABLE"} color={d.options?.dexPCR!=null ? C.green : C.textDim} />
+            <Badge label={d.options?.status||"UNAVAILABLE"} color={d.options?.dexPCR==null?C.textDim:parseFloat(d.options.dexPCR)>1.3?C.red:parseFloat(d.options.dexPCR)<0.7?C.green:C.textMid} />
           </div>
         </div>
 
@@ -2137,19 +1704,19 @@ function MacroStage({ d }) {
             {d.options?.dexPCR || "—"}
           </div>
           <div style={{ fontSize:11, color:C.textMid, marginTop:4 }}>
-            {parseFloat(d.options?.dexPCR) > 1.1 ? "Bearish — more puts than calls, hedging demand elevated" 
-              : parseFloat(d.options?.dexPCR) < 0.7 ? "Bullish — heavy call buying, risk appetite strong"
-              : "Neutral — balanced options activity"}
+            {d.options?.dexPCR == null ? "Unavailable" : parseFloat(d.options.dexPCR) > 1.1 ? "High put volume relative to calls" 
+              : parseFloat(d.options.dexPCR) < 0.7 ? "Low put volume relative to calls"
+              : "Put/call activity near the middle of the displayed range"}
           </div>
         </div>
 
         <div style={{ height:6, background:"linear-gradient(90deg," + C.green + "," + C.yellow + "," + C.red + ")", borderRadius:3, position:"relative", marginBottom:4 }}>
-          <div style={{ position:"absolute", width:8, height:12, background:C.text, top:-3, left:Math.min(95, Math.max(5, ((parseFloat(d.options?.dexPCR)||0.9) - 0.5) / 1.0 * 100)) + "%", transform:"translateX(-50%)", borderRadius:2 }} />
+          {d.options?.dexPCR != null && isFinite(parseFloat(d.options.dexPCR)) && <div style={{ position:"absolute", width:8, height:12, background:C.text, top:-3, left:Math.min(95, Math.max(5, (parseFloat(d.options.dexPCR) - 0.5) / 1.0 * 100)) + "%", transform:"translateX(-50%)", borderRadius:2 }} />}
         </div>
-        <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim, marginBottom:12 }}><span>Bullish (0.5)</span><span>Neutral (1.0)</span><span>Bearish (1.5)</span></div>
+        <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.textDim, marginBottom:12 }}><span>Lower put/call (0.5)</span><span>1.0</span><span>Higher put/call (1.5)</span></div>
 
         <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px", fontSize:10, color:C.textDim, lineHeight:1.5 }}>
-          Put/Call ratio measures how many put options (bets on decline) vs call options (bets on rise) are being traded. Above 1.0 = more puts = bearish sentiment.
+          Put/call ratio compares put-option volume with call-option volume. Higher readings indicate more put activity relative to calls, but interpretation is contextual and is not a standalone market-direction signal.
         </div>
       </Card>
 
@@ -2169,20 +1736,21 @@ function MacroStage({ d }) {
         <div style={{ marginBottom:12 }}>
           <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:C.textDim, marginBottom:3 }}><span>Looser</span><span>0 (avg)</span><span>Tighter</span></div>
           <div style={{ height:6, background:"linear-gradient(90deg," + C.green + "," + C.cyan + ",#444," + C.orange + "," + C.red + ")", borderRadius:3, position:"relative" }}>
-            <div style={{ position:"absolute", width:8, height:12, background:C.text, top:-3, left:Math.min(95, Math.max(5, 50 + (parseFloat(d.fci?.nfci)||0) * 50)) + "%", transform:"translateX(-50%)", borderRadius:2 }} />
+            {d.fci?.nfci != null && isFinite(parseFloat(d.fci.nfci)) && <div style={{ position:"absolute", width:8, height:12, background:C.text, top:-3, left:Math.min(95, Math.max(5, 50 + parseFloat(d.fci.nfci) * 50)) + "%", transform:"translateX(-50%)", borderRadius:2 }} />}
           </div>
         </div>
 
         <div style={{ fontSize:11, color:C.textMid, lineHeight:1.6, marginBottom:12 }}>
-          {d.fci?.status==="Loose" 
-            ? "Financial conditions are looser than average. Credit is flowing, funding is accessible, markets are calm. This supports growth and risk assets."
+          {d.fci?.nfci == null ? "NFCI unavailable from the connected feed."
+            : d.fci?.status==="Loose" 
+            ? "The NFCI is below its historical average, indicating comparatively looser financial conditions across the index's component measures."
             : d.fci?.status==="Tight"
-            ? "Financial conditions are tighter than average. Borrowing is more expensive, credit is contracting. This is a headwind for growth and stocks."
-            : "Financial conditions are near their historical average. Neither loose nor tight."}
+            ? "The NFCI is above its historical average, indicating comparatively tighter financial conditions across the index's component measures."
+            : "The NFCI is near its historical average."}
         </div>
 
         <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px", fontSize:10, color:C.textDim, lineHeight:1.5 }}>
-          The Chicago Fed NFCI combines 105 financial indicators. Negative = loose (good for stocks). Positive = tight (bad for stocks). Zero = average conditions.
+          The Chicago Fed NFCI summarizes a broad set of money-market, debt, equity, banking and shadow-banking indicators. Negative readings are looser than the historical average; positive readings are tighter. It is not a direct equity-market forecast.
         </div>
       </Card>
 
@@ -2195,26 +1763,26 @@ function MacroStage({ d }) {
             <div style={{ fontSize:24, fontWeight:700, color:d.rates?.status==="EASING"?C.green:d.rates?.status==="TIGHTENING"?C.red:C.orange, marginBottom:8 }}>{d.rates?.status}</div>
             <p style={{ fontSize:11, color:C.textMid, margin:0, lineHeight:1.5 }}>
               {d.rates?.status==="EASING" 
-                ? "Fed cutting rates. Good for stocks, mortgages, borrowers. Economy may be slowing." 
+                ? "The effective federal funds rate is below the prior connected reading, which the dashboard labels as easing." 
                 : d.rates?.status==="TIGHTENING" 
-                ? "Fed raising rates. Expensive to borrow, bonds more attractive. Fighting inflation."
-                : "Fed holding steady. No major changes coming. Market waiting for clarity."}
+                ? "The effective federal funds rate is above the prior connected reading, which the dashboard labels as tightening."
+                : "The effective federal funds rate is unchanged versus the prior connected reading; this does not imply a forecast of the next FOMC decision."}
             </p>
           </div>
 
           <div style={{ borderLeft:"1px solid " + C.border, paddingLeft:14 }}>
             <div style={{ fontSize:10, color:C.textDim, marginBottom:6, letterSpacing:1 }}>CURRENT FED FUNDS RATE</div>
-            <div style={{ fontSize:30, fontWeight:700, fontFamily:font, marginBottom:6 }}>{d.rates?.current}%</div>
-            <p style={{ fontSize:11, color:C.textDim, margin:0, lineHeight:1.5 }}>What banks charge each other to borrow overnight</p>
+            <div style={{ fontSize:30, fontWeight:700, fontFamily:font, marginBottom:6 }}>{d.rates?.current!=null&&d.rates?.current!=="—"?d.rates.current+"%":"—"}</div>
+            <p style={{ fontSize:11, color:C.textDim, margin:0, lineHeight:1.5 }}>Effective federal funds rate from the connected macro feed</p>
           </div>
 
           <div style={{ borderLeft:"1px solid " + C.border, paddingLeft:14 }}>
             <div style={{ fontSize:10, color:C.textDim, marginBottom:6, letterSpacing:1 }}>DIRECTION</div>
             <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
-              <div style={{ width:44, height:44, borderRadius:"50%", background:(d.rates?.status==="EASING"?C.green:C.red)+"20", border:"1px solid " + (d.rates?.status==="EASING"?C.green:C.red) + "44", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20 }}>{d.rates?.status==="EASING"?"↘":"↗"}</div>
+              <div style={{ width:44, height:44, borderRadius:"50%", background:(d.rates?.status==="EASING"?C.green:d.rates?.status==="TIGHTENING"?C.red:C.yellow)+"20", border:"1px solid " + (d.rates?.status==="EASING"?C.green:d.rates?.status==="TIGHTENING"?C.red:C.yellow) + "44", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20 }}>{d.rates?.status==="EASING"?"↘":d.rates?.status==="TIGHTENING"?"↗":"→"}</div>
               <div>
-                <div style={{ fontSize:13, fontWeight:700, color:d.rates?.status==="EASING"?C.green:C.red }}>
-                  {d.rates?.status==="EASING" ? "Heading DOWN" : d.rates?.status==="TIGHTENING" ? "Heading UP" : "STEADY"}
+                <div style={{ fontSize:13, fontWeight:700, color:d.rates?.status==="EASING"?C.green:d.rates?.status==="TIGHTENING"?C.red:C.yellow }}>
+                  {d.rates?.status==="EASING" ? "Recent rate lower" : d.rates?.status==="TIGHTENING" ? "Recent rate higher" : d.rates?.status==="UNCHANGED" ? "Unchanged" : "Direction unavailable"}
                 </div>
                 <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>Trend</div>
               </div>
@@ -2222,14 +1790,10 @@ function MacroStage({ d }) {
           </div>
 
           <div style={{ borderLeft:"1px solid " + C.border, paddingLeft:14 }}>
-            <div style={{ fontSize:10, color:C.textDim, marginBottom:6, letterSpacing:1 }}>MARKET EXPECTS BY YEAR END</div>
-            <div style={{ fontSize:30, fontWeight:700, fontFamily:font, marginBottom:8 }}>{d.rates?.expected}%</div>
+            <div style={{ fontSize:10, color:C.textDim, marginBottom:6, letterSpacing:1 }}>FORWARD POLICY PRICING</div>
+            <div style={{ fontSize:30, fontWeight:700, fontFamily:font, marginBottom:8 }}>{d.rates?.expected != null ? d.rates.expected+"%" : "—"}</div>
             <div style={{ fontSize:11, color:C.textMid, background:C.cardAlt, padding:"6px 10px", borderRadius:4, lineHeight:1.4 }}>
-              {d.rates?.impliedCuts === "-1" 
-                ? "~1 rate cut priced in before December" 
-                : d.rates?.impliedCuts === "-2" 
-                ? "~2 rate cuts priced in" 
-                : "No major cuts or hikes expected"}
+              {d.rates?.expected != null ? "Forward-policy estimate from connected pricing feed" : "Not shown: no validated Fed-funds futures / OIS pricing feed is connected."}
             </div>
           </div>
         </div>
@@ -2242,24 +1806,24 @@ function MacroStage({ d }) {
             <div style={{ width:28, height:28, borderRadius:6, background:C.blue+"30", border:"1px solid " + C.blue + "44", display:"flex", alignItems:"center", justifyContent:"center", fontSize:13 }}>🔄</div>
             <div>
               <div style={{ fontSize:13, fontWeight:700, letterSpacing:1.5, color:C.text }}>SECTOR ROTATION</div>
-              <div style={{ fontSize:10, color:C.textDim }}>Live ETF returns · 1W/1M/3M/6M momentum</div>
+              <div style={{ fontSize:10, color:C.textDim }}>Connected ETF return feed · 1W/1M/3M/6M momentum</div>
             </div>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:6 }}>
             {d.sectorTimestamp ? (
-              <Badge label="LIVE" color={C.green} />
+              <Badge label="CONNECTED" color={C.green} />
             ) : (
-              <Badge label={d.fci?.nfci && d.fci.nfci !== SEED.fci.nfci ? "LIVE" : "SEED"} color={d.fci?.nfci && d.fci.nfci !== SEED.fci.nfci ? C.green : C.textDim} />
+              <Badge label={d.fci?.nfci!=null ? "FRED" : "UNAVAILABLE"} color={d.fci?.nfci!=null ? C.green : C.textDim} />
             )}
           </div>
         </div>
 
         <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:7, marginBottom:16 }}>
           {(d.sectorRotation||[]).map(function(pair, i) {
-            var bg = pair.bull===true ? C.green+"15" : pair.bull===false ? C.red+"15" : C.cardAlt;
-            var border = pair.bull===true ? "1px solid " + C.green + "44" : pair.bull===false ? "1px solid " + C.red + "44" : "1px solid " + C.border;
-            var dotColor = pair.bull===true ? C.green : pair.bull===false ? C.red : C.textDim;
-            var winnerColor = pair.bull===true ? C.green : pair.bull===false ? C.red : C.textMid;
+            var bg = pair.bull===true ? C.cyan+"12" : pair.bull===false ? C.purple+"12" : C.cardAlt;
+            var border = pair.bull===true ? "1px solid " + C.cyan + "44" : pair.bull===false ? "1px solid " + C.purple + "44" : "1px solid " + C.border;
+            var dotColor = pair.bull===true ? C.cyan : pair.bull===false ? C.purple : C.textDim;
+            var winnerColor = pair.bull===true ? C.cyan : pair.bull===false ? C.purple : C.textMid;
             return (
               <div key={i} style={{ background:bg, border:border, borderRadius:7, padding:"8px 7px", textAlign:"center" }}>
                 <div style={{ width:8, height:8, borderRadius:"50%", background:dotColor, margin:"0 auto 6px" }} />
@@ -2271,12 +1835,11 @@ function MacroStage({ d }) {
         </div>
 
         <div style={{ display:"flex", gap:12, alignItems:"center", marginBottom:14, fontSize:12 }}>
-          <span style={{ color:C.textDim }}>Overall:</span>
-          <span style={{ color:C.orange, fontWeight:700 }}>MIXED</span>
-          <span style={{ fontSize:10, color:C.textDim }}>│</span>
-          <span style={{ color:C.green }}>{(d.sectorRotation||[]).filter(function(p){return p.bull===true}).length} bull</span>
-          <span style={{ color:C.red }}>{(d.sectorRotation||[]).filter(function(p){return p.bull===false}).length} bear</span>
-          <span style={{ color:C.textMid }}>{(d.sectorRotation||[]).filter(function(p){return p.bull===null}).length} neutral</span>
+          <span style={{ color:C.textDim }}>Pair leadership:</span>
+          <span style={{ color:C.cyan }}>{(d.sectorRotation||[]).filter(function(p){return p.bull===true}).length} first-ETF leads</span>
+          <span style={{ color:C.purple }}>{(d.sectorRotation||[]).filter(function(p){return p.bull===false}).length} second-ETF leads</span>
+          <span style={{ color:C.textMid }}>{(d.sectorRotation||[]).filter(function(p){return p.bull===null}).length} mixed / insufficient</span>
+          <span style={{ fontSize:9, color:C.textDim }}>Relative momentum only — not a market-direction probability.</span>
         </div>
 
         <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:8 }}>Multi-Timeframe Momentum</div>
@@ -2294,7 +1857,7 @@ function MacroStage({ d }) {
                 <tr key={i} style={{ borderBottom:"1px solid " + C.border }}>
                   <td style={{ padding:"7px 7px", color:C.text, fontSize:12 }}>{pair.name}</td>
                   {[pair.w1, pair.w1m, pair.w3m, pair.w6m].map(function(w, j) {
-                    return <td key={j} style={{ textAlign:"center", padding:"7px 8px" }}><span style={{ display:"inline-block", width:10, height:10, borderRadius:"50%", background:w==="g"?C.green:w==="r"?C.red:C.textDim }} /></td>;
+                    return <td key={j} style={{ textAlign:"center", padding:"7px 8px" }}><span style={{ display:"inline-block", width:10, height:10, borderRadius:"50%", background:w==="g"?C.cyan:w==="r"?C.purple:w==="n"?C.textDim:"transparent",border:w==="u"?"1px solid "+C.textDim:"none" }} /></td>;
                   })}
                   <td style={{ padding:"7px 7px", color:C.textDim, fontSize:11, fontStyle:"italic" }}>{pair.note}</td>
                 </tr>
@@ -2307,14 +1870,14 @@ function MacroStage({ d }) {
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
             <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase" }}>Axis</div>
             <div style={{ display:"flex", gap:12, fontSize:10 }}>
-              <span style={{ color:C.red }}>Bearish</span>
-              <span style={{ color:C.green }}>Bullish</span>
-              <span style={{ color:C.textDim, marginLeft:20 }}>PROB</span>
+              <span style={{ color:C.purple }}>Second ETF leading</span>
+              <span style={{ color:C.cyan }}>First ETF leading</span>
+              <span style={{ color:C.textDim, marginLeft:20 }}>LEAD SHARE</span>
             </div>
           </div>
           {(d.sectorRotation||[]).map(function(pair, i) {
-            var prob = parseInt(pair.prob) || 50;
-            var barW = Math.min(48, Math.round((prob - 50) * 1.0));
+            var leadShare = pair.leadShare!=null?Number(pair.leadShare):null;
+            var barW = leadShare==null?0:Math.min(48,Math.max(0,Math.round((leadShare-50)*0.96)));
             return (
               <div key={i} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 0", borderBottom:i < ((d.sectorRotation||[]).length-1) ? "1px solid " + C.border : "none" }}>
                 <div style={{ width:160, flexShrink:0 }}>
@@ -2325,23 +1888,24 @@ function MacroStage({ d }) {
                 <div style={{ flex:1, height:8, position:"relative" }}>
                   <div style={{ position:"absolute", inset:0, background:C.border, borderRadius:4 }} />
                   <div style={{ position:"absolute", left:"50%", top:0, bottom:0, width:1, background:C.textDim, transform:"translateX(-50%)" }} />
-                  {pair.bull===true && <div style={{ position:"absolute", left:"50%", top:0, bottom:0, width:barW + "%", background:C.green, borderRadius:"0 4px 4px 0" }} />}
-                  {pair.bull===false && <div style={{ position:"absolute", right:"50%", top:0, bottom:0, width:barW + "%", background:C.red, borderRadius:"4px 0 0 4px" }} />}
+                  {pair.bull===true && <div style={{ position:"absolute", left:"50%", top:0, bottom:0, width:barW + "%", background:C.cyan, borderRadius:"0 4px 4px 0" }} />}
+                  {pair.bull===false && <div style={{ position:"absolute", right:"50%", top:0, bottom:0, width:barW + "%", background:C.purple, borderRadius:"4px 0 0 4px" }} />}
                   {pair.bull===null && <div style={{ position:"absolute", left:"50%", top:"50%", transform:"translate(-50%,-50%)", width:6, height:6, borderRadius:"50%", background:C.textDim }} />}
                 </div>
                 <div style={{ width:55, textAlign:"right", flexShrink:0 }}>
-                  <span style={{ fontSize:13, fontFamily:font, fontWeight:700, color:pair.bull===true?C.green:pair.bull===false?C.red:C.textMid }}>{pair.prob}%</span>
+                  <span style={{ fontSize:13, fontFamily:font, fontWeight:700, color:pair.bull===true?C.cyan:pair.bull===false?C.purple:C.textMid }}>{pair.leadShare!=null?pair.leadShare+"%":"—"}</span>
                 </div>
               </div>
             );
           })}
         </div>
+        <div style={{fontSize:9,color:C.textDim,marginTop:8}}>Lead share is the percentage of usable 1W/1M/3M/6M windows won by the displayed leading ETF. It is not a forecast, confidence score, or probability.</div>
       </Card>
 
       {/* TOP SECTORS */}
       <Card>
-        <SecTitle icon="📋" title="Top Sectors (6M Returns)" badge={d.sectorTimestamp ? "LIVE" : "SEED"} bc={d.sectorTimestamp ? C.green : C.textDim} />
-        <div style={{ fontSize:11, color:C.textDim, marginBottom:12 }}>Top 5 performing sectors by 6-month total return</div>
+        <SecTitle icon="📋" title="Top Sectors (6M Price Returns)" badge={d.sectorTimestamp ? "CONNECTED" : "UNAVAILABLE"} bc={d.sectorTimestamp ? C.green : C.textDim} />
+        <div style={{ fontSize:11, color:C.textDim, marginBottom:12 }}>Top 5 performing sectors by 6-month price return from the connected ETF feed</div>
         <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
           <thead>
             <tr style={{ borderBottom:"1px solid " + C.border }}>
@@ -2388,43 +1952,43 @@ function MacroStage({ d }) {
   );
 }
 
-/* ─── PORTFOLIO HOLDINGS (The Claude Portfolio — launched Apr 1, 2026) ─── */
+/* ─── MODEL PORTFOLIO HOLDINGS ─── */
 var PORTFOLIO_HOLDINGS = [
-  { ticker:"AVGO", name:"Broadcom Inc.", sector:"Technology", weight:10, qty:24, sleeve:"Core", cap:"Large", assetClass:"Equity", themes:["AI Chips","Custom Silicon"], costBasis:208.33 },
-  { ticker:"VST",  name:"Vistra Corp.", sector:"Energy", weight:10, qty:56, sleeve:"Strategic", cap:"Mid", assetClass:"Equity", themes:["Nuclear","AI Power"], costBasis:89.29 },
-  { ticker:"MSFT", name:"Microsoft Corp.", sector:"Technology", weight:8, qty:10, sleeve:"Core", cap:"Large", assetClass:"Equity", themes:["Cloud","AI Infrastructure"], costBasis:400.00 },
-  { ticker:"LLY",  name:"Eli Lilly & Co.", sector:"Healthcare", weight:8, qty:5, sleeve:"Core", cap:"Large", assetClass:"Equity", themes:["GLP-1","Obesity"], costBasis:800.00 },
-  { ticker:"AMZN", name:"Amazon.com Inc.", sector:"Technology", weight:7, qty:18, sleeve:"Core", cap:"Large", assetClass:"Equity", themes:["AWS","E-Commerce"], costBasis:194.44 },
-  { ticker:"META", name:"Meta Platforms", sector:"Technology", weight:7, qty:6, sleeve:"Core", cap:"Large", assetClass:"Equity", themes:["Ads","Llama AI"], costBasis:583.33 },
-  { ticker:"GOOGL",name:"Alphabet Inc.", sector:"Technology", weight:6, qty:18, sleeve:"Core", cap:"Large", assetClass:"Equity", themes:["Search","Cloud"], costBasis:166.67 },
-  { ticker:"CEG",  name:"Constellation Energy", sector:"Energy", weight:6, qty:13, sleeve:"Strategic", cap:"Mid", assetClass:"Equity", themes:["Nuclear","Data Centers"], costBasis:230.77 },
-  { ticker:"GLD",  name:"SPDR Gold Trust", sector:"Commodities", weight:5, qty:10, sleeve:"Strategic", cap:"N/A", assetClass:"Gold", themes:["Gold","Safe Haven"], costBasis:250.00 },
-  { ticker:"XOM",  name:"Exxon Mobil Corp.", sector:"Energy", weight:5, qty:22, sleeve:"Strategic", cap:"Large", assetClass:"Equity", themes:["Oil","Dividends"], costBasis:113.64 },
-  { ticker:"UNH",  name:"UnitedHealth Group", sector:"Healthcare", weight:5, qty:5, sleeve:"Core", cap:"Large", assetClass:"Equity", themes:["Insurance","Optum"], costBasis:500.00 },
-  { ticker:"NVDA", name:"Nvidia Corp.", sector:"Technology", weight:5, qty:22, sleeve:"Strategic", cap:"Large", assetClass:"Equity", themes:["AI GPUs","Data Center"], costBasis:113.64 },
-  { ticker:"AU",   name:"AngloGold Ashanti", sector:"Materials", weight:4, qty:69, sleeve:"Speculative", cap:"Mid", assetClass:"Equity", themes:["Gold Mining","EM"], costBasis:28.99 },
-  { ticker:"PLTR", name:"Palantir Technologies", sector:"Technology", weight:4, qty:18, sleeve:"Speculative", cap:"Mid", assetClass:"Equity", themes:["Defense AI","Gov Tech"], costBasis:111.11 },
-  { ticker:"FCX",  name:"Freeport-McMoRan", sector:"Materials", weight:4, qty:48, sleeve:"Speculative", cap:"Mid", assetClass:"Equity", themes:["Copper","EV Metals"], costBasis:41.67 },
+  { ticker:"AVGO", name:"Broadcom Inc.", sector:"Technology", weight:10, qty:24, sleeve:"Core", cap:null, assetClass:"Equity", themes:["AI Chips","Custom Silicon"], costBasis:208.33 },
+  { ticker:"VST",  name:"Vistra Corp.", sector:"Utilities", weight:10, qty:56, sleeve:"Strategic", cap:null, assetClass:"Equity", themes:["Nuclear","AI Power"], costBasis:89.29 },
+  { ticker:"MSFT", name:"Microsoft Corp.", sector:"Technology", weight:8, qty:10, sleeve:"Core", cap:null, assetClass:"Equity", themes:["Cloud","AI Infrastructure"], costBasis:400.00 },
+  { ticker:"LLY",  name:"Eli Lilly & Co.", sector:"Healthcare", weight:8, qty:5, sleeve:"Core", cap:null, assetClass:"Equity", themes:["GLP-1","Obesity"], costBasis:800.00 },
+  { ticker:"AMZN", name:"Amazon.com Inc.", sector:"Consumer Discretionary", weight:7, qty:18, sleeve:"Core", cap:null, assetClass:"Equity", themes:["AWS","E-Commerce"], costBasis:194.44 },
+  { ticker:"META", name:"Meta Platforms", sector:"Communication Services", weight:7, qty:6, sleeve:"Core", cap:null, assetClass:"Equity", themes:["Ads","Llama AI"], costBasis:583.33 },
+  { ticker:"GOOGL",name:"Alphabet Inc.", sector:"Communication Services", weight:6, qty:18, sleeve:"Core", cap:null, assetClass:"Equity", themes:["Search","Cloud"], costBasis:166.67 },
+  { ticker:"CEG",  name:"Constellation Energy", sector:"Utilities", weight:6, qty:13, sleeve:"Strategic", cap:null, assetClass:"Equity", themes:["Nuclear","Data Centers"], costBasis:230.77 },
+  { ticker:"GLD",  name:"SPDR Gold Trust", sector:"Commodities", weight:5, qty:10, sleeve:"Strategic", cap:null, assetClass:"Gold", themes:["Gold","Safe Haven"], costBasis:250.00 },
+  { ticker:"XOM",  name:"Exxon Mobil Corp.", sector:"Energy", weight:5, qty:22, sleeve:"Strategic", cap:null, assetClass:"Equity", themes:["Oil","Dividends"], costBasis:113.64 },
+  { ticker:"UNH",  name:"UnitedHealth Group", sector:"Healthcare", weight:5, qty:5, sleeve:"Core", cap:null, assetClass:"Equity", themes:["Insurance","Optum"], costBasis:500.00 },
+  { ticker:"NVDA", name:"Nvidia Corp.", sector:"Technology", weight:5, qty:22, sleeve:"Strategic", cap:null, assetClass:"Equity", themes:["AI GPUs","Data Center"], costBasis:113.64 },
+  { ticker:"AU",   name:"AngloGold Ashanti", sector:"Materials", weight:4, qty:69, sleeve:"Speculative", cap:null, assetClass:"Equity", themes:["Gold Mining","EM"], costBasis:28.99 },
+  { ticker:"PLTR", name:"Palantir Technologies", sector:"Technology", weight:4, qty:18, sleeve:"Speculative", cap:null, assetClass:"Equity", themes:["Defense AI","Gov Tech"], costBasis:111.11 },
+  { ticker:"FCX",  name:"Freeport-McMoRan", sector:"Materials", weight:4, qty:48, sleeve:"Speculative", cap:null, assetClass:"Equity", themes:["Copper","EV Metals"], costBasis:41.67 },
 ];
 var PORTFOLIO_INCEPTION = "2026-04-01";
 var PORTFOLIO_CASH = 3000; // 6% cash reserve
 
-/* ─── PATTERN & LPPLS DETECTION (simplified) ─── */
+/* ─── RULE-BASED TECHNICAL SETUP / EXTENSION CLASSIFICATION ─── */
 function detectPattern(h) {
   if (!h.ma50 || !h.ma200 || !h.price) return "—";
   var abv50 = h.price > h.ma50, abv200 = h.price > h.ma200;
-  var rising50 = h.maDev > 2;
-  if (abv50 && abv200 && h.zScore > 1.5 && h.rsi > 65) return "Dbl Top";
-  if (!abv50 && !abv200 && h.zScore < -1.5 && h.rsi < 35) return "Dbl Bot";
-  if (!abv50 && abv200 && h.rsi > 40 && h.rsi < 55) return "Inv H&S";
-  if (abv50 && !abv200 && h.maDev > 0) return "Cup&Hdl";
-  return "—";
+  if (abv50 && abv200 && h.zScore > 1.5 && h.rsi > 65) return "Extended Uptrend";
+  if (!abv50 && !abv200 && h.zScore < -1.5 && h.rsi < 35) return "Oversold Downtrend";
+  if (!abv50 && abv200 && h.rsi > 40 && h.rsi < 55) return "Pullback >200D";
+  if (abv50 && !abv200 && h.maDev > 0) return "Recovery Attempt";
+  return "No Setup";
 }
-function detectLPPLS(h) {
-  if (!h.zScore || !h.tq) return "—";
-  if (h.zScore > 2.5 && h.tq > 60) return "⚠ Bubble";
-  if (h.zScore > 2.0 && h.tq > 50) return "Elevated";
-  if (h.zScore < -2.0) return "Capitulation";
+function detectExtensionState(h) {
+  // Simple price-extension classifier only; no bubble/crash model is implied.
+  if (h.zScore == null) return "—";
+  if (h.zScore > 2.5) return "Very Extended";
+  if (h.zScore > 2.0) return "Extended";
+  if (h.zScore < -2.0) return "Deeply Depressed";
   return "Normal";
 }
 
@@ -2502,15 +2066,15 @@ function PortfolioStage({ d }) {
   var sortCol = _sc[0], setSortCol = _sc[1];
   var _sd = useState(-1);
   var sortDir = _sd[0], setSortDir = _sd[1];
-  var _ai = useState(null);
-  var aiHolding = _ai[0], setAiHolding = _ai[1];
-  var _ad = useState({});
-  var aiData = _ad[0], setAiData = _ad[1];
+  var _sig = useState(null);
+  var signalHolding = _sig[0], setSignalHolding = _sig[1];
+  var _sdx = useState({});
+  var signalData = _sdx[0], setSignalData = _sdx[1];
   var _st = useState(null);
   var selectedTicker = _st[0], setSelectedTicker = _st[1];
   var chartRef = useState(null);
 
-  var regime = d?.macroRegime?.season || "Summer";
+  var regime = d?.macroRegime?.season || "Unclassified";
 
   useEffect(function() {
     (async function() {
@@ -2521,63 +2085,46 @@ function PortfolioStage({ d }) {
         var json = await res.json();
         var merged = PORTFOLIO_HOLDINGS.map(function(h) {
           var d = json.holdings && json.holdings[h.ticker];
-          if (!d || d.error) return { ...h, price:null, ma50:null, ma200:null, rsi:null, tq:null, zScore:null, r6m:null, maDev:null, trend:"—", phase:"—", action:"—", pattern:"—", lppls:"—", value:h.weight/100*50000 };
+          if (!d || d.error) return { ...h, price:null, ma50:null, ma200:null, rsi:null, tq:null, zScore:null, r6m:null, maDev:null, trend:"—", phase:"—", action:"—", pattern:"—", extension:"—", value:null };
           var merged = { ...h, ...d };
+          var marketCapForBucket=Number(d.marketCap);
+          merged.cap=Number.isFinite(marketCapForBucket)&&marketCapForBucket>0?(marketCapForBucket>=1e10?"Large":marketCapForBucket>=2e9?"Mid":"Small"):null;
           merged.pattern = detectPattern(merged);
-          merged.lppls = detectLPPLS(merged);
-          merged.value = d.price ? d.price * h.qty : h.weight/100*50000;
-          merged.pnl = d.price ? (d.price - h.costBasis) * h.qty : 0;
-          merged.pnlPct = d.price && h.costBasis ? ((d.price / h.costBasis - 1) * 100) : 0;
+          merged.extension = detectExtensionState(merged);
+          merged.value = d.price != null ? d.price * h.qty : null;
+          merged.pnl = d.price != null ? (d.price - h.costBasis) * h.qty : null;
+          merged.pnlPct = d.price != null && h.costBasis ? ((d.price / h.costBasis - 1) * 100) : null;
           return merged;
         });
         setHoldings(merged);
       } catch(e) {
         setError(e.message);
-        setHoldings(PORTFOLIO_HOLDINGS.map(function(h){return { ...h, price:null, trend:"—", phase:"—", action:"—", pattern:"—", lppls:"—", value:h.weight/100*50000, pnl:0, pnlPct:0 }}));
+        setHoldings(PORTFOLIO_HOLDINGS.map(function(h){return { ...h, price:null, trend:"—", phase:"—", action:"—", pattern:"—", extension:"—", value:null, pnl:null, pnlPct:null }}));
       }
       setLoading(false);
     })();
   }, []);
 
-  // Fetch AI analysis for a single holding
-  function fetchAI(ticker) {
-    if (aiData[ticker]) { setAiHolding(ticker); return; }
-    setAiHolding(ticker);
-    var h = holdings.find(function(x){return x.ticker===ticker});
-    if (!h) return;
-    fetch(CLAUDE_URL, {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:600,messages:[{role:"user",content:
-        "You are a senior equity analyst. Give a concise bull case (2 sentences) and bear case (2 sentences) for "+h.name+" ("+h.ticker+") as of April 2026. Current price: $"+h.price+", RSI: "+h.rsi+", 6M return: "+h.r6m+"%, Z-score: "+h.zScore+", Trend: "+h.trend+", Phase: "+h.phase+". Respond with ONLY valid JSON, no markdown, no backticks, no other text: {\"bull\":\"your bull case here\",\"bear\":\"your bear case here\",\"score\":7}"}]})
-    }).then(function(r){
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    }).then(function(j){
-      var txt = (j.content||[]).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("");
-      console.log("AI response for " + ticker + ":", txt.slice(0, 200));
-      var clean = txt.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
-      var parsed = null;
-      try { parsed = JSON.parse(clean); } catch(e) {
-        // Try brace matching
-        var d2=0,s2=-1;
-        for(var k=0;k<clean.length;k++){if(clean[k]==="{"){if(d2===0)s2=k;d2++}else if(clean[k]==="}"){d2--;if(d2===0&&s2>=0){try{parsed=JSON.parse(clean.slice(s2,k+1))}catch(e3){}s2=-1}}}
-      }
-      if (!parsed) {
-        // Regex fallback
-        var bm = clean.match(/"bull"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
-        var brm = clean.match(/"bear"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
-        if (bm || brm) parsed = { bull:bm?bm[1].replace(/\\n/g,"\n").replace(/\\"/g,'"'):"N/A", bear:brm?brm[1].replace(/\\n/g,"\n").replace(/\\"/g,'"'):"N/A", score:5 };
-      }
-      if (parsed) {
-        setAiData(function(prev){var n={...prev};n[ticker]=parsed;return n});
-      } else {
-        setAiData(function(prev){var n={...prev};n[ticker]={bull:"Analysis unavailable — response format error",bear:"Check console for details",score:0};return n});
-        console.warn("AI parse failed for "+ticker+". Raw:", clean.slice(0,300));
-      }
-    }).catch(function(err){
-      console.error("AI fetch error for "+ticker+":", err.message);
-      setAiData(function(prev){var n={...prev};n[ticker]={bull:"Failed to load: "+err.message,bear:"Rate limited — wait 60s and try again",score:0};return n});
-    });
+  // Deterministic technical bull/bear summary. This avoids presenting generated
+  // unverified web research as company fundamentals and does not require AI API credits.
+  function buildSignalSummary(ticker) {
+    if (signalData[ticker]) { setSignalHolding(ticker); return; }
+    setSignalHolding(ticker);
+    var h=holdings.find(function(x){return x.ticker===ticker});
+    if(!h)return;
+    var positives=[]; var risks=[]; var score=5;
+    if(h.trend==="Bullish"){positives.push("bullish trend");score+=1;} else if(h.trend==="Bearish"){risks.push("bearish trend");score-=1;}
+    if(h.r6m!=null){if(h.r6m>15){positives.push("strong 6M momentum ("+Number(h.r6m).toFixed(1)+"%)");score+=1;}else if(h.r6m<0){risks.push("negative 6M momentum ("+Number(h.r6m).toFixed(1)+"%)");score-=1;}}
+    if(h.rsi!=null){if(h.rsi>=70){risks.push("overbought RSI "+Number(h.rsi).toFixed(0));score-=1;}else if(h.rsi>=45&&h.rsi<=65){positives.push("balanced RSI "+Number(h.rsi).toFixed(0));}}
+    if(h.price&&h.ma200){if(h.price>h.ma200)positives.push("price above 200-day MA");else risks.push("price below 200-day MA");}
+    score=Math.max(1,Math.min(10,score));
+    var parsed={
+      bull: positives.length ? "Technical positives: "+positives.join(", ")+". These signals support the position if the trend persists; they do not incorporate unverified fundamental claims." : "No strong technical bull cluster is currently confirmed by the connected indicators.",
+      bear: risks.length ? "Technical risks: "+risks.join(", ")+". A break in trend or further momentum deterioration would increase downside risk." : "No major technical risk cluster is currently confirmed by the connected indicators.",
+      score:score,
+      method:"rule-based"
+    };
+    setSignalData(function(prev){var n={...prev};n[ticker]=parsed;return n;});
   }
 
   function doSort(col) {
@@ -2593,9 +2140,12 @@ function PortfolioStage({ d }) {
   });
 
   // Summary stats
-  var totalValue = holdings.reduce(function(s,h){return s+(h.value||0)},0) + PORTFOLIO_CASH;
-  var totalPnL = holdings.reduce(function(s,h){return s+(h.pnl||0)},0);
-  var totalPnLPct = totalValue > 0 ? ((totalValue - 50000) / 50000 * 100) : 0;
+  var connectedHoldings = holdings.filter(function(h){return h.price!=null&&h.value!=null;});
+  var totalValue = connectedHoldings.reduce(function(s,h){return s+Number(h.value||0)},0) + PORTFOLIO_CASH;
+  var totalPnL = connectedHoldings.reduce(function(s,h){return s+Number(h.pnl||0)},0);
+  var totalCostBasis = connectedHoldings.reduce(function(s,h){return s+Number(h.costBasis||0)*Number(h.qty||0)},0);
+  var totalPnLPct = totalCostBasis > 0 ? totalPnL / totalCostBasis * 100 : null;
+  var priceCoverage = holdings.length ? Math.round(connectedHoldings.length/holdings.length*100) : 0;
   var holdCount = holdings.filter(function(h){return h.action==="Hold"}).length;
   var scaleCount = holdings.filter(function(h){return h.action==="Scale Out"}).length;
   var closeCount = holdings.filter(function(h){return h.action==="Close"}).length;
@@ -2611,10 +2161,12 @@ function PortfolioStage({ d }) {
     if (h.cap && capWeights[h.cap] != null) capWeights[h.cap] += h.weight;
     sleeveWeights[h.sleeve] = (sleeveWeights[h.sleeve]||0) + h.weight;
   });
+  var capCoverageWeight=capWeights.Large+capWeights.Mid+capWeights.Small;
 
   var trendColor = function(t) { return t==="Bullish"?C.green:t==="Bearish"?C.red:C.textMid; };
   var actionColor = function(a) { return a==="Hold"?C.green:a==="Scale Out"?C.orange:a==="Close"?C.red:C.textDim; };
   var actionBg = function(a) { return a==="Hold"?C.green+"22":a==="Scale Out"?C.orange+"22":a==="Close"?C.red+"22":C.cardAlt; };
+  var actionLabel = function(a) { return a==="Hold"?"Maintain":a==="Scale Out"?"Review Reduce":a==="Close"?"Review Exit":a||"—"; };
 
   var thS = { textAlign:"left", padding:"7px 5px", color:C.textDim, fontSize:8, fontWeight:700, letterSpacing:1, textTransform:"uppercase", cursor:"pointer", userSelect:"none", borderBottom:"1px solid "+C.border, whiteSpace:"nowrap", position:"sticky", top:0, background:C.card, zIndex:1 };
   var tdS = { padding:"6px 5px", fontSize:11, borderBottom:"1px solid "+C.border, whiteSpace:"nowrap" };
@@ -2625,39 +2177,40 @@ function PortfolioStage({ d }) {
     {key:"themes",label:"THEMES",w:130},
     {key:"maDev",label:"MA DEV",w:60},{key:"qty",label:"QTY",w:40},{key:"price",label:"PRICE",w:68},
     {key:"ma50",label:"50 DMA",w:62},{key:"ma200",label:"200 DMA",w:62},{key:"trend",label:"TREND",w:65},
-    {key:"phase",label:"PHASE",w:85},{key:"action",label:"ACTION",w:60},{key:"rsi",label:"RSI",w:38},
-    {key:"tq",label:"TQ",w:38},{key:"zScore",label:"Z-SCORE",w:55},{key:"r6m",label:"6M",w:48},
+    {key:"phase",label:"PHASE",w:85},{key:"action",label:"MODEL FLAG",w:75},{key:"rsi",label:"RSI",w:38},
+    {key:"tq",label:"TQ (FEED)",w:58},{key:"zScore",label:"PRICE Z",w:55},{key:"r6m",label:"6M",w:48},
     {key:"pnlPct",label:"P&L",w:50},
-    {key:"pattern",label:"PATTERN",w:60},{key:"lppls",label:"LPPLS",w:65},
-    {key:"ai",label:"AI",w:30},
+    {key:"pattern",label:"SETUP",w:92},{key:"extension",label:"EXTENSION",w:78},
+    {key:"sig",label:"SIG",w:30},
   ];
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+      <div style={{fontSize:10,color:C.textDim}}>Illustrative model portfolio · fixed sample holdings, quantities and cost bases · connected prices update market value and rule-based technical signals.</div>
 
       {/* SUMMARY ROW */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr", gap:10 }}>
         <Card style={{ padding:"12px 14px" }}>
-          <div style={{ fontSize:9, color:C.textDim, letterSpacing:1.2, marginBottom:4 }}>PORTFOLIO VALUE</div>
+          <div style={{ fontSize:9, color:C.textDim, letterSpacing:1.2, marginBottom:4 }}>CONNECTED VALUE</div>
           <div style={{ fontSize:22, fontWeight:700, fontFamily:font }}>${totalValue.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
-          <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>Inception: Apr 1, 2026</div>
+          <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>{priceCoverage}% connected-price coverage · sample portfolio</div>
         </Card>
         <Card style={{ padding:"12px 14px" }}>
-          <div style={{ fontSize:9, color:C.textDim, letterSpacing:1.2, marginBottom:4 }}>TOTAL P&L</div>
-          <div style={{ fontSize:22, fontWeight:700, fontFamily:font, color:totalPnL>=0?C.green:C.red }}>{totalPnL>=0?"+":""}${Math.abs(totalPnL).toLocaleString(undefined,{maximumFractionDigits:0})}</div>
-          <div style={{ fontSize:10, color:totalPnLPct>=0?C.green:C.red, marginTop:2 }}>{totalPnLPct>=0?"+":""}{totalPnLPct.toFixed(2)}% since inception</div>
+          <div style={{ fontSize:9, color:C.textDim, letterSpacing:1.2, marginBottom:4 }}>CONNECTED P&L</div>
+          <div style={{ fontSize:22, fontWeight:700, fontFamily:font, color:totalCostBasis>0?(totalPnL>=0?C.green:C.red):C.textDim }}>{totalCostBasis>0?((totalPnL>=0?"+":"")+"$"+Math.abs(totalPnL).toLocaleString(undefined,{maximumFractionDigits:0})):"—"}</div>
+          <div style={{ fontSize:10, color:totalPnLPct==null?C.textDim:(totalPnLPct>=0?C.green:C.red), marginTop:2 }}>{totalPnLPct==null?"—":(totalPnLPct>=0?"+":"")+totalPnLPct.toFixed(2)+"% since cost basis"}</div>
         </Card>
         <Card style={{ padding:"12px 14px" }}>
           <div style={{ fontSize:9, color:C.textDim, letterSpacing:1.2, marginBottom:4 }}>CASH RESERVE</div>
           <div style={{ fontSize:22, fontWeight:700, fontFamily:font }}>${PORTFOLIO_CASH.toLocaleString()}</div>
-          <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>{(PORTFOLIO_CASH/totalValue*100).toFixed(1)}% of portfolio</div>
+          <div style={{ fontSize:10, color:C.textDim, marginTop:2 }}>{totalValue>0?(PORTFOLIO_CASH/totalValue*100).toFixed(1)+"% of connected value":"—"}</div>
         </Card>
         <Card style={{ padding:"12px 14px" }}>
           <div style={{ fontSize:9, color:C.textDim, letterSpacing:1.2, marginBottom:4 }}>SIGNALS</div>
           <div style={{ display:"flex", gap:8, marginTop:4 }}>
-            <div><span style={{ fontSize:18, fontWeight:700, color:C.green }}>{holdCount}</span><div style={{ fontSize:9, color:C.textDim }}>Hold</div></div>
-            <div><span style={{ fontSize:18, fontWeight:700, color:C.orange }}>{scaleCount}</span><div style={{ fontSize:9, color:C.textDim }}>Scale</div></div>
-            <div><span style={{ fontSize:18, fontWeight:700, color:C.red }}>{closeCount}</span><div style={{ fontSize:9, color:C.textDim }}>Close</div></div>
+            <div><span style={{ fontSize:18, fontWeight:700, color:C.green }}>{holdCount}</span><div style={{ fontSize:9, color:C.textDim }}>Maintain</div></div>
+            <div><span style={{ fontSize:18, fontWeight:700, color:C.orange }}>{scaleCount}</span><div style={{ fontSize:9, color:C.textDim }}>Review reduce</div></div>
+            <div><span style={{ fontSize:18, fontWeight:700, color:C.red }}>{closeCount}</span><div style={{ fontSize:9, color:C.textDim }}>Review exit</div></div>
           </div>
         </Card>
         <Card style={{ padding:"12px 14px" }}>
@@ -2671,7 +2224,7 @@ function PortfolioStage({ d }) {
       <Card style={{ padding:"10px 12px" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
           <div style={{ fontSize:13, fontWeight:700 }}>⚡ Holdings Analysis</div>
-          <div style={{ fontSize:10, color:C.textMid }}>{holdings.length} positions · Click row for chart · AI column for analysis</div>
+          <div style={{ fontSize:10, color:C.textMid }}>{holdings.length} positions · Click row for chart · Signal column for rules-based analysis · TQ is an upstream feed field and is not used as a fundamental-quality score</div>
         </div>
         <div style={{ overflowX:"auto", maxHeight:520, overflowY:"auto" }}>
           <table style={{ width:"100%", borderCollapse:"collapse", minWidth:1500 }}>
@@ -2679,7 +2232,7 @@ function PortfolioStage({ d }) {
               <tr>
                 {cols.map(function(col) {
                   var isRight = rightCols.indexOf(col.key) >= 0;
-                  return <th key={col.key} onClick={function(){if(col.key!=="ai"&&col.key!=="themes")doSort(col.key)}} style={{ ...thS, width:col.w, textAlign:isRight?"right":"left" }}>{col.label}{sortCol===col.key?(sortDir>0?" ↑":" ↓"):""}</th>;
+                  return <th key={col.key} onClick={function(){if(col.key!=="sig"&&col.key!=="themes")doSort(col.key)}} style={{ ...thS, width:col.w, textAlign:isRight?"right":"left" }}>{col.label}{sortCol===col.key?(sortDir>0?" ↑":" ↓"):""}</th>;
                 })}
               </tr>
             </thead>
@@ -2688,8 +2241,8 @@ function PortfolioStage({ d }) {
                 <tr><td colSpan={cols.length} style={{ padding:40, textAlign:"center", color:C.textDim }}><Spinner size={16} /> Loading portfolio data...</td></tr>
               ) : sorted.map(function(h, i) {
                 var mc = h.maDev==null?C.textDim:h.maDev>0?C.green:C.red;
-                var patColor = h.pattern==="Inv H&S"||h.pattern==="Dbl Bot"||h.pattern==="Cup&Hdl"?C.green:h.pattern==="Dbl Top"?C.red:C.textDim;
-                var lpColor = h.lppls==="⚠ Bubble"?C.red:h.lppls==="Elevated"?C.orange:h.lppls==="Capitulation"?C.cyan:C.textDim;
+                var patColor = h.pattern==="Pullback >200D"||h.pattern==="Recovery Attempt"?C.green:h.pattern==="Extended Uptrend"?C.orange:h.pattern==="Oversold Downtrend"?C.red:C.textDim;
+                var lpColor = h.extension==="Very Extended"?C.red:h.extension==="Extended"?C.orange:h.extension==="Deeply Depressed"?C.cyan:C.textDim;
                 return (
                   <tr key={h.ticker} onClick={function(){setSelectedTicker(selectedTicker===h.ticker?null:h.ticker)}} style={{ background:selectedTicker===h.ticker?C.blue+"18":i%2===0?"transparent":C.cardAlt+"33", cursor:"pointer", transition:"background 0.15s" }}>
                     <td style={{ ...tdS, fontWeight:700, color:C.cyan, fontFamily:font, fontSize:11 }}>{h.ticker}</td>
@@ -2709,16 +2262,16 @@ function PortfolioStage({ d }) {
                     <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:C.textDim }}>{h.ma200||"—"}</td>
                     <td style={tdS}><span style={{ color:trendColor(h.trend), fontWeight:600, fontSize:10 }}>{h.trend==="Bullish"?"↗ ":h.trend==="Bearish"?"↘ ":"— "}{h.trend}</span></td>
                     <td style={{ ...tdS, fontSize:9, color:C.textMid }}>{h.phase}</td>
-                    <td style={tdS}><span style={{ background:actionBg(h.action), color:actionColor(h.action), padding:"2px 6px", borderRadius:3, fontSize:9, fontWeight:700 }}>{h.action}</span></td>
-                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:h.rsi>70?C.red:h.rsi<30?C.green:C.text }}>{h.rsi||"—"}</td>
-                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:h.tq>50?C.green:h.tq<25?C.red:C.orange }}>{h.tq!=null?h.tq.toFixed(1):"—"}</td>
-                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:h.zScore>2?C.red:h.zScore<-2?C.red:h.zScore>0?C.green:C.orange }}>{h.zScore!=null?(h.zScore>0?"+":"")+h.zScore.toFixed(2):"—"}</td>
+                    <td style={tdS}><span style={{ background:actionBg(h.action), color:actionColor(h.action), padding:"2px 6px", borderRadius:3, fontSize:9, fontWeight:700 }}>{actionLabel(h.action)}</span></td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:h.rsi!=null&&(h.rsi>70||h.rsi<30)?C.orange:C.text }}>{h.rsi||"—"}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:C.textMid }}>{h.tq!=null?h.tq.toFixed(1):"—"}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:h.zScore!=null&&Math.abs(h.zScore)>2?C.orange:C.textMid }}>{h.zScore!=null?(h.zScore>0?"+":"")+h.zScore.toFixed(2):"—"}</td>
                     <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:h.r6m>0?C.green:C.red }}>{h.r6m!=null?(h.r6m>0?"+":"")+h.r6m+"%":"—"}</td>
-                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:h.pnlPct>0?C.green:h.pnlPct<0?C.red:C.textMid }}>{h.pnlPct?(h.pnlPct>0?"+":"")+h.pnlPct.toFixed(1)+"%":"—"}</td>
+                    <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:h.pnlPct>0?C.green:h.pnlPct<0?C.red:C.textMid }}>{h.pnlPct!=null?(h.pnlPct>0?"+":"")+h.pnlPct.toFixed(1)+"%":"—"}</td>
                     <td style={{ ...tdS, fontSize:9, fontWeight:600, color:patColor }}>{h.pattern}</td>
-                    <td style={{ ...tdS, fontSize:9, color:lpColor }}>{h.lppls}</td>
+                    <td style={{ ...tdS, fontSize:9, color:lpColor }}>{h.extension}</td>
                     <td style={tdS}>
-                      <button onClick={function(){fetchAI(h.ticker)}} style={{ background:aiData[h.ticker]?C.purple+"33":C.cardAlt, border:"1px solid "+(aiData[h.ticker]?C.purple:C.border), borderRadius:3, color:aiData[h.ticker]?C.purple:C.textDim, fontSize:9, padding:"2px 5px", cursor:"pointer", fontWeight:700 }}>AI</button>
+                      <button onClick={function(){buildSignalSummary(h.ticker)}} style={{ background:signalData[h.ticker]?C.purple+"33":C.cardAlt, border:"1px solid "+(signalData[h.ticker]?C.purple:C.border), borderRadius:3, color:signalData[h.ticker]?C.purple:C.textDim, fontSize:9, padding:"2px 5px", cursor:"pointer", fontWeight:700 }}>SIG</button>
                     </td>
                   </tr>
                 );
@@ -2744,26 +2297,26 @@ function PortfolioStage({ d }) {
         </Card>
       )}
 
-      {/* AI ANALYSIS TOOLTIP */}
-      {aiHolding && (
+      {/* RULE-BASED SIGNAL ANALYSIS */}
+      {signalHolding && (
         <Card style={{ border:"1px solid "+C.purple+"44" }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-            <div style={{ fontSize:13, fontWeight:700, color:C.purple }}>🧠 AI Analysis: {aiHolding}</div>
-            <button onClick={function(){setAiHolding(null)}} style={{ background:"transparent", border:"1px solid "+C.border, borderRadius:4, color:C.textDim, padding:"2px 8px", cursor:"pointer", fontSize:10 }}>✕ Close</button>
+            <div style={{ fontSize:13, fontWeight:700, color:C.purple }}>🧭 Signal Analysis: {signalHolding}</div>
+            <button onClick={function(){setSignalHolding(null)}} style={{ background:"transparent", border:"1px solid "+C.border, borderRadius:4, color:C.textDim, padding:"2px 8px", cursor:"pointer", fontSize:10 }}>✕ Close</button>
           </div>
-          {aiData[aiHolding] ? (
+          {signalData[signalHolding] ? (
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
               <div style={{ background:C.green+"10", border:"1px solid "+C.green+"30", borderRadius:6, padding:10 }}>
                 <div style={{ fontSize:10, color:C.green, fontWeight:700, marginBottom:6 }}>🐂 BULL CASE</div>
-                <div style={{ fontSize:11, color:C.textMid, lineHeight:1.5 }}>{aiData[aiHolding].bull}</div>
+                <div style={{ fontSize:11, color:C.textMid, lineHeight:1.5 }}>{signalData[signalHolding].bull}</div>
               </div>
               <div style={{ background:C.red+"10", border:"1px solid "+C.red+"30", borderRadius:6, padding:10 }}>
                 <div style={{ fontSize:10, color:C.red, fontWeight:700, marginBottom:6 }}>🐻 BEAR CASE</div>
-                <div style={{ fontSize:11, color:C.textMid, lineHeight:1.5 }}>{aiData[aiHolding].bear}</div>
+                <div style={{ fontSize:11, color:C.textMid, lineHeight:1.5 }}>{signalData[signalHolding].bear}</div>
               </div>
             </div>
           ) : (
-            <div style={{ textAlign:"center", padding:20, color:C.textDim }}><Spinner size={14} /> Generating AI analysis for {aiHolding}...</div>
+            <div style={{ textAlign:"center", padding:20, color:C.textDim }}><Spinner size={14} /> Building signal analysis for {signalHolding}...</div>
           )}
         </Card>
       )}
@@ -2772,7 +2325,7 @@ function PortfolioStage({ d }) {
       <Card>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
           <div style={{ fontSize:14, fontWeight:700, display:"flex", alignItems:"center", gap:8 }}>
-            <span>📊</span> Portfolio Balance
+            <span>📊</span> Model Allocation Policy
             <Badge label={regime.toUpperCase()} color={SC[regime]||C.gold} />
             {closeCount>0 && <Badge label={closeCount+" Issues"} color={C.red} />}
           </div>
@@ -2780,7 +2333,7 @@ function PortfolioStage({ d }) {
 
         {/* Sleeve Allocation */}
         <div style={{ marginBottom:16 }}>
-          <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:8 }}>SLEEVE ALLOCATION</div>
+          <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:8 }}>MODEL SLEEVE WEIGHTS</div>
           <div style={{ display:"flex", gap:2, marginBottom:8 }}>
             <div style={{ flex:sleeveWeights.Core, height:10, background:C.blue, borderRadius:"4px 0 0 4px" }} />
             <div style={{ flex:sleeveWeights.Strategic||1, height:10, background:C.orange }} />
@@ -2792,30 +2345,30 @@ function PortfolioStage({ d }) {
                 <span style={{ fontSize:11, fontWeight:700, color:C.blue }}>Core</span>
                 <span style={{ fontFamily:font, fontSize:14, fontWeight:700 }}>{sleeveWeights.Core}%</span>
               </div>
-              <div style={{ fontSize:9, color:C.textDim, lineHeight:1.4 }}>Long-duration holdings for secular super-cycle expansion. Minimal trading through cycles.</div>
+              <div style={{ fontSize:9, color:C.textDim, lineHeight:1.4 }}>Lower-turnover model sleeve intended for larger, more established positions. Classification is illustrative.</div>
             </div>
             <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px", borderTop:"2px solid "+C.orange }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:4 }}>
                 <span style={{ fontSize:11, fontWeight:700, color:C.orange }}>Strategic</span>
                 <span style={{ fontFamily:font, fontSize:14, fontWeight:700 }}>{sleeveWeights.Strategic}%</span>
               </div>
-              <div style={{ fontSize:9, color:C.textDim, lineHeight:1.4 }}>Cycle-aware positions with thematic alignment. Actively managed sizing through macro cycles.</div>
+              <div style={{ fontSize:9, color:C.textDim, lineHeight:1.4 }}>Model sleeve for thematic or cycle-sensitive positions. Classification is illustrative.</div>
             </div>
             <div style={{ background:C.cardAlt, borderRadius:6, padding:"8px 10px", borderTop:"2px solid "+C.red }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:4 }}>
                 <span style={{ fontSize:11, fontWeight:700, color:C.red }}>Speculative</span>
                 <span style={{ fontFamily:font, fontSize:14, fontWeight:700 }}>{sleeveWeights.Speculative}%</span>
               </div>
-              <div style={{ fontSize:9, color:C.textDim, lineHeight:1.4 }}>High beta, liquidity-sensitive allocations. Targeted for participation in the liquidity cycle.</div>
+              <div style={{ fontSize:9, color:C.textDim, lineHeight:1.4 }}>Higher-risk model sleeve used to separate speculative exposure from core positions. Classification is illustrative.</div>
             </div>
           </div>
         </div>
 
         {/* Asset Class Weights */}
         <div style={{ marginBottom:16 }}>
-          <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:8 }}>ASSET CLASS WEIGHTS</div>
+          <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:8 }}>MODEL ASSET-CLASS WEIGHTS</div>
           <div style={{ display:"grid", gridTemplateColumns:"100px 1fr 45px 45px 55px", gap:"5px 8px", alignItems:"center" }}>
-            <div style={{ fontSize:9, color:C.textDim }}>Class</div><div /><div style={{ fontSize:9, color:C.textDim, textAlign:"right" }}>Current</div><div style={{ fontSize:9, color:C.textDim, textAlign:"right" }}>Target</div><div style={{ fontSize:9, color:C.textDim, textAlign:"right" }}>Dev</div>
+            <div style={{ fontSize:9, color:C.textDim }}>Class</div><div /><div style={{ fontSize:9, color:C.textDim, textAlign:"right" }}>Model Wt</div><div style={{ fontSize:9, color:C.textDim, textAlign:"right" }}>Demo Policy</div><div style={{ fontSize:9, color:C.textDim, textAlign:"right" }}>Dev</div>
             {[{name:"Equity",target:88},{name:"Gold",target:5},{name:"Commodities",target:5}].map(function(ac) {
               var current = assetClassWeights[ac.name]||0;
               var dev = current - ac.target;
@@ -2824,7 +2377,7 @@ function PortfolioStage({ d }) {
                 <div key={ac.name+"b"} style={{ height:5, background:C.border, borderRadius:3 }}><div style={{ width:current+"%", height:"100%", background:Math.abs(dev)>5?C.orange:C.green, borderRadius:3, opacity:0.7 }} /></div>,
                 <span key={ac.name+"c"} style={{ textAlign:"right", fontFamily:font, fontSize:11, fontWeight:700 }}>{current}%</span>,
                 <span key={ac.name+"t"} style={{ textAlign:"right", fontFamily:font, fontSize:10, color:C.textDim }}>{ac.target}%</span>,
-                <span key={ac.name+"d"} style={{ textAlign:"right", fontFamily:font, fontSize:10, color:dev>0?C.green:dev<0?C.red:C.textMid }}>{dev>0?"+":""}{dev}pp</span>,
+                <span key={ac.name+"d"} style={{ textAlign:"right", fontFamily:font, fontSize:10, color:Math.abs(dev)>5?C.red:Math.abs(dev)>2?C.orange:C.textMid }}>{dev>0?"+":""}{dev}pp</span>,
               ];
             })}
           </div>
@@ -2832,9 +2385,9 @@ function PortfolioStage({ d }) {
 
         {/* Sector Weights */}
         <div style={{ marginBottom:16 }}>
-          <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:8 }}>SECTOR WEIGHTS</div>
+          <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:8 }}>MODEL SECTOR WEIGHTS</div>
           <div style={{ display:"grid", gridTemplateColumns:"100px 1fr 45px 45px 55px", gap:"5px 8px", alignItems:"center" }}>
-            <div style={{ fontSize:9, color:C.textDim }}>Sector</div><div /><div style={{ fontSize:9, color:C.textDim, textAlign:"right" }}>Current</div><div style={{ fontSize:9, color:C.textDim, textAlign:"right" }}>Target</div><div style={{ fontSize:9, color:C.textDim, textAlign:"right" }}>Dev</div>
+            <div style={{ fontSize:9, color:C.textDim }}>Sector</div><div /><div style={{ fontSize:9, color:C.textDim, textAlign:"right" }}>Model Wt</div><div style={{ fontSize:9, color:C.textDim, textAlign:"right" }}>Demo Policy</div><div style={{ fontSize:9, color:C.textDim, textAlign:"right" }}>Dev</div>
             {Object.entries(sectorWeights).sort(function(a,b){return b[1]-a[1]}).map(function(entry) {
               var s=entry[0],wt=entry[1];
               var targets={Technology:26,Energy:21,Healthcare:13,Materials:8,Commodities:5};
@@ -2845,56 +2398,62 @@ function PortfolioStage({ d }) {
                 <div key={s+"b"} style={{ height:5, background:C.border, borderRadius:3 }}><div style={{ width:Math.min(100,wt*2)+"%", height:"100%", background:Math.abs(diff)>5?C.red:Math.abs(diff)>2?C.orange:C.green, borderRadius:3, opacity:0.7 }} /></div>,
                 <span key={s+"c"} style={{ textAlign:"right", fontFamily:font, fontSize:11, fontWeight:700 }}>{wt}%</span>,
                 <span key={s+"t"} style={{ textAlign:"right", fontFamily:font, fontSize:10, color:C.textDim }}>{target}%</span>,
-                <span key={s+"d"} style={{ textAlign:"right", fontFamily:font, fontSize:10, color:diff>0?C.green:diff<0?C.red:C.textMid }}>{diff>0?"+":""}{diff}pp</span>,
+                <span key={s+"d"} style={{ textAlign:"right", fontFamily:font, fontSize:10, color:Math.abs(diff)>5?C.red:Math.abs(diff)>2?C.orange:C.textMid }}>{diff>0?"+":""}{diff}pp</span>,
               ];
             })}
           </div>
         </div>
 
-        {/* Cap Size Distribution */}
+        {/* Cap Size Distribution — only from connected market-cap fields */}
         <div style={{ marginBottom:16 }}>
-          <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:8 }}>CAP SIZE DISTRIBUTION</div>
-          <div style={{ display:"flex", gap:4, marginBottom:6 }}>
-            <div style={{ flex:capWeights.Large, height:8, background:C.blue, borderRadius:"4px 0 0 4px" }} />
-            <div style={{ flex:capWeights.Mid||1, height:8, background:C.orange }} />
-            <div style={{ flex:capWeights.Small||1, height:8, background:C.cyan, borderRadius:"0 4px 4px 0" }} />
-          </div>
-          <div style={{ display:"flex", justifyContent:"space-between", fontSize:10 }}>
-            <span style={{ color:C.blue }}>● Large Cap: {capWeights.Large}%</span>
-            <span style={{ color:C.orange }}>● Mid Cap: {capWeights.Mid}%</span>
-            <span style={{ color:C.cyan }}>● Small Cap: {capWeights.Small}%</span>
-          </div>
+          <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:8 }}>CONNECTED MARKET-CAP BUCKETS</div>
+          {capCoverageWeight>0 ? <>
+            <div style={{ display:"flex", gap:4, marginBottom:6 }}>
+              <div style={{ flex:capWeights.Large||0.001, height:8, background:C.blue, borderRadius:"4px 0 0 4px" }} />
+              <div style={{ flex:capWeights.Mid||0.001, height:8, background:C.orange }} />
+              <div style={{ flex:capWeights.Small||0.001, height:8, background:C.cyan, borderRadius:"0 4px 4px 0" }} />
+            </div>
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:10 }}>
+              <span style={{ color:C.blue }}>● Large: {capWeights.Large}%</span>
+              <span style={{ color:C.orange }}>● Mid: {capWeights.Mid}%</span>
+              <span style={{ color:C.cyan }}>● Small: {capWeights.Small}%</span>
+            </div>
+            <div style={{fontSize:8,color:C.textDim,marginTop:5}}>Connected market-cap coverage represents {capCoverageWeight}% of the fixed model weight; uncategorized holdings are excluded rather than guessed.</div>
+          </> : <div style={{fontSize:9,color:C.textDim}}>Market-cap buckets are withheld because the connected technical feed did not supply market capitalization for these holdings.</div>}
+          <div style={{fontSize:8,color:C.textDim,marginTop:6}}>Buckets use ≥$10B large, $2B–$10B mid, and &lt;$2B small only when a connected market-cap value is available.</div>
         </div>
 
-        {/* Actions Required */}
+        <div style={{fontSize:9,color:C.textDim,lineHeight:1.5,marginBottom:12,padding:"8px 10px",background:C.cardAlt,border:"1px solid "+C.border,borderRadius:6}}>Allocation weights and policy targets on this card are fixed demonstration inputs from the sample portfolio; they are not market-value weights, optimized allocations, or investment recommendations.</div>
+
+        {/* Model signal review flags */}
         {(closeCount>0||scaleCount>0) && (
           <div style={{ borderTop:"1px solid "+C.border, paddingTop:12 }}>
-            <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:8 }}>ACTIONS REQUIRED</div>
+            <div style={{ fontSize:10, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:8 }}>MODEL SIGNAL FLAGS</div>
             {holdings.filter(function(h){return h.action==="Close"}).map(function(h) {
               return <div key={h.ticker} style={{ background:C.red+"12", border:"1px solid "+C.red+"30", borderRadius:6, padding:"8px 12px", marginBottom:6 }}>
                 <span style={{ color:C.red, fontWeight:700, fontSize:12 }}>✕ {h.ticker}</span>
-                <span style={{ color:C.textMid, fontSize:11, marginLeft:8 }}>{h.phase} — {h.trend} trend, below key MAs. Consider closing.</span>
+                <span style={{ color:C.textMid, fontSize:11, marginLeft:8 }}>{h.phase} — {h.trend} trend, below key MAs. Rule-based exit-review flag.</span>
               </div>;
             })}
             {holdings.filter(function(h){return h.action==="Scale Out"}).map(function(h) {
               return <div key={h.ticker} style={{ background:C.orange+"12", border:"1px solid "+C.orange+"30", borderRadius:6, padding:"8px 12px", marginBottom:6 }}>
                 <span style={{ color:C.orange, fontWeight:700, fontSize:12 }}>△ {h.ticker}</span>
-                <span style={{ color:C.textMid, fontSize:11, marginLeft:8 }}>Z-Score {h.zScore>0?"+":""}{h.zScore} — extended rally, RSI {h.rsi}. Consider trimming.</span>
+                <span style={{ color:C.textMid, fontSize:11, marginLeft:8 }}>Price Z {h.zScore!=null?((h.zScore>0?"+":"")+Number(h.zScore).toFixed(2)):"—"} · RSI {h.rsi!=null?Number(h.rsi).toFixed(0):"—"}. Rule-based reduction-review flag.</span>
               </div>;
             })}
           </div>
         )}
       </Card>
 
-      {/* CORRELATION MATRIX */}
+      {/* HOLDING SIMILARITY MATRIX */}
       <Card>
         <div style={{ fontSize:14, fontWeight:700, display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-          <span>🔗</span> Correlation Matrix
-          <span style={{ fontSize:10, color:C.textDim, fontWeight:400 }}>How holdings move together — high correlation = concentration risk</span>
+          <span>🔗</span> Holding Similarity Matrix
+          <span style={{ fontSize:10, color:C.textDim, fontWeight:400 }}>Heuristic similarity from sector, sleeve, trend and 6M momentum — not statistical return correlation</span>
         </div>
         {(function(){
-          // Compute simplified correlation from available data (r6m, trend direction, sector)
-          var tickers = holdings.filter(function(h){return h.price}).slice(0,10); // Top 10 by weight
+          // Compute a transparent heuristic similarity score from available cross-sectional features. This is NOT return correlation.
+          var tickers = holdings.filter(function(h){return h.price}).slice().sort(function(a,b){return Number(b.weight||0)-Number(a.weight||0);}).slice(0,10); // Top 10 model weights with connected prices
           if (tickers.length < 2) return <div style={{ color:C.textDim, fontSize:11 }}>Need at least 2 holdings with data</div>;
           var cellSize = 38;
           return (
@@ -2906,24 +2465,23 @@ function PortfolioStage({ d }) {
                   return [
                     <div key={row.ticker+"r"} style={{ fontSize:8, color:C.cyan, fontFamily:font, display:"flex", alignItems:"center", paddingRight:6, fontWeight:700 }}>{row.ticker}</div>,
                     tickers.map(function(col, ci){
-                      if (ri === ci) return <div key={ri+"-"+ci} style={{ width:cellSize, height:cellSize, background:C.blue+"44", borderRadius:3, display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontFamily:font, color:C.text }}>1.00</div>;
-                      // Simplified correlation estimate
+                      if (ri === ci) return <div key={ri+"-"+ci} style={{ width:cellSize, height:cellSize, background:C.blue+"44", borderRadius:3, display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontFamily:font, color:C.text }}>100</div>;
+                      // Heuristic similarity score (0–100). No covariance/return-history inference is made.
                       var sameSector = row.sector === col.sector ? 0.4 : 0;
                       var sameSleeve = row.sleeve === col.sleeve ? 0.15 : 0;
-                      var sameTrend = row.trend === col.trend ? 0.2 : -0.1;
-                      var r6mSim = row.r6m && col.r6m ? (1 - Math.abs(row.r6m - col.r6m) / 100) * 0.25 : 0;
-                      var corr = Math.max(-1, Math.min(1, sameSector + sameSleeve + sameTrend + r6mSim));
-                      var bg = corr > 0.6 ? C.red+"55" : corr > 0.3 ? C.orange+"44" : corr > 0 ? C.green+"22" : C.blue+"22";
-                      return <div key={ri+"-"+ci} style={{ width:cellSize, height:cellSize, background:bg, borderRadius:3, display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontFamily:font, color:corr>0.5?C.red:corr>0.2?C.orange:C.green }}>{corr.toFixed(2)}</div>;
+                      var sameTrend = row.trend && col.trend && row.trend === col.trend ? 0.2 : 0;
+                      var r6mSim = row.r6m!=null && col.r6m!=null ? Math.max(0, 1 - Math.abs(row.r6m - col.r6m) / 100) * 0.25 : 0;
+                      var similarity = Math.max(0, Math.min(1, sameSector + sameSleeve + sameTrend + r6mSim));
+                      var bg = similarity > 0.6 ? C.red+"55" : similarity > 0.3 ? C.orange+"44" : C.green+"22";
+                      return <div key={ri+"-"+ci} style={{ width:cellSize, height:cellSize, background:bg, borderRadius:3, display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontFamily:font, color:similarity>0.6?C.red:similarity>0.3?C.orange:C.green }}>{(similarity*100).toFixed(0)}</div>;
                     })
                   ];
                 })}
               </div>
               <div style={{ display:"flex", gap:12, marginTop:8, fontSize:9, color:C.textDim }}>
-                <span><span style={{ display:"inline-block", width:10, height:10, background:C.red+"55", borderRadius:2, marginRight:3 }} />High (&gt;0.6)</span>
-                <span><span style={{ display:"inline-block", width:10, height:10, background:C.orange+"44", borderRadius:2, marginRight:3 }} />Medium (0.3-0.6)</span>
-                <span><span style={{ display:"inline-block", width:10, height:10, background:C.green+"22", borderRadius:2, marginRight:3 }} />Low (&lt;0.3)</span>
-                <span><span style={{ display:"inline-block", width:10, height:10, background:C.blue+"22", borderRadius:2, marginRight:3 }} />Negative</span>
+                <span><span style={{ display:"inline-block", width:10, height:10, background:C.red+"55", borderRadius:2, marginRight:3 }} />High (&gt;60)</span>
+                <span><span style={{ display:"inline-block", width:10, height:10, background:C.orange+"44", borderRadius:2, marginRight:3 }} />Medium (30–60)</span>
+                <span><span style={{ display:"inline-block", width:10, height:10, background:C.green+"22", borderRadius:2, marginRight:3 }} />Low (&lt;30)</span>
               </div>
             </div>
           );
@@ -2933,25 +2491,27 @@ function PortfolioStage({ d }) {
       {/* RISK HEATMAP */}
       <Card>
         <div style={{ fontSize:14, fontWeight:700, display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-          <span>🌡</span> Risk Heatmap
-          <span style={{ fontSize:10, color:C.textDim, fontWeight:400 }}>Multi-dimensional risk assessment per holding</span>
+          <span>🌡</span> Rule-Based Risk Flags
+          <span style={{ fontSize:10, color:C.textDim, fontWeight:400 }}>Heuristic technical/position flags — not a statistical risk model</span>
         </div>
         <div style={{ overflowX:"auto" }}>
           <table style={{ width:"100%", borderCollapse:"collapse" }}>
             <thead><tr style={{ borderBottom:"1px solid "+C.border }}>
-              {["TICKER","VOLATILITY","MOMENTUM","TREND RISK","CONCENTRATION","DRAWDOWN","OVERALL"].map(function(h){
+              {["TICKER","PRICE DEVIATION","MOMENTUM","TREND FLAG","CONCENTRATION","MA DISTANCE","COMPOSITE"].map(function(h){
                 return <th key={h} style={{ textAlign:h==="TICKER"?"left":"center", padding:"6px 8px", color:C.textDim, fontSize:8, fontWeight:700, letterSpacing:1 }}>{h}</th>;
               })}
             </tr></thead>
             <tbody>
               {holdings.filter(function(h){return h.price}).map(function(h){
-                var volRisk = h.zScore ? Math.min(1, Math.abs(h.zScore) / 3) : 0.5;
-                var momRisk = h.r6m ? (h.r6m > 50 ? 0.8 : h.r6m > 20 ? 0.4 : h.r6m < -10 ? 0.9 : 0.2) : 0.5;
-                var trendRisk = h.trend==="Bearish"?0.9:h.trend==="Neutral"?0.5:h.rsi>75?0.6:0.2;
-                var concRisk = h.weight > 8 ? 0.8 : h.weight > 6 ? 0.5 : 0.2;
-                var ddRisk = h.maDev ? (h.maDev < -10 ? 0.9 : h.maDev < -5 ? 0.6 : h.maDev < 0 ? 0.4 : 0.2) : 0.5;
-                var overall = (volRisk + momRisk + trendRisk + concRisk + ddRisk) / 5;
+                var volRisk = h.zScore!=null ? Math.min(1, Math.abs(Number(h.zScore)) / 3) : null;
+                var momRisk = h.r6m!=null ? (h.r6m > 50 ? 0.8 : h.r6m > 20 ? 0.4 : h.r6m < -10 ? 0.9 : 0.2) : null;
+                var trendRisk = h.trend==="Bearish"?0.9:h.trend==="Neutral"?0.5:h.trend==="Bullish"?(h.rsi!=null&&h.rsi>75?0.6:0.2):null;
+                var concRisk = h.weight!=null ? (h.weight > 8 ? 0.8 : h.weight > 6 ? 0.5 : 0.2) : null;
+                var ddRisk = h.maDev!=null ? (h.maDev < -10 ? 0.9 : h.maDev < -5 ? 0.6 : h.maDev < 0 ? 0.4 : 0.2) : null;
+                var validRisk=[volRisk,momRisk,trendRisk,concRisk,ddRisk].filter(function(v){return v!=null&&isFinite(v)});
+                var overall = validRisk.length ? validRisk.reduce(function(a,b){return a+b},0)/validRisk.length : null;
                 function riskCell(val) {
+                  if(val==null||!isFinite(val)) return <td style={{ textAlign:"center", padding:"6px 4px", borderBottom:"1px solid "+C.border }}><span style={{fontSize:9,color:C.textDim}}>—</span></td>;
                   var bg = val>0.7?C.red:val>0.4?C.orange:C.green;
                   var label = val>0.7?"HIGH":val>0.4?"MED":"LOW";
                   return <td style={{ textAlign:"center", padding:"6px 4px", borderBottom:"1px solid "+C.border }}>
@@ -2966,7 +2526,7 @@ function PortfolioStage({ d }) {
                   {riskCell(concRisk)}
                   {riskCell(ddRisk)}
                   <td style={{ textAlign:"center", padding:"6px 4px", borderBottom:"1px solid "+C.border }}>
-                    <div style={{ background:(overall>0.6?C.red:overall>0.35?C.orange:C.green)+"22", border:"1px solid "+(overall>0.6?C.red:overall>0.35?C.orange:C.green)+"44", borderRadius:4, padding:"3px 8px", fontSize:10, color:overall>0.6?C.red:overall>0.35?C.orange:C.green, fontWeight:700, display:"inline-block" }}>{(overall*100).toFixed(0)}</div>
+                    {overall==null?<span style={{color:C.textDim,fontSize:9}}>—</span>:<div style={{ background:(overall>0.6?C.red:overall>0.35?C.orange:C.green)+"22", border:"1px solid "+(overall>0.6?C.red:overall>0.35?C.orange:C.green)+"44", borderRadius:4, padding:"3px 8px", fontSize:10, color:overall>0.6?C.red:overall>0.35?C.orange:C.green, fontWeight:700, display:"inline-block" }}>{(overall*100).toFixed(0)}</div>}
                   </td>
                 </tr>;
               })}
@@ -2974,64 +2534,50 @@ function PortfolioStage({ d }) {
           </table>
         </div>
         <div style={{ fontSize:9, color:C.textDim, marginTop:6 }}>
-          Volatility: Z-score magnitude | Momentum: extended rally risk | Trend: bearish/overbought | Concentration: portfolio weight | Drawdown: distance from highs
+          Price deviation: connected Z-score magnitude | Momentum: 6M extension | Trend: MA/RSI flag | Concentration: model weight | MA distance: connected moving-average deviation. Composite is a heuristic score, not VaR or realized volatility.
         </div>
       </Card>
 
-      {/* DRAWDOWN MONITOR */}
+      {/* TECHNICAL DISTANCE MONITOR */}
       <Card>
         <div style={{ fontSize:14, fontWeight:700, display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-          <span>📉</span> Drawdown Monitor
-          <span style={{ fontSize:10, color:C.textDim, fontWeight:400 }}>Max drawdown from peak per holding</span>
+          <span>📉</span> Technical Distance Monitor
+          <span style={{ fontSize:10, color:C.textDim, fontWeight:400 }}>Connected moving-average deviation only — not historical max drawdown</span>
         </div>
         {(function(){
-          var portfolioDD = 0;
-          var holdingsDD = holdings.filter(function(h){return h.price&&h.maDev!=null}).map(function(h){
-            // Estimate drawdown from peak using MA deviation and Z-score
-            var peakEst = h.ma50 && h.price > h.ma50 ? h.price : (h.ma50 || h.price);
-            if (h.zScore && h.zScore > 0) peakEst = h.price; // At or near peak
-            else if (h.r6m > 0) peakEst = h.price / (1 + h.r6m/100) * (1 + Math.max(h.r6m, 0)/100 * 1.2);
-            var dd = peakEst > 0 ? ((h.price / peakEst - 1) * 100) : 0;
-            dd = Math.min(0, dd); // Drawdown is always negative or zero
-            // If maDev is very negative, use that as a better DD estimate
-            if (h.maDev && h.maDev < dd) dd = h.maDev;
-            return { ticker:h.ticker, dd:dd, value:h.value||0, weight:h.weight };
+          var rows = holdings.filter(function(h){return h.price&&h.maDev!=null&&isFinite(Number(h.maDev));}).map(function(h){
+            return { ticker:h.ticker, dev:Number(h.maDev), weight:Number(h.weight)||0 };
           });
-          portfolioDD = holdingsDD.reduce(function(s,h){return s + h.dd * h.weight/100},0);
-          return (
-            <div>
-              <div style={{ display:"flex", gap:12, marginBottom:12 }}>
-                <div style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"10px 16px" }}>
-                  <div style={{ fontSize:9, color:C.textDim, letterSpacing:1 }}>PORTFOLIO MAX DD</div>
-                  <div style={{ fontSize:22, fontWeight:700, fontFamily:font, color:portfolioDD<-10?C.red:portfolioDD<-5?C.orange:C.green }}>{portfolioDD.toFixed(1)}%</div>
-                </div>
-                <div style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"10px 16px" }}>
-                  <div style={{ fontSize:9, color:C.textDim, letterSpacing:1 }}>WORST HOLDING</div>
-                  {(function(){
-                    var worst = holdingsDD.sort(function(a,b){return a.dd-b.dd})[0];
-                    return worst ? <div><span style={{ fontSize:14, fontWeight:700, fontFamily:font, color:C.red }}>{worst.dd.toFixed(1)}%</span><span style={{ fontSize:10, color:C.cyan, marginLeft:6 }}>{worst.ticker}</span></div> : <div style={{ color:C.textDim }}>—</div>;
-                  })()}
-                </div>
-                <div style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"10px 16px" }}>
-                  <div style={{ fontSize:9, color:C.textDim, letterSpacing:1 }}>IN DRAWDOWN</div>
-                  <div style={{ fontSize:22, fontWeight:700, fontFamily:font, color:C.orange }}>{holdingsDD.filter(function(h){return h.dd<-3}).length}/{holdingsDD.length}</div>
-                </div>
+          var weighted = rows.length ? rows.reduce(function(sum,h){return sum+h.dev*h.weight/100},0) : null;
+          var worst = rows.slice().sort(function(a,b){return a.dev-b.dev})[0]||null;
+          return <div>
+            <div style={{ display:"flex", gap:12, marginBottom:12, flexWrap:"wrap" }}>
+              <div style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"10px 16px" }}>
+                <div style={{ fontSize:9, color:C.textDim, letterSpacing:1 }}>WEIGHTED MA-DEVIATION PROXY</div>
+                <div style={{ fontSize:22, fontWeight:700, fontFamily:font, color:weighted==null?C.textDim:weighted<-10?C.red:weighted<-5?C.orange:C.text }}>{weighted==null?"—":weighted.toFixed(1)+"%"}</div>
               </div>
-              <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-                {holdingsDD.sort(function(a,b){return a.dd-b.dd}).map(function(h){
-                  var barWidth = Math.min(100, Math.abs(h.dd) * 3);
-                  var color = h.dd<-15?C.red:h.dd<-5?C.orange:h.dd<-2?C.yellow:C.green;
-                  return <div key={h.ticker} style={{ display:"grid", gridTemplateColumns:"55px 1fr 55px", gap:8, alignItems:"center" }}>
-                    <span style={{ fontSize:11, fontWeight:700, color:C.cyan, fontFamily:font }}>{h.ticker}</span>
-                    <div style={{ height:6, background:C.border, borderRadius:3, direction:"rtl" }}>
-                      <div style={{ width:barWidth+"%", height:"100%", background:color, borderRadius:3 }} />
-                    </div>
-                    <span style={{ fontSize:10, fontFamily:font, color:color, textAlign:"right" }}>{h.dd.toFixed(1)}%</span>
-                  </div>;
-                })}
+              <div style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"10px 16px" }}>
+                <div style={{ fontSize:9, color:C.textDim, letterSpacing:1 }}>LOWEST CONNECTED READING</div>
+                {worst?<div><span style={{ fontSize:14, fontWeight:700, fontFamily:font, color:worst.dev<-10?C.red:C.orange }}>{worst.dev.toFixed(1)}%</span><span style={{ fontSize:10, color:C.cyan, marginLeft:6 }}>{worst.ticker}</span></div>:<div style={{color:C.textDim}}>—</div>}
+              </div>
+              <div style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"10px 16px" }}>
+                <div style={{ fontSize:9, color:C.textDim, letterSpacing:1 }}>BELOW −5%</div>
+                <div style={{ fontSize:22, fontWeight:700, fontFamily:font, color:C.orange }}>{rows.filter(function(h){return h.dev<-5}).length}/{rows.length}</div>
               </div>
             </div>
-          );
+            <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+              {rows.slice().sort(function(a,b){return a.dev-b.dev}).map(function(h){
+                var barWidth=Math.min(100,Math.abs(h.dev)*3);
+                var color=h.dev<-15?C.red:h.dev<-5?C.orange:h.dev<0?C.yellow:C.green;
+                return <div key={h.ticker} style={{display:"grid",gridTemplateColumns:"55px 1fr 55px",gap:8,alignItems:"center"}}>
+                  <span style={{fontSize:11,fontWeight:700,color:C.cyan,fontFamily:font}}>{h.ticker}</span>
+                  <div style={{height:6,background:C.border,borderRadius:3}}><div style={{width:barWidth+"%",height:"100%",background:color,borderRadius:3}}/></div>
+                  <span style={{fontSize:10,fontFamily:font,color:color,textAlign:"right"}}>{h.dev.toFixed(1)}%</span>
+                </div>;
+              })}
+            </div>
+            <div style={{fontSize:9,color:C.textDim,marginTop:8,lineHeight:1.5}}>This section intentionally does not report max drawdown because no validated historical portfolio equity curve is connected. The displayed percentage is the technical moving-average deviation supplied by the portfolio data endpoint.</div>
+          </div>;
         })()}
       </Card>
 
@@ -3043,8 +2589,8 @@ function PortfolioStage({ d }) {
 /* ─── ASSET SCREENER (Stage 3) ─────────────────────────────────── */
 
 /* ─── ASSET SCREENER (Stage 3) — Enhanced ──────────────────────── */
-var SCREENER_FALLBACK_SHARES = [
-  {ticker:"POWL",name:"Powell Industries",sector:"Energy",type:"share",theme:"AI Power"},
+var SCREENER_CURATED_SHARES = [
+  {ticker:"POWL",name:"Powell Industries",sector:"Industrials",type:"share",theme:"AI Power"},
   {ticker:"JBL",name:"Jabil Inc.",sector:"Technology",type:"share",theme:"AI & Digital Infra"},
   {ticker:"AMAT",name:"Applied Materials",sector:"Technology",type:"share",theme:"AI & Digital Infra"},
   {ticker:"CW",name:"Curtiss-Wright",sector:"Industrials",type:"share",theme:"Defense"},
@@ -3063,19 +2609,19 @@ var SCREENER_FALLBACK_SHARES = [
   {ticker:"KOP",name:"Koppers Holdings",sector:"Materials",type:"share",theme:""},
   {ticker:"FN",name:"Fabrinet",sector:"Technology",type:"share",theme:""},
   {ticker:"TTMI",name:"TTM Technologies",sector:"Technology",type:"share",theme:""},
-  {ticker:"UNFI",name:"United Natural Foods",sector:"Consumer Discretionary",type:"share",theme:""},
+  {ticker:"UNFI",name:"United Natural Foods",sector:"Consumer Staples",type:"share",theme:"Food Distribution"},
   {ticker:"PLPC",name:"Preformed Line Products",sector:"Industrials",type:"share",theme:""},
   {ticker:"LXU",name:"LSB Industries",sector:"Materials",type:"share",theme:""},
-  {ticker:"CEIX",name:"CONSOL Energy",sector:"Energy",type:"share",theme:""},
+  {ticker:"CNR",name:"Core Natural Resources",sector:"Energy",type:"share",theme:"Metallurgical & Thermal Coal"},
   {ticker:"CLF",name:"Cleveland-Cliffs",sector:"Materials",type:"share",theme:"Steel"},
   {ticker:"BTU",name:"Peabody Energy",sector:"Energy",type:"share",theme:""},
-  {ticker:"ARCH",name:"Arch Resources",sector:"Energy",type:"share",theme:""},
+  {ticker:"AMR",name:"Alpha Metallurgical Resources",sector:"Energy",type:"share",theme:"Metallurgical Coal"},
   {ticker:"NUE",name:"Nucor Corp.",sector:"Materials",type:"share",theme:"Steel"},
   {ticker:"STLD",name:"Steel Dynamics",sector:"Materials",type:"share",theme:"Steel"},
   {ticker:"HAL",name:"Halliburton",sector:"Energy",type:"share",theme:"Oil & Gas"},
-  {ticker:"SLB",name:"Schlumberger",sector:"Energy",type:"share",theme:"Oil & Gas"},
+  {ticker:"SLB",name:"SLB",sector:"Energy",type:"share",theme:"Oilfield Services"},
 ];
-var SCREENER_FALLBACK_ETFS = [
+var SCREENER_CURATED_ETFS = [
   {ticker:"XLE",name:"Energy Select Sector SPDR",sector:"Energy",type:"etf",theme:""},
   {ticker:"XLB",name:"Materials Select Sector SPDR",sector:"Materials",type:"etf",theme:""},
   {ticker:"XLI",name:"Industrial Select Sector SPDR",sector:"Industrials",type:"etf",theme:""},
@@ -3089,29 +2635,37 @@ var SCREENER_FALLBACK_ETFS = [
 ];
 
 function computeScreenerScore(d) {
-  if (!d || !d.price) return { score:0, quality:0, momentum:0, value:0, pattern:0, sentiment:0 };
-  var quality = d.tq != null ? Math.min(1, Math.abs(d.tq) / 80) : 0;
-  var momentum = d.r6m != null ? Math.min(1, Math.max(0, d.r6m / 60)) : 0;
-  var value = 0.03; // Placeholder — fundamentals (PE, FCF) require paid data API; weighted at only 10% so minimal impact on composite
-  var patternVal = 0;
-  if (d.pattern && d.pattern !== "—") patternVal = 0.62;
-  var sentiment = 0;
-  if (d.rsi && d.rsi > 30 && d.rsi < 70) sentiment = 0.5;
-  else if (d.rsi && d.rsi >= 70) sentiment = 0.3;
-  else if (d.rsi && d.rsi <= 30) sentiment = 0.7;
-  var w = { quality:0.25, momentum:0.40, value:0.10, pattern:0.15, sentiment:0.10 };
-  var composite = quality*w.quality + momentum*w.momentum + value*w.value + patternVal*w.pattern + sentiment*w.sentiment;
+  if (!d || !d.price) return { score:0, quality:0, momentum:0, pattern:0, sentiment:0 };
+  // Transparent technical heuristic. The upstream TQ field is shown separately
+  // but is intentionally NOT used in this score because its vendor scale is not
+  // defined by this frontend.
+  var structureChecks=[];
+  if(d.ma50!=null) structureChecks.push(d.price>d.ma50?1:0);
+  if(d.ma200!=null) structureChecks.push(d.price>d.ma200?1:0);
+  if(d.ma50!=null&&d.ma200!=null) structureChecks.push(d.ma50>d.ma200?1:0);
+  var quality=structureChecks.length?structureChecks.reduce(function(a,b){return a+b;},0)/structureChecks.length:0;
+  // 6M momentum is capped into a 0-1 display score; this is a ranking convention,
+  // not a forecast or probability.
+  var momentum = d.r6m != null ? Math.min(1, Math.max(0, Number(d.r6m) / 60)) : 0;
+  var setup = 0;
+  if (d.pattern && d.pattern !== "—" && d.pattern !== "No Setup") setup = 0.62;
+  var rsiSetup = 0;
+  if (d.rsi!=null && d.rsi > 30 && d.rsi < 70) rsiSetup = 0.5;
+  else if (d.rsi!=null && d.rsi >= 70) rsiSetup = 0.3;
+  else if (d.rsi!=null && d.rsi <= 30) rsiSetup = 0.7;
+  var w = { quality:0.30, momentum:0.40, pattern:0.15, sentiment:0.15 };
+  var composite = quality*w.quality + momentum*w.momentum + setup*w.pattern + rsiSetup*w.sentiment;
   var score = Math.round(composite * 100);
-  return { score:score, quality:quality, momentum:momentum, value:value, pattern:patternVal, sentiment:sentiment, composite:composite };
+  return { score:score, quality:quality, momentum:momentum, pattern:setup, sentiment:rsiSetup, composite:composite };
 }
 
 function computeRR(d) {
   if (!d || !d.price || !d.ma200) return "—";
   var support = d.ma200;
   if (d.ma50 && d.ma50 < d.price) support = Math.max(support, d.ma50 * 0.97);
-  var atrEst = d.price * 0.02;
-  var stopLoss = support - atrEst;
-  var risk = d.price - stopLoss;
+  var priceBuffer = d.price * 0.02;
+  var referenceFloor = support - priceBuffer;
+  var risk = d.price - referenceFloor;
   var target = d.price * (1 + (d.zScore ? Math.max(0.03, Math.abs(d.zScore) * 0.04) : 0.06));
   var reward = target - d.price;
   if (risk <= 0 || reward <= 0) return "—";
@@ -3121,13 +2675,13 @@ function computeRR(d) {
 function detectScreenerPattern(d) {
   if (!d || !d.ma50 || !d.ma200 || !d.price) return "—";
   var abv50 = d.price > d.ma50, abv200 = d.price > d.ma200;
-  if (abv50 && abv200 && d.zScore > 2.0 && d.rsi > 70) return "Dbl Top";
-  if (!abv50 && !abv200 && d.zScore < -1.5 && d.rsi < 35) return "Dbl Bot";
-  if (!abv50 && abv200 && d.rsi > 40 && d.rsi < 60) return "Inv H&S";
-  if (abv50 && abv200 && d.zScore > 1.5 && d.rsi > 60) return "Rise Wedge";
-  if (abv50 && d.maDev > 0 && d.maDev < 5 && d.rsi > 45) return "Cup&Handle";
-  if (abv50 && abv200 && d.ma50 > d.ma200) return "H&S";
-  return "—";
+  if (abv50 && abv200 && d.zScore > 2.0 && d.rsi > 70) return "Very Extended";
+  if (!abv50 && !abv200 && d.zScore < -1.5 && d.rsi < 35) return "Oversold";
+  if (!abv50 && abv200 && d.rsi > 40 && d.rsi < 60) return "Pullback >200D";
+  if (abv50 && abv200 && d.zScore > 1.5 && d.rsi > 60) return "Strong Trend";
+  if (abv50 && d.maDev > 0 && d.maDev < 5 && d.rsi > 45) return "50D Retest";
+  if (abv50 && abv200 && d.ma50 > d.ma200) return "Bullish MA Stack";
+  return "No Setup";
 }
 
 function ScreenerStage({ d }) {
@@ -3160,35 +2714,16 @@ function ScreenerStage({ d }) {
   var _lastRefresh = useState(null);
   var lastRefresh = _lastRefresh[0], setLastRefresh = _lastRefresh[1];
 
-  var regime = d?.macroRegime?.season || "Summer";
+  var regime = d?.macroRegime?.season || "Unclassified";
 
   function runScreener() {
     (async function() {
       setLoading(true); setErr(null);
-      setStatus("Asking AI for macro-aligned candidates...");
+      setStatus("Loading curated candidate universe...");
       try {
-        var aiRes = await fetch(CLAUDE_URL, {
-          method:"POST", headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({max_tokens:1200,messages:[{role:"user",content:
-            "You are a professional equity screener. Current macro regime: "+regime+" (Inflationary Boom — mid cycle). "+
-            "Sectors favored: Energy, Materials, Industrials, commodity-linked, nuclear, defense, infrastructure. "+
-            "Generate 30 high-momentum US-listed stocks and 10 sector/thematic ETFs aligned with this regime. "+
-            "Include a mix of large cap ($10B+), mid cap ($2-10B), and small cap (<$2B). "+
-            "For each include a theme tag (e.g. 'AI Power', 'Nuclear', 'Gold Mining', 'Defense', 'Oil & Gas', 'Copper / EV Metals', 'Steel', 'Infrastructure', 'Energy Transition', 'AI & Digital Infra'). "+
-            "Return ONLY a valid JSON array. No markdown, no backticks. Each item: {\"ticker\":\"SYM\",\"name\":\"Full Name\",\"sector\":\"Sector\",\"type\":\"share\",\"theme\":\"Theme Tag\",\"cap\":\"L\"} where cap is L/M/S. ETFs use type:\"etf\"."}]})
-        });
-        var aiJson = await aiRes.json();
-        var aiText = (aiJson.content||[]).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("");
-        var clean = aiText.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
-        var tickerList = null;
-        try { tickerList = JSON.parse(clean); } catch(e) {
-          var s1 = clean.indexOf("["), s2 = clean.lastIndexOf("]");
-          if (s1>=0 && s2>s1) try { tickerList = JSON.parse(clean.slice(s1,s2+1)); } catch(e2) {}
-        }
-        if (!tickerList || !Array.isArray(tickerList) || tickerList.length < 5) {
-          setErr("AI returned unexpected format. Using curated fallback list.");
-          tickerList = SCREENER_FALLBACK_SHARES.concat(SCREENER_FALLBACK_ETFS);
-        }
+        // Candidate membership is explicit and reviewable. Ranking is computed from
+        // the live technical endpoint rather than generated by an LLM.
+        var tickerList = SCREENER_CURATED_SHARES.concat(SCREENER_CURATED_ETFS);
 
         setStatus("Enriching " + tickerList.length + " candidates...");
         var tickers = tickerList.map(function(t){return t.ticker}).join(",");
@@ -3202,7 +2737,8 @@ function ScreenerStage({ d }) {
           var pat = detectScreenerPattern(d);
           var rr = computeRR(d);
           var scoreData = computeScreenerScore({ ...d, pattern:pat });
-          return { ...item, ...d, pattern:pat, rr:rr, score:scoreData.score, scoreData:scoreData };
+          var mc=Number(d.marketCap); var capClass=Number.isFinite(mc)&&mc>0?(mc>=1e10?"Large":mc>=2e9?"Mid":"Small"):"—";
+          return { ...item, ...d, cap:capClass, pattern:pat, rr:rr, score:scoreData.score, scoreData:scoreData };
         });
         merged.sort(function(a,b){return (b.score||0)-(a.score||0)});
         merged.forEach(function(m,i){m.rank=i+1});
@@ -3219,34 +2755,30 @@ function ScreenerStage({ d }) {
 
   useEffect(function(){ runScreener(); }, []);
 
-  // Intelligence Seeds
+  // Candidate Queue
   function addSeed(ticker) {
     ticker = ticker.toUpperCase().trim();
     if (!ticker || seeds.find(function(s){return s.ticker===ticker}) || candidates.find(function(c){return c.ticker===ticker})) return;
     setManualTickers(function(prev){return prev.concat([ticker])});
     setSearch("");
-    var newSeed = { ticker:ticker, source:"manual", pimScore:null, strategy:"—", rsi:null, piotroski:null, regimeFit:null, confidence:"—", loading:true };
+    var newSeed = { ticker:ticker, source:"manual", techScore:null, strategy:"—", rsi:null, technicalQuality:null, trendAlignment:null, dataCoverage:"—", trend:"—", loading:true };
     setSeeds(function(prev){return prev.concat([newSeed])});
     fetch(PORTFOLIO_URL + "?tickers=" + ticker).then(function(r){return r.json()}).then(function(json){
       var d = json.holdings && json.holdings[ticker];
       setSeeds(function(prev){return prev.map(function(s){
         if (s.ticker !== ticker) return s;
-        if (!d) return { ...s, loading:false, pimScore:0, confidence:"LOW" };
-        var trendPts = d.trend==="Bullish"?15:d.trend==="Neutral"?8:0;
-        var momPts = Math.min(10, Math.max(0, (d.r6m||0) * 0.15));
-        var rsiPts = (d.rsi && d.rsi > 30 && d.rsi < 70) ? 5 : 0;
-        var tqPts = Math.min(5, (d.tq||0) * 0.05);
-        var pim = Math.round(trendPts + momPts + rsiPts + tqPts);
-        var strat = d.r6m > 20 ? "Momentum" : d.r6m > 0 ? "Accum." : "Contrarian";
-        var pio = Math.min(9, 5 + (d.trend==="Bullish"?2:0) + (d.rsi>40&&d.rsi<70?1:0) + (d.r6m>0?1:0));
-        var regimeFit = d.r6m>25?0.9:d.r6m>15?0.8:d.trend==="Bullish"?0.6:0.4;
-        var conf = regimeFit>0.7?"HIGH":regimeFit>0.4?"MEDIUM":"LOW";
-        return { ...s, loading:false, pimScore:pim, strategy:strat, rsi:d.rsi, piotroski:pio, regimeFit:regimeFit.toFixed(2), confidence:conf, _techData:d };
+        if (!d) return { ...s, loading:false, techScore:0, dataCoverage:"0%", trendAlignment:"Unavailable", technicalQuality:"—" };
+        var pat=detectScreenerPattern(d);
+        var scoreData=computeScreenerScore({...d,pattern:pat});
+        var strat=d.r6m>20?"Momentum":d.r6m>0?"Positive momentum":"Weak momentum";
+        var available=[d.price,d.ma50,d.ma200,d.rsi,d.r6m,d.tq,d.zScore].filter(function(v){return v!=null&&isFinite(Number(v));}).length;
+        var coverage=Math.round(available/7*100);
+        var trendAlignment=d.trend==="Bullish"&&d.r6m>0?"Bullish + positive momentum":d.trend==="Bearish"?"Bearish":"Mixed";
+        return { ...s, loading:false, techScore:scoreData.score, strategy:strat, rsi:d.rsi, technicalQuality:d.tq!=null?Number(d.tq).toFixed(2):"—", trendAlignment:trendAlignment, dataCoverage:coverage+"%", trend:d.trend||"—", _techData:d };
       })});
-    }).catch(function(){ setSeeds(function(prev){return prev.map(function(s){ return s.ticker!==ticker?s:{...s,loading:false,pimScore:0,confidence:"LOW"}; })}); });
-    fetch(CLAUDE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({max_tokens:100,messages:[{role:"user",content:"What company is ticker "+ticker+"? Return ONLY JSON: {\"name\":\"Name\",\"sector\":\"Sector\",\"theme\":\"Theme\"}"}]})}).then(function(r){return r.json()}).then(function(j){
-      var txt=(j.content||[]).filter(function(b){return b.type==="text"}).map(function(b){return b.text}).join("");
-      try{var info=JSON.parse(txt.replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim());setSeeds(function(prev){return prev.map(function(s){return s.ticker!==ticker?s:{...s,name:info.name,sector:info.sector,theme:info.theme}})});}catch(e){}
+    }).catch(function(){ setSeeds(function(prev){return prev.map(function(s){ return s.ticker!==ticker?s:{...s,loading:false,techScore:0,dataCoverage:"0%",trendAlignment:"Unavailable",technicalQuality:"—"}; })}); });
+    fetch(SEC_FINANCIALS_URL+"?ticker="+encodeURIComponent(ticker)).then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error||"SEC lookup failed");return j;});}).then(function(info){
+      setSeeds(function(prev){return prev.map(function(s){return s.ticker!==ticker?s:{...s,name:info.name||ticker,sector:info.industry||info.sector||"—",theme:"Manual candidate"};});});
     }).catch(function(){});
   }
   function enrichAndAdd() {
@@ -3257,7 +2789,7 @@ function ScreenerStage({ d }) {
       var rr = d ? computeRR(d) : "—";
       var scoreData = d ? computeScreenerScore({...d, pattern:pat}) : {score:0};
       setCandidates(function(prev){
-        var newItem = { ticker:seed.ticker, name:seed.name||seed.ticker, sector:seed.sector||"—", type:"share", theme:seed.theme||"", rank:prev.length+1, price:d?d.price:null, r6m:d?d.r6m:null, tq:d?d.tq:null, trend:d?d.trend:"—", rsi:d?d.rsi:null, zScore:d?d.zScore:null, ma50:d?d.ma50:null, ma200:d?d.ma200:null, maDev:d?d.maDev:null, pattern:pat, rr:rr, score:scoreData.score, scoreData:scoreData, cap:seed.cap||"—" };
+        var mc=d?Number(d.marketCap):null; var capClass=Number.isFinite(mc)&&mc>0?(mc>=1e10?"Large":mc>=2e9?"Mid":"Small"):"—"; var newItem = { ticker:seed.ticker, name:seed.name||seed.ticker, sector:seed.sector||"—", type:"share", theme:seed.theme||"", rank:prev.length+1, price:d?d.price:null, r6m:d?d.r6m:null, tq:d?d.tq:null, trend:d?d.trend:"—", rsi:d?d.rsi:null, zScore:d?d.zScore:null, ma50:d?d.ma50:null, ma200:d?d.ma200:null, maDev:d?d.maDev:null, pattern:pat, rr:rr, score:scoreData.score, scoreData:scoreData, cap:capClass };
         var updated = prev.concat([newItem]);
         updated.sort(function(a,b){return(b.score||0)-(a.score||0)});
         updated.forEach(function(m,i){m.rank=i+1});
@@ -3297,7 +2829,7 @@ function ScreenerStage({ d }) {
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8 }}>
           <div>
             <div style={{ fontSize:16, fontWeight:700, marginBottom:4 }}>🔍 Asset Screener Results</div>
-            <div style={{ fontSize:11, color:C.textMid }}>{candidates.length} candidates screened and ranked across {sharesCount>0&&etfCount>0?"2":"1"} asset categories based on current macro regime.</div>
+            <div style={{ fontSize:11, color:C.textMid }}>{candidates.length} candidates screened and ranked across {sharesCount>0&&etfCount>0?"2":"1"} asset categories from a fixed curated universe using connected technical data.</div>
           </div>
           <div style={{ display:"flex", gap:8, alignItems:"center" }}>
             {lastRefresh && <span style={{ fontSize:10, color:C.green }}>● Last refreshed: {lastRefresh}</span>}
@@ -3354,40 +2886,40 @@ function ScreenerStage({ d }) {
           </div>
         </div>
 
-        {/* Intelligence Seeds */}
+        {/* Candidate Queue */}
         {seeds.length > 0 && (
           <div style={{ marginBottom:10 }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
-              <div style={{ fontSize:13, fontWeight:700 }}>🧩 Intelligence Seeds</div>
+              <div style={{ fontSize:13, fontWeight:700 }}>🧩 Candidate Queue</div>
               <div style={{ display:"flex", gap:8, alignItems:"center" }}>
                 <span style={{ fontSize:10, color:C.textMid }}>{seeds.filter(function(s){return !s.loading}).length} ready</span>
-                <button onClick={enrichAndAdd} style={{ background:C.blue, border:"none", borderRadius:4, color:C.text, padding:"5px 12px", fontSize:10, fontWeight:700, cursor:"pointer" }}>+ Enrich & Add ({seeds.length})</button>
+                <button onClick={enrichAndAdd} style={{ background:C.blue, border:"none", borderRadius:4, color:C.text, padding:"5px 12px", fontSize:10, fontWeight:700, cursor:"pointer" }}>+ Analyze & Add ({seeds.length})</button>
               </div>
             </div>
             <div style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, overflow:"hidden" }}>
               <table style={{ width:"100%", borderCollapse:"collapse" }}>
                 <thead><tr style={{ borderBottom:"1px solid "+C.border }}>
-                  {["TICKER","SOURCE","PIM SCORE","STRATEGY","RSI","PIOTROSKI","REGIME FIT","CONFIDENCE"].map(function(h){ return <th key={h} style={{ textAlign:["PIM SCORE","RSI","PIOTROSKI","REGIME FIT"].indexOf(h)>=0?"center":"left", padding:"6px 8px", color:C.textDim, fontSize:8, fontWeight:700, letterSpacing:1 }}>{h}</th>; })}
+                  {["TICKER","SOURCE","TECH SCORE","STYLE","RSI","TREND QUALITY","TREND ALIGNMENT","DATA COVERAGE"].map(function(h){ return <th key={h} style={{ textAlign:["TECH SCORE","RSI","TREND QUALITY","TREND ALIGNMENT"].indexOf(h)>=0?"center":"left", padding:"6px 8px", color:C.textDim, fontSize:8, fontWeight:700, letterSpacing:1 }}>{h}</th>; })}
                 </tr></thead>
                 <tbody>
                   {seeds.map(function(seed) {
-                    var pc=seed.pimScore>=25?C.green:seed.pimScore>=15?C.orange:C.red;
-                    var cc=seed.confidence==="HIGH"?C.green:seed.confidence==="MEDIUM"?C.orange:C.red;
+                    var pc=seed.techScore>=25?C.green:seed.techScore>=15?C.orange:C.red;
+                    var cc=parseInt(seed.dataCoverage)>=85?C.green:parseInt(seed.dataCoverage)>=60?C.orange:C.red;
                     return <tr key={seed.ticker} style={{ borderBottom:"1px solid "+C.border }}>
                       <td style={{ padding:"8px", fontWeight:700, fontFamily:font, color:C.cyan, fontSize:11 }}>{seed.ticker}</td>
                       <td style={{ padding:"8px", fontSize:9, color:C.textDim }}>{seed.source}</td>
-                      <td style={{ padding:"8px", textAlign:"center" }}>{seed.loading?<Spinner size={10}/>:<span style={{ color:pc, fontWeight:700, fontFamily:font }}>{seed.pimScore}</span>}</td>
+                      <td style={{ padding:"8px", textAlign:"center" }}>{seed.loading?<Spinner size={10}/>:<span style={{ color:pc, fontWeight:700, fontFamily:font }}>{seed.techScore}</span>}</td>
                       <td style={{ padding:"8px", fontSize:10, color:C.textMid }}>{seed.strategy}</td>
                       <td style={{ padding:"8px", textAlign:"center", fontFamily:font, fontSize:10 }}>{seed.rsi||"—"}</td>
-                      <td style={{ padding:"8px", textAlign:"center", fontFamily:font, fontSize:10 }}>{seed.piotroski||"—"}</td>
-                      <td style={{ padding:"8px", textAlign:"center", fontFamily:font, fontSize:10 }}>{seed.regimeFit||"—"}</td>
-                      <td style={{ padding:"8px", textAlign:"center" }}>{seed.loading?<Spinner size={10}/>:<span style={{ background:cc+"22", color:cc, padding:"1px 6px", borderRadius:3, fontSize:8, fontWeight:700 }}>{seed.confidence}</span>}</td>
+                      <td style={{ padding:"8px", textAlign:"center", fontFamily:font, fontSize:10 }}>{seed.technicalQuality||"—"}</td>
+                      <td style={{ padding:"8px", textAlign:"center", fontFamily:font, fontSize:10 }}>{seed.trendAlignment||"—"}</td>
+                      <td style={{ padding:"8px", textAlign:"center" }}>{seed.loading?<Spinner size={10}/>:<span style={{ background:cc+"22", color:cc, padding:"1px 6px", borderRadius:3, fontSize:8, fontWeight:700 }}>{seed.dataCoverage}</span>}</td>
                     </tr>;
                   })}
                 </tbody>
               </table>
             </div>
-            <div style={{ fontSize:8, color:C.textDim, marginTop:3 }}>Seeds pre-screened. "Enrich & Add" runs the full pipeline and merges into the tables above.</div>
+            <div style={{ fontSize:8, color:C.textDim, marginTop:3 }}>Manual candidates are pre-screened with technical rules. “Analyze & Add” applies the full screener score and merges them into the tables above.</div>
           </div>
         )}
 
@@ -3400,13 +2932,13 @@ function ScreenerStage({ d }) {
 
       {/* COLUMN LEGEND */}
       <div style={{ background:C.green+"0a", border:"1px solid "+C.green+"22", borderRadius:8, padding:"8px 12px", fontSize:9, color:C.textDim, lineHeight:1.6 }}>
-        Default order: composite score (quality + momentum + value with regime/R:R/pattern/AI adjustments). Click column headers to sort. Cap = L(arge ≥$10B) / M(id $2-10B) / S(mall &lt;$2B). TQ = Trend Quality (R² of linear regression). R:R = Reward-to-Risk (target vs support/ATR stop). Pattern = algorithmic chart pattern detection. Score = weighted composite (0-100). Z-Score = price deviation from 63-day mean (&gt;+2 extended, &lt;-2 depressed).
+        Default order: transparent technical composite score (MA trend structure + 6M momentum + rule-based setup + RSI setup). Click column headers to sort. Cap labels are derived from the connected market-cap field when available and are not used as a screening gate. TQ = trend-quality field from the connected technical feed. Scenario R:R = heuristic reward-to-risk reference using moving-average support plus a fixed 2% price buffer; it is not ATR and is not a forecast. Setup = rule-based MA/RSI/Z-score classification; it does not claim to detect classical chart formations. Z-Score = price deviation from the 63-day mean (&gt;+2 extended, &lt;-2 depressed).
       </div>
 
       {/* RESULTS TABLE */}
       <Card style={{ padding:"10px 12px" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-          <div style={{ fontSize:13, fontWeight:700 }}>📈 Top Macro-Aligned {tab==="shares"?"Shares":"ETFs"}</div>
+          <div style={{ fontSize:13, fontWeight:700 }}>📈 Curated Technical {tab==="shares"?"Shares":"ETFs"}</div>
           <div style={{ fontSize:10, color:C.textMid }}>{sorted.length} candidates</div>
         </div>
         {status && <div style={{ textAlign:"center", padding:12, color:C.cyan, fontSize:11 }}><Spinner size={12} /> {status}</div>}
@@ -3419,7 +2951,7 @@ function ScreenerStage({ d }) {
                   {key:"sector",label:"SECTOR",w:85},{key:"theme",label:"THEME",w:110},
                   {key:"cap",label:"CAP",w:30},{key:"price",label:"PRICE",w:65},{key:"r6m",label:"6M%",w:55},
                   {key:"tq",label:"TQ",w:40},{key:"trend",label:"TREND",w:60},{key:"score",label:"SCORE",w:60},
-                  {key:"rr",label:"R:R",w:45},{key:"rsi",label:"RSI",w:38},{key:"pattern",label:"PATTERN",w:70},
+                  {key:"rr",label:"R:R",w:45},{key:"rsi",label:"RSI",w:38},{key:"pattern",label:"SETUP",w:95},
                   {key:"zScore",label:"Z-SCORE",w:55},
                 ].map(function(col) {
                   var isRight = ["r6m","tq","score","rsi","zScore","price","rank"].indexOf(col.key)>=0;
@@ -3430,7 +2962,7 @@ function ScreenerStage({ d }) {
             <tbody>
               {!loading && sorted.map(function(c, i) {
                 var sc=c.score>=70?C.green:c.score>=40?C.orange:c.score>=20?C.yellow:C.red;
-                var pc=c.pattern==="Inv H&S"||c.pattern==="Cup&Handle"||c.pattern==="Dbl Bot"?C.green:c.pattern==="Dbl Top"||c.pattern==="Rise Wedge"?C.orange:C.textDim;
+                var pc=c.pattern==="Pullback >200D"||c.pattern==="50D Retest"||c.pattern==="Bullish MA Stack"?C.green:c.pattern==="Very Extended"||c.pattern==="Strong Trend"?C.orange:c.pattern==="Oversold"?C.cyan:C.textDim;
                 var trendW = c.trend==="Bullish"&&c.tq>3?"Warning":null;
                 return (
                   <tr key={c.ticker} onClick={function(){setSelectedTicker(selectedTicker===c.ticker?null:c.ticker)}} style={{ background:selectedTicker===c.ticker?C.blue+"18":i%2===0?"transparent":C.cardAlt+"33", cursor:"pointer" }}>
@@ -3466,21 +2998,20 @@ function ScreenerStage({ d }) {
       {selectedTicker && (function(){
         var c = candidates.find(function(x){return x.ticker===selectedTicker}) || {};
         var gates = [
-          {id:"A",name:"Fundamentals Fetch",pass:c.price!=null,detail:c.price!=null?"Price, RSI, MAs, TQ, Z-Score":"No data",threshold:""},
-          {id:"B",name:"Market Cap Filter",pass:c.price!=null,detail:c.price?"$"+(c.price).toFixed(2):"N/A",threshold:"Min $0.5B (share)"},
+          {id:"A",name:"Market / Technical Data",pass:c.price!=null,detail:c.price!=null?"Price, RSI, MAs, trend quality, Z-score":"No data",threshold:"Connected feed available"},
+          {id:"B",name:"Quote Availability",pass:c.price!=null,detail:c.price!=null?"$"+(c.price).toFixed(2):"N/A",threshold:"Connected quote available"},
           {id:"D",name:"History Fetch",pass:c.ma200!=null,detail:c.ma200!=null?"200+ trading days":"Insufficient",threshold:""},
-          {id:"D2",name:"Momentum/Alpha Filter",pass:c.r6m!=null&&c.r6m>0,detail:"6m: "+(c.r6m!=null?(c.r6m>0?"+":"")+c.r6m+"%":"N/A"),threshold:"Positive 6M return"},
-          {id:"E1",name:"Sector Exclusion",pass:true,detail:c.sector||"?",threshold:"Excluded: Tobacco, Gambling"},
+          {id:"D2",name:"6M Momentum Check",pass:c.r6m!=null&&c.r6m>0,detail:"6m: "+(c.r6m!=null?(c.r6m>0?"+":"")+c.r6m+"%":"N/A"),threshold:"Positive 6M return"},
           {id:"E3",name:"Bearish MA Trend",pass:c.trend!=="Bearish",detail:c.trend==="Bearish"?"Warning":"OK",threshold:"Bearish excluded ("+regime+")"},
-          {id:"E5",name:"Quality/Value Filters",pass:c.tq!=null&&c.tq>0.15,detail:"TQ: "+(c.tq!=null?c.tq.toFixed(2):"N/A"),threshold:"Min TQ: 0.15"},
-          {id:"E6",name:"Phase Alignment",pass:c.phase!=="Broken Trend"&&c.phase!=="Deterioration",detail:c.phase||"—",threshold:"<0.15 excluded"},
-          {id:"E7",name:"Forensic Gates",pass:c.zScore==null||c.zScore>-2,detail:"Z="+(c.zScore!=null?c.zScore.toFixed(2):"N/A"),threshold:"≥3 flags or distress",warning:c.zScore!=null&&c.zScore<-2?"Z-Score in distress zone":null},
-          {id:"G",name:"R:R (informational)",pass:true,detail:c.rr||"N/A",threshold:"Applied by Portfolio Builder"},
+          {id:"E5",name:"Trend Quality Available",pass:c.tq!=null,detail:"TQ: "+(c.tq!=null?c.tq.toFixed(2):"N/A"),threshold:"Informational — no unverified scale cutoff"},
+          {id:"E6",name:"Phase Feed",pass:true,detail:c.phase||"—",threshold:"Informational only — upstream phase methodology not audited here"},
+          {id:"E7",name:"Price Deviation Check",pass:c.zScore==null||c.zScore>-2,detail:"Z="+(c.zScore!=null?c.zScore.toFixed(2):"N/A"),threshold:"Flag below -2σ vs 63-day mean",warning:c.zScore!=null&&c.zScore<-2?"Price is more than 2σ below its 63-day mean":null},
+          {id:"G",name:"Scenario R:R",pass:true,detail:c.rr||"N/A",threshold:"Heuristic reference only"},
         ];
         var passCount=gates.filter(function(g){return g.pass}).length;
         var excluded=gates.filter(function(g){return !g.pass}).length>=2;
         var sd=c.scoreData||computeScreenerScore(c);
-        var bars=[{label:"Quality",raw:sd.quality||0,w:0.25,color:C.blue},{label:"Momentum",raw:sd.momentum||0,w:0.40,color:C.green},{label:"Value",raw:sd.value||0,w:0.10,color:C.cyan},{label:"Pattern",raw:sd.pattern||0,w:0.15,color:C.orange},{label:"Sentiment",raw:sd.sentiment||0,w:0.10,color:C.purple}];
+        var bars=[{label:"MA Trend Structure",raw:sd.quality||0,w:0.30,color:C.blue},{label:"6M Momentum",raw:sd.momentum||0,w:0.40,color:C.green},{label:"Rule Setup",raw:sd.pattern||0,w:0.15,color:C.orange},{label:"RSI Setup",raw:sd.sentiment||0,w:0.15,color:C.purple}];
         return (
           <div style={{ display:"grid", gridTemplateColumns:"320px 1fr", gap:12 }}>
             <Card style={{ padding:"12px" }}>
@@ -3545,793 +3076,155 @@ function ScreenerStage({ d }) {
 
 /* ─── PORTFOLIO BUILDER (Stage 4) ──────────────────────────────── */
 function BuilderStage({ d }) {
-  var _h = useState([]);
-  var holdings = _h[0], setHoldings = _h[1];
-  var _l = useState(true);
-  var loading = _l[0], setLoading = _l[1];
-  var _ts = useState(null);
-  var lastRefresh = _ts[0], setLastRefresh = _ts[1];
-  var _exp = useState(null);
-  var expandedTicker = _exp[0], setExpandedTicker = _exp[1];
+  var _h=useState([]); var holdings=_h[0],setHoldings=_h[1];
+  var _l=useState(true); var loading=_l[0],setLoading=_l[1];
+  var _ts=useState(null); var lastRefresh=_ts[0],setLastRefresh=_ts[1];
+  var regime=d?.macroRegime?.season||"Unclassified";
+  var modelCashReserve=3000;
 
-  var regime = d?.macroRegime?.season || "Summer";
-  var maxPositions = 20;
-  var accountValue = 50000;
-  var cashReserve = 3000;
-
-  useEffect(function() {
-    (async function() {
+  useEffect(function(){
+    (async function(){
       setLoading(true);
-      try {
-        var tickers = PORTFOLIO_HOLDINGS.map(function(h){return h.ticker}).join(",");
-        var res = await fetch(PORTFOLIO_URL + "?tickers=" + tickers);
-        var json = await res.json();
-        var merged = PORTFOLIO_HOLDINGS.map(function(h) {
-          var d = json.holdings && json.holdings[h.ticker];
-          if (!d || d.error) return { ...h, price:null, ma50:null, ma200:null, rsi:null, tq:null, zScore:null, r6m:null, maDev:null, trend:"—", phase:"—", action:"—", value:h.weight/100*accountValue, pnl:0, pnlPct:0, safetyStop:null, entryRR:"—" };
-          var val = d.price * h.qty;
-          var pnl = (d.price - h.costBasis) * h.qty;
-          var pnlPct = ((d.price / h.costBasis - 1) * 100);
-          // Safety stop: below 200 DMA or -8% from current
-          var safetyStop = d.ma200 ? Math.min(d.ma200 * 0.97, d.price * 0.92) : d.price * 0.92;
-          // R:R from current
-          var risk = d.price - safetyStop;
-          var target = d.price * (1 + Math.max(0.05, Math.abs(d.zScore||1) * 0.04));
-          var reward = target - d.price;
-          var rr = risk > 0 && reward > 0 ? (reward/risk).toFixed(1)+":1" : "—";
-          return { ...h, ...d, value:val, pnl:pnl, pnlPct:pnlPct, safetyStop:+safetyStop.toFixed(2), entryRR:rr };
+      try{
+        var tickers=PORTFOLIO_HOLDINGS.map(function(h){return h.ticker}).join(",");
+        var res=await fetch(PORTFOLIO_URL+"?tickers="+tickers);
+        if(!res.ok)throw new Error("Portfolio data HTTP "+res.status);
+        var json=await res.json();
+        var merged=PORTFOLIO_HOLDINGS.map(function(h){
+          var x=json.holdings&&json.holdings[h.ticker];
+          if(!x||x.error)return {...h,price:null,ma50:null,ma200:null,rsi:null,tq:null,zScore:null,r6m:null,trend:"—",phase:"—",action:"—",value:null,scenarioFloor:null,scenarioRR:null};
+          var value=x.price*x.qty;
+          var floor=x.ma200&&x.price?Math.min(x.price*0.92,x.ma200*0.97):x.price?x.price*0.92:null;
+          var risk=floor!=null?Math.max(0,x.price-floor):null;
+          var target=x.price?x.price*(1+Math.max(0.05,Math.abs(x.zScore||1)*0.04)):null;
+          var reward=target!=null?Math.max(0,target-x.price):null;
+          var rr=risk>0&&reward!=null?(reward/risk):null;
+          return {...h,...x,value:value,scenarioFloor:floor,scenarioRR:rr};
         });
         setHoldings(merged);
         setLastRefresh(new Date().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"}));
-      } catch(e) {
-        setHoldings(PORTFOLIO_HOLDINGS.map(function(h){return {...h,price:null,trend:"—",phase:"—",action:"—",value:h.weight/100*accountValue,pnl:0,pnlPct:0,safetyStop:null,entryRR:"—"}}));
+      }catch(e){
+        setHoldings(PORTFOLIO_HOLDINGS.map(function(h){return {...h,price:null,trend:"—",phase:"—",action:"—",value:null,scenarioFloor:null,scenarioRR:null};}));
       }
       setLoading(false);
     })();
-  }, []);
+  },[]);
 
-  // Computed values
-  var totalValue = holdings.reduce(function(s,h){return s+(h.value||0)},0) + cashReserve;
-  var totalPnL = holdings.reduce(function(s,h){return s+(h.pnl||0)},0);
-  var totalMargin = holdings.filter(function(h){return h.sleeve==="Speculative"}).reduce(function(s,h){return s+(h.value||0)},0);
-  var totalExposure = holdings.reduce(function(s,h){return s+(h.value||0)},0);
-  var leveragePct = totalValue > 0 ? ((totalExposure / totalValue) * 100).toFixed(0) : 0;
-  var maxRisk = holdings.reduce(function(s,h){
-    if (!h.price || !h.safetyStop) return s;
-    return s + (h.price - h.safetyStop) * h.qty;
-  }, 0);
-  var avgRR = holdings.filter(function(h){return h.entryRR!=="—"}).reduce(function(s,h,_,a){ var v=parseFloat(h.entryRR); return s+(isNaN(v)?0:v/a.length); },0);
-  // Compute Sortino from actual portfolio returns
-  var returns = holdings.filter(function(h){return h.pnlPct}).map(function(h){return h.pnlPct/100});
-  var avgReturn = returns.length > 0 ? returns.reduce(function(s,r){return s+r},0)/returns.length : 0;
-  var downside = returns.filter(function(r){return r<0});
-  var downsideDev = downside.length > 0 ? Math.sqrt(downside.reduce(function(s,r){return s+r*r},0)/downside.length) : 0.01;
-  var sortino = downsideDev > 0 ? +(avgReturn / downsideDev).toFixed(2) : 0;
-  var positionCount = holdings.length;
-  var slotsAvail = maxPositions - positionCount;
+  var pricedHoldings=holdings.filter(function(h){return h.price!=null&&isFinite(Number(h.price))&&h.value!=null&&isFinite(Number(h.value));});
+  var priceCoverage=holdings.length?Math.round(pricedHoldings.length/holdings.length*100):0;
+  var investedAssets=pricedHoldings.reduce(function(s,h){return s+Number(h.value||0)},0);
+  var totalValue=investedAssets+modelCashReserve;
+  var investedPct=totalValue>0?investedAssets/totalValue*100:null;
+  var speculativeExposure=holdings.filter(function(h){return h.sleeve==="Speculative"}).reduce(function(s,h){return s+(h.value||0)},0);
+  var scenarioDownside=holdings.reduce(function(s,h){if(!h.price||!h.scenarioFloor)return s;return s+Math.max(0,h.price-h.scenarioFloor)*h.qty;},0);
+  var rrVals=holdings.map(function(h){return h.scenarioRR}).filter(function(x){return x!=null&&isFinite(x)});
+  var avgScenarioRR=rrVals.length?rrVals.reduce(function(a,b){return a+b},0)/rrVals.length:null;
+  var flags=holdings.filter(function(h){return h.action==="Scale Out"||h.action==="Close"||h.trend==="Bearish"});
 
-  // Categorize holdings by action
-  var scaleOuts = holdings.filter(function(h){return h.action==="Scale Out"||h.action==="Close"});
-  var openPositions = holdings.filter(function(h){return h.action==="Hold"});
-  var leveraged = holdings.filter(function(h){return h.sleeve==="Speculative"});
-
-  // Portfolio balance calcs
-  var sleeveWeights = {Core:0,Strategic:0,Speculative:0};
-  var sectorWeights = {};
-  var assetClassWeights = {};
-  var themeWeights = {};
+  var sleeveWeights={Core:0,Strategic:0,Speculative:0};
+  var sectorWeights={};
   holdings.forEach(function(h){
-    sleeveWeights[h.sleeve] = (sleeveWeights[h.sleeve]||0) + h.weight;
-    sectorWeights[h.sector] = (sectorWeights[h.sector]||0) + h.weight;
-    assetClassWeights[h.assetClass] = (assetClassWeights[h.assetClass]||0) + h.weight;
-    (h.themes||[]).forEach(function(t){ themeWeights[t] = (themeWeights[t]||0) + h.weight; });
+    sleeveWeights[h.sleeve]=(sleeveWeights[h.sleeve]||0)+h.weight;
+    sectorWeights[h.sector]=(sectorWeights[h.sector]||0)+h.weight;
   });
+  var sleeveTargets={Core:50,Strategic:30,Speculative:12};
+  var policyFlags=Object.keys(sleeveTargets).map(function(k){var actual=sleeveWeights[k]||0;var target=sleeveTargets[k];return {label:k,actual:actual,target:target,diff:actual-target};}).filter(function(x){return Math.abs(x.diff)>=5;});
+  var tdS={padding:"7px 6px",fontSize:10,borderBottom:"1px solid "+C.border,whiteSpace:"nowrap"};
 
-  // Target allocations
-  var sectorTargets = {Technology:26,Energy:21,Healthcare:13,Materials:8,Commodities:5};
-  var assetTargets = {Equity:85,Gold:5,Commodities:5};
-  var sleeveTargets = {Core:50,Strategic:30,Speculative:12};
-  var themeTargets = {"AI Chips":4,"Custom Silicon":4,"Nuclear":6,"AI Power":4,"Cloud":4,"AI Infrastructure":4,"GLP-1":4,"Obesity":4,"AWS":3,"E-Commerce":3,"Ads":3,"Llama AI":3,"Search":3,"Data Centers":3,"Gold":3,"Safe Haven":2,"Oil":3,"Dividends":2,"Insurance":2,"Optum":2,"AI GPUs":3,"Data Center":3,"Gold Mining":2,"EM":2,"Defense AI":2,"Gov Tech":2,"Copper":2,"EV Metals":2};
-
-  // Actions required
-  var actions = [];
-  Object.entries(sectorWeights).forEach(function(e){
-    var s=e[0],w=e[1],t=sectorTargets[s]||5,diff=w-t;
-    if(Math.abs(diff)>5) actions.push({type:diff>0?"over":"under",label:"Sector '"+s+"' is "+(diff>0?"over":"under")+"-weight by "+Math.abs(diff).toFixed(1)+"pp (current "+w+"%, target "+t+"%)"+(diff>0?" in "+regime:""),severity:Math.abs(diff)>10?"critical":"warning",advice:diff>0?"Reduce "+s+" exposure, look for "+regime+"-aligned candidates in under-weight sectors":"Add "+regime+"-aligned "+s+" candidates to fill under-weight"});
-  });
-  Object.entries(assetClassWeights).forEach(function(e){
-    var a=e[0],w=e[1],t=assetTargets[a]||5,diff=w-t;
-    if(Math.abs(diff)>10) actions.push({type:diff>0?"over":"under",label:"Asset class '"+a+"' is "+(diff>0?"over":"under")+"-weight by "+Math.abs(diff).toFixed(1)+"pp (current "+w+"%, target "+t+"%) in "+regime,severity:"warning",advice:diff>0?"Consider adding to under-weight asset classes":"Add "+a+" candidates to fill allocation"});
-  });
-  Object.entries(sleeveWeights).forEach(function(e){
-    var sl=e[0],w=e[1],t=sleeveTargets[sl]||10,diff=w-t;
-    if(Math.abs(diff)>5) actions.push({type:diff>0?"over":"under",label:sl+" sleeve is "+(diff>0?"over":"under")+"-weight by "+Math.abs(diff).toFixed(1)+"pp (current "+w+"%, target "+t+"%)",severity:"warning",advice:diff>0?"Increase "+sl+" sleeve positions for rebalancing":"Reduce or consolidate "+sl+" positions"});
-  });
-
-  var _exp = useState(null);
-  var expandedTicker = _exp[0], setExpandedTicker = _exp[1];
-
-  var tdS = { padding:"7px 6px", fontSize:11, borderBottom:"1px solid "+C.border, whiteSpace:"nowrap" };
-
-  return (
-    <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-      {/* HEADER */}
-      {lastRefresh && <div style={{ fontSize:10, color:C.green }}>● Last refreshed: {lastRefresh}</div>}
-      <Card>
-        <div style={{ fontSize:18, fontWeight:700, marginBottom:12 }}>⚙ Portfolio Builder</div>
-
-        {/* Summary Cards */}
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(7, 1fr)", gap:8, marginBottom:16 }}>
-          {[
-            {label:"Account Value",val:"$"+totalValue.toLocaleString(undefined,{maximumFractionDigits:2}),color:C.text,sub:""},
-            {label:"Total Margin",val:"$"+totalMargin.toLocaleString(undefined,{maximumFractionDigits:2}),color:C.orange,sub:(totalMargin/totalValue*100).toFixed(1)+"% of account"},
-            {label:"Total Exposure",val:"$"+totalExposure.toLocaleString(undefined,{maximumFractionDigits:2}),color:C.yellow,sub:leveragePct+"% leverage"},
-            {label:"Max Total Risk",val:"$"+Math.abs(maxRisk).toLocaleString(undefined,{maximumFractionDigits:2}),color:C.red,sub:(Math.abs(maxRisk)/totalValue*100).toFixed(1)+"% of account"},
-            {label:"Avg R:R",val:avgRR.toFixed(1)+":1",color:C.green,sub:holdings.filter(function(h){return h.entryRR!=="—"}).length+" of "+holdings.length+" with targets"},
-            {label:"Est. Sortino",val:sortino.toFixed(2),color:C.cyan,sub:sortino>2?"Excellent":sortino>1?"Good":"Poor"},
-            {label:"Positions",val:positionCount+"/"+maxPositions,color:C.green,sub:slotsAvail+" slots available"},
-          ].map(function(c,i){
-            return <div key={i} style={{ background:C.cardAlt, borderRadius:6, padding:"10px 12px", border:"1px solid "+C.border }}>
-              <div style={{ fontSize:9, color:C.textDim, letterSpacing:1, marginBottom:4 }}>{c.label}</div>
-              <div style={{ fontSize:16, fontWeight:700, fontFamily:font, color:c.color }}>{c.val}</div>
-              {c.sub && <div style={{ fontSize:9, color:C.textDim, marginTop:2 }}>{c.sub}</div>}
-            </div>;
-          })}
-        </div>
-      </Card>
-
-      {/* POSITION SIZE CALCULATOR */}
-      <Card>
-        <div style={{ fontSize:14, fontWeight:700, display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-          <span>🧮</span> Position Size Calculator
-          <span style={{ fontSize:10, color:C.textDim, fontWeight:400 }}>Calculate exact shares based on risk tolerance</span>
-        </div>
-        {(function(){
-          var _calcTicker = useState("");
-          var calcTicker = _calcTicker[0], setCalcTicker = _calcTicker[1];
-          var _calcRisk = useState("2");
-          var calcRisk = _calcRisk[0], setCalcRisk = _calcRisk[1];
-          var _calcStop = useState("");
-          var calcStop = _calcStop[0], setCalcStop = _calcStop[1];
-
-          var match = holdings.find(function(h){return h.ticker===calcTicker.toUpperCase()});
-          var price = match ? match.price : null;
-          var defaultStop = match && match.safetyStop ? match.safetyStop : (price ? price * 0.92 : null);
-          var stopPrice = calcStop ? parseFloat(calcStop) : defaultStop;
-          var riskPct = parseFloat(calcRisk) || 2;
-          var riskDollars = totalValue * (riskPct / 100);
-          var riskPerShare = price && stopPrice ? Math.abs(price - stopPrice) : 0;
-          var shares = riskPerShare > 0 ? Math.floor(riskDollars / riskPerShare) : 0;
-          var positionValue = shares * (price || 0);
-          var positionPct = totalValue > 0 ? (positionValue / totalValue * 100) : 0;
-
-          return (
-            <div>
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:12 }}>
-                <div>
-                  <div style={{ fontSize:9, color:C.textDim, marginBottom:3 }}>Ticker</div>
-                  <input value={calcTicker} onChange={function(e){setCalcTicker(e.target.value.toUpperCase())}} placeholder="AVGO" style={{ width:"100%", background:C.cardAlt, border:"1px solid "+C.border, borderRadius:5, padding:"6px 8px", color:C.text, fontSize:12, fontFamily:font }} />
-                </div>
-                <div>
-                  <div style={{ fontSize:9, color:C.textDim, marginBottom:3 }}>Risk % of Account</div>
-                  <input value={calcRisk} onChange={function(e){setCalcRisk(e.target.value)}} placeholder="2" style={{ width:"100%", background:C.cardAlt, border:"1px solid "+C.border, borderRadius:5, padding:"6px 8px", color:C.text, fontSize:12, fontFamily:font }} />
-                </div>
-                <div>
-                  <div style={{ fontSize:9, color:C.textDim, marginBottom:3 }}>Stop Loss Price {defaultStop ? "(default: $"+defaultStop.toFixed(2)+")" : ""}</div>
-                  <input value={calcStop} onChange={function(e){setCalcStop(e.target.value)}} placeholder={defaultStop ? defaultStop.toFixed(2) : "0.00"} style={{ width:"100%", background:C.cardAlt, border:"1px solid "+C.border, borderRadius:5, padding:"6px 8px", color:C.text, fontSize:12, fontFamily:font }} />
-                </div>
-              </div>
-              {price && (
-                <div style={{ display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:8 }}>
-                  <div style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"8px 10px" }}>
-                    <div style={{ fontSize:8, color:C.textDim, letterSpacing:1 }}>PRICE</div>
-                    <div style={{ fontSize:14, fontWeight:700, fontFamily:font }}>${price.toFixed(2)}</div>
-                  </div>
-                  <div style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"8px 10px" }}>
-                    <div style={{ fontSize:8, color:C.textDim, letterSpacing:1 }}>RISK $</div>
-                    <div style={{ fontSize:14, fontWeight:700, fontFamily:font, color:C.red }}>${riskDollars.toFixed(2)}</div>
-                  </div>
-                  <div style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"8px 10px" }}>
-                    <div style={{ fontSize:8, color:C.textDim, letterSpacing:1 }}>RISK/SHARE</div>
-                    <div style={{ fontSize:14, fontWeight:700, fontFamily:font, color:C.orange }}>${riskPerShare.toFixed(2)}</div>
-                  </div>
-                  <div style={{ background:C.green+"0a", border:"1px solid "+C.green+"33", borderRadius:6, padding:"8px 10px" }}>
-                    <div style={{ fontSize:8, color:C.textDim, letterSpacing:1 }}>SHARES TO BUY</div>
-                    <div style={{ fontSize:18, fontWeight:700, fontFamily:font, color:C.green }}>{shares}</div>
-                  </div>
-                  <div style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"8px 10px" }}>
-                    <div style={{ fontSize:8, color:C.textDim, letterSpacing:1 }}>POSITION SIZE</div>
-                    <div style={{ fontSize:14, fontWeight:700, fontFamily:font }}>${positionValue.toLocaleString(undefined,{maximumFractionDigits:2})}</div>
-                    <div style={{ fontSize:9, color:C.textDim }}>{positionPct.toFixed(1)}% of portfolio</div>
-                  </div>
-                </div>
-              )}
-              {!price && calcTicker && <div style={{ fontSize:10, color:C.textDim, marginTop:4 }}>Enter a ticker from your portfolio to auto-fill price and stop</div>}
-            </div>
-          );
-        })()}
-      </Card>
-
-      {/* BROKER ACCOUNTS */}
-      <Card>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-          <div style={{ fontSize:14, fontWeight:700 }}>🏦 Broker Accounts <span style={{ fontSize:11, color:C.textDim, fontWeight:400 }}>funds vs margin</span></div>
-        </div>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
-          {[
-            {name:"Primary Broker",funds:totalValue-totalMargin-cashReserve,margin:totalMargin*0.4,pnl:totalPnL*0.7},
-            {name:"Secondary Broker",funds:cashReserve,margin:totalMargin*0.6,pnl:totalPnL*0.3},
-            {name:"IBKR",funds:null,margin:null,pnl:null,error:true},
-          ].map(function(b,i){
-            return <div key={i} style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"10px 12px" }}>
-              <div style={{ fontSize:12, fontWeight:700, color:C.text, marginBottom:8 }}>{b.name}</div>
-              {b.error ? (
-                <div style={{ fontSize:11, color:C.red }}>Connection error</div>
-              ) : (
-                <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-                  <div style={{ display:"flex", justifyContent:"space-between" }}><span style={{ fontSize:11, color:C.textMid }}>Funds</span><span style={{ fontSize:11, fontFamily:font, color:C.text }}>${(b.funds||0).toLocaleString(undefined,{maximumFractionDigits:2})}</span></div>
-                  <div style={{ display:"flex", justifyContent:"space-between" }}><span style={{ fontSize:11, color:C.textMid }}>Margin</span><span style={{ fontSize:11, fontFamily:font, color:C.orange }}>${(b.margin||0).toLocaleString(undefined,{maximumFractionDigits:2})}</span></div>
-                  <div style={{ display:"flex", justifyContent:"space-between" }}><span style={{ fontSize:11, color:C.textMid }}>P&L</span><span style={{ fontSize:11, fontFamily:font, color:b.pnl>=0?C.green:C.red }}>{b.pnl>=0?"+":""}${(b.pnl||0).toLocaleString(undefined,{maximumFractionDigits:2})}</span></div>
-                </div>
-              )}
-            </div>;
-          })}
-        </div>
-      </Card>
-
-      {/* SCALE OUT / CLOSE — clickable with expanded detail */}
-      {scaleOuts.length > 0 && (
-        <Card style={{ borderLeft:"3px solid "+C.red }}>
-          <div style={{ fontSize:14, fontWeight:700, color:C.red, marginBottom:10 }}>Scale Out <span style={{ background:C.red+"22", border:"1px solid "+C.red+"44", borderRadius:4, padding:"1px 6px", fontSize:11, fontWeight:600 }}>{scaleOuts.length}</span></div>
-          <div style={{ overflowX:"auto" }}>
-            <table style={{ width:"100%", borderCollapse:"collapse", minWidth:900 }}>
-              <thead><tr style={{ borderBottom:"1px solid "+C.border }}>
-                {["","TICKER","ASSET","SECTOR","THEMES","DIRECTION","QTY","ENTRY","SAFETY STOP","R:R","SUMMARY"].map(function(h){
-                  return <th key={h||"x"} style={{ textAlign:"left", padding:"6px", color:C.textDim, fontSize:8, fontWeight:700, letterSpacing:1, width:h===""?20:"auto" }}>{h}</th>;
-                })}
-              </tr></thead>
-              <tbody>
-                {scaleOuts.map(function(h){
-                  var isExp = expandedTicker === "so-"+h.ticker;
-                  var direction = h.action==="Close" ? "Sell "+h.qty+" → 0" : "Sell "+Math.ceil(h.qty*0.3)+" → "+Math.floor(h.qty*0.7);
-                  var summary = h.action==="Close" ? "Severe technical breakdown with RSI "+h.rsi+", "+h.phase+"..." : "Extended rally, Z-score "+(h.zScore>0?"+":"")+h.zScore+", trim...";
-                  var takeProfit = h.price ? (h.price * 1.05).toFixed(2) : "—";
-                  var maxLoss = h.price && h.safetyStop ? ((h.price - h.safetyStop) * h.qty).toFixed(2) : "—";
-                  var profitTarget = h.price ? ((parseFloat(takeProfit) - h.costBasis) * h.qty).toFixed(2) : "—";
-                  var marginReq = h.value ? (h.value * 0.2).toFixed(2) : "—";
-                  var conviction = h.action==="Close" ? "HIGH" : "MEDIUM";
-                  var rationale = h.action==="Close"
-                    ? "Severe technical breakdown with RSI "+h.rsi+", "+(h.maDev?h.maDev.toFixed(1):"?")+"% from highs, and "+h.phase+". "+h.trend+" trend facing multiple macro headwinds. Stop: Circuit-breaker: 50% below entry ($"+(h.costBasis*0.5).toFixed(2)+"). Reducing by "+(h.action==="Close"?"100":"30")+"%."
-                    : "Extended rally with Z-score "+(h.zScore>0?"+":"")+h.zScore+". RSI at "+h.rsi+" approaching overbought territory. Momentum strong but risk/reward deteriorating at these levels. Trimming "+Math.ceil(h.qty*0.3)+" shares to lock in gains.";
-                  var regimeAlign = h.trend==="Bearish" ? "Indicator cluster: BEARISH, score: "+(h.zScore||0).toFixed(1) : "Aligned with "+regime+", score: "+(h.zScore||0).toFixed(1);
-                  return [
-                    <tr key={h.ticker} onClick={function(){setExpandedTicker(isExp?null:"so-"+h.ticker)}} style={{ borderBottom:isExp?"none":"1px solid "+C.border, cursor:"pointer", background:isExp?C.cardAlt+"66":"transparent" }}>
-                      <td style={{ ...tdS, fontSize:10, color:C.textDim }}>{isExp?"∨":"›"}</td>
-                      <td style={{ ...tdS, fontWeight:700, color:C.cyan, fontFamily:font }}>{h.ticker}</td>
-                      <td style={{ ...tdS, color:C.textMid, fontSize:10 }}>{h.name}</td>
-                      <td style={{ ...tdS, fontSize:10, color:C.textDim }}>{h.sector}</td>
-                      <td style={tdS}><div style={{ display:"flex", gap:2 }}>{(h.themes||[]).slice(0,2).map(function(t){return <span key={t} style={{ background:C.blue+"22", color:C.blueLight, borderRadius:3, padding:"1px 4px", fontSize:7 }}>{t}</span>})}</div></td>
-                      <td style={tdS}><span style={{ background:C.red, color:C.bg, padding:"2px 8px", borderRadius:3, fontSize:9, fontWeight:700 }}>SELL</span></td>
-                      <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.orange }}>{direction}</td>
-                      <td style={{ ...tdS, fontFamily:font, fontSize:10 }}>${h.costBasis.toFixed(2)}</td>
-                      <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.red }}>${h.safetyStop||"—"}</td>
-                      <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.green }}>{h.entryRR}</td>
-                      <td style={{ ...tdS, fontSize:9, color:C.textMid, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis" }}>{summary}</td>
-                    </tr>,
-                    isExp && <tr key={h.ticker+"exp"} style={{ borderBottom:"1px solid "+C.border }}>
-                      <td colSpan={11} style={{ padding:0 }}>
-                        <div style={{ background:C.cardAlt, padding:"12px 16px", borderTop:"1px solid "+C.border }}>
-                          <div style={{ display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:8, marginBottom:12 }}>
-                            {[
-                              {label:"Entry Price",val:"$"+h.costBasis.toFixed(2),color:C.text},
-                              {label:"Take Profit",val:"$"+takeProfit,color:C.green,sub:h.price?((parseFloat(takeProfit)/h.price-1)*100).toFixed(1)+"%":""},
-                              {label:"R:R Ratio",val:h.entryRR,color:C.text},
-                              {label:"Safety Stop",val:"$"+(h.safetyStop||"—"),color:C.red,sub:h.price?"-"+((1-h.safetyStop/h.price)*100).toFixed(1)+"%":""},
-                              {label:"Conviction",val:conviction,color:conviction==="HIGH"?C.red:C.orange},
-                            ].map(function(c,i){return <div key={i} style={{ background:C.card, borderRadius:5, padding:"8px 10px", border:"1px solid "+C.border }}>
-                              <div style={{ fontSize:8, color:C.textDim, letterSpacing:1, marginBottom:3 }}>{c.label}</div>
-                              <div style={{ fontSize:14, fontWeight:700, fontFamily:font, color:c.color }}>{c.val}</div>
-                              {c.sub&&<div style={{ fontSize:9, color:C.textDim }}>{c.sub}</div>}
-                            </div>})}
-                          </div>
-                          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:8, marginBottom:12 }}>
-                            {[{label:"Max Loss",val:"$"+maxLoss,color:C.red},{label:"Profit Target",val:"$"+profitTarget,color:C.green},{label:"Margin Required",val:"$"+marginReq,color:C.orange},{label:"Notional Exposure",val:"$"+(h.value||0).toLocaleString(undefined,{maximumFractionDigits:2}),color:C.text}].map(function(c,i){return <div key={i} style={{ background:C.card, borderRadius:5, padding:"6px 10px", border:"1px solid "+C.border }}>
-                              <div style={{ fontSize:8, color:C.textDim, letterSpacing:1 }}>{c.label}</div>
-                              <div style={{ fontSize:12, fontWeight:700, fontFamily:font, color:c.color }}>{c.val}</div>
-                            </div>})}
-                          </div>
-                          <div style={{ marginBottom:8 }}>
-                            <div style={{ fontSize:9, fontWeight:700, color:C.textDim, letterSpacing:1, marginBottom:4 }}>RATIONALE</div>
-                            <div style={{ fontSize:10, color:C.textMid, lineHeight:1.6 }}>{rationale}</div>
-                          </div>
-                          <div>
-                            <div style={{ fontSize:9, fontWeight:700, color:C.textDim, letterSpacing:1, marginBottom:4 }}>REGIME ALIGNMENT</div>
-                            <div style={{ fontSize:10, color:C.textMid }}>{regimeAlign}</div>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>,
-                  ];
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
-
-      {/* OPEN — screener candidates recommended to buy */}
-      <Card style={{ borderLeft:"3px solid "+C.green }}>
-        <div style={{ fontSize:14, fontWeight:700, color:C.green, marginBottom:4 }}>Open <span style={{ background:C.green+"22", border:"1px solid "+C.green+"44", borderRadius:4, padding:"1px 6px", fontSize:11, fontWeight:600 }}>{openPositions.length}</span></div>
-        <div style={{ fontSize:10, color:C.textDim, marginBottom:10 }}>Screener candidates aligned with {regime} regime — recommended entries</div>
-        <div style={{ overflowX:"auto" }}>
-          <table style={{ width:"100%", borderCollapse:"collapse", minWidth:900 }}>
-            <thead><tr style={{ borderBottom:"1px solid "+C.border }}>
-              {["TICKER","ASSET","SECTOR","THEMES","DIRECTION","QTY","ENTRY","SAFETY STOP","R:R","SUMMARY"].map(function(h){
-                return <th key={h} style={{ textAlign:"left", padding:"6px", color:C.textDim, fontSize:8, fontWeight:700, letterSpacing:1 }}>{h}</th>;
-              })}
-            </tr></thead>
-            <tbody>
-              {openPositions.map(function(h){
-                var summary = h.sleeve+" theme: "+(h.themes||[]).join(", ")+". "+h.trend+" trend, "+(h.r6m>0?"+"+h.r6m+"% 6M":"")+(h.phase?", "+h.phase:"")+".";
-                return <tr key={h.ticker} style={{ borderBottom:"1px solid "+C.border }}>
-                  <td style={{ ...tdS, fontWeight:700, color:C.cyan, fontFamily:font }}>{h.ticker}</td>
-                  <td style={{ ...tdS, color:C.textMid, fontSize:10 }}>{h.name} <span style={{ background:C.blue+"22", color:C.blueLight, borderRadius:3, padding:"1px 4px", fontSize:7 }}>{h.assetClass}</span></td>
-                  <td style={{ ...tdS, fontSize:10, color:C.textDim }}>{h.sector}</td>
-                  <td style={tdS}><div style={{ display:"flex", gap:2 }}>{(h.themes||[]).slice(0,2).map(function(t){return <span key={t} style={{ background:C.blue+"22", color:C.blueLight, borderRadius:3, padding:"1px 4px", fontSize:7 }}>{t}</span>})}</div></td>
-                  <td style={tdS}><span style={{ background:C.green, color:C.bg, padding:"2px 8px", borderRadius:3, fontSize:9, fontWeight:700 }}>BUY</span></td>
-                  <td style={{ ...tdS, fontFamily:font, fontSize:10 }}>Buy {h.qty}</td>
-                  <td style={{ ...tdS, fontFamily:font, fontSize:10 }}>${h.costBasis.toFixed(2)}</td>
-                  <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.red }}>${h.safetyStop||"—"}</td>
-                  <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.green }}>{h.entryRR}</td>
-                  <td style={{ ...tdS, fontSize:9, color:C.textMid, maxWidth:220, overflow:"hidden", textOverflow:"ellipsis" }}>{summary}</td>
-                </tr>;
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      {/* LEVERAGED SLEEVE — positions to scale up and lean into */}
-      <Card style={{ borderLeft:"3px solid "+C.yellow }}>
-        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
-          <span style={{ fontSize:14, fontWeight:700, color:C.yellow }}>⚡ Leveraged Sleeve</span>
-          <Badge label={leveraged.length+" positions"} color={C.yellow} />
-          <span style={{ fontSize:10, color:C.textDim }}>Sortino {sortino.toFixed(2)}</span>
-        </div>
-        <div style={{ fontSize:10, color:C.textDim, marginBottom:10 }}>High-conviction positions to scale up — lean into winners with strong regime alignment</div>
-        <div style={{ display:"flex", gap:16, marginBottom:10, fontSize:10, color:C.textDim }}>
-          <span>Margin used: <span style={{ color:C.orange, fontFamily:font }}>${totalMargin.toLocaleString(undefined,{maximumFractionDigits:2})}</span></span>
-          <span>Notional: <span style={{ color:C.text, fontFamily:font }}>${(leveraged.reduce(function(s,h){return s+(h.value||0)},0)).toLocaleString(undefined,{maximumFractionDigits:2})}</span></span>
-          <span>Positions: {leveraged.length}</span>
-        </div>
-        <div style={{ overflowX:"auto" }}>
-          <table style={{ width:"100%", borderCollapse:"collapse" }}>
-            <thead><tr style={{ borderBottom:"1px solid "+C.border }}>
-              {["TICKER","ASSET","SECTOR","THEMES","ACTION","QTY","MARGIN","NOTIONAL","CARRY/DAY","R:R","CONVICTION"].map(function(h){
-                return <th key={h} style={{ textAlign:"left", padding:"6px", color:C.textDim, fontSize:8, fontWeight:700, letterSpacing:1 }}>{h}</th>;
-              })}
-            </tr></thead>
-            <tbody>
-              {leveraged.map(function(h){
-                var marginUsed = h.value ? h.value * 0.2 : 0;
-                var carryPerDay = marginUsed * 0.0001;
-                var conviction = h.trend==="Bullish"&&h.rsi<70?"HIGH":h.trend==="Bullish"?"MEDIUM":"LOW";
-                var convColor = conviction==="HIGH"?C.green:conviction==="MEDIUM"?C.orange:C.red;
-                var scaleAction = conviction==="HIGH" ? "SCALE UP" : "HOLD";
-                var scaleColor = conviction==="HIGH" ? C.cyan : C.green;
-                return <tr key={h.ticker} style={{ borderBottom:"1px solid "+C.border }}>
-                  <td style={{ ...tdS, fontWeight:700, color:C.cyan, fontFamily:font }}>{h.ticker}</td>
-                  <td style={{ ...tdS, color:C.textMid, fontSize:10 }}>{h.name}</td>
-                  <td style={{ ...tdS, fontSize:10, color:C.textDim }}>{h.sector}</td>
-                  <td style={tdS}><div style={{ display:"flex", gap:2 }}>{(h.themes||[]).slice(0,1).map(function(t){return <span key={t} style={{ background:C.purple+"22", color:C.purple, borderRadius:3, padding:"1px 4px", fontSize:7 }}>{t}</span>})}</div></td>
-                  <td style={tdS}><span style={{ background:scaleColor+"22", border:"1px solid "+scaleColor+"44", color:scaleColor, padding:"2px 6px", borderRadius:3, fontSize:8, fontWeight:600 }}>{scaleAction}</span></td>
-                  <td style={{ ...tdS, fontFamily:font, fontSize:10 }}>{h.qty}</td>
-                  <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.orange }}>${marginUsed.toFixed(2)}</td>
-                  <td style={{ ...tdS, fontFamily:font, fontSize:10 }}>${(h.value||0).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-                  <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.orange }}>${carryPerDay.toFixed(2)}</td>
-                  <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.green }}>{h.entryRR}</td>
-                  <td style={tdS}><span style={{ color:convColor, fontWeight:700, fontSize:10 }}>{conviction}</span></td>
-                </tr>;
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      {/* PORTFOLIO BALANCE */}
-      <Card>
-        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
-          <span style={{ fontSize:14, fontWeight:700 }}>📊 Portfolio Balance</span>
-          {actions.filter(function(a){return a.severity==="critical"}).length > 0 && <Badge label="ALERT" color={C.red} />}
-          <Badge label={regime.toUpperCase()} color={SC[regime]||C.gold} />
-          <Badge label={actions.length+" issues"} color={C.orange} />
-        </div>
-        {actions.filter(function(a){return a.severity==="critical"}).length > 0 && (
-          <div style={{ background:C.red+"0a", border:"1px solid "+C.red+"33", borderRadius:6, padding:"6px 10px", marginBottom:12, fontSize:10, color:C.red }}>
-            ⚠ ALERT — {actions.filter(function(a){return a.severity==="critical"}).length} critical deviation(s) in {regime}: {actions.filter(function(a){return a.severity==="critical"}).map(function(a){return a.label}).join("; ")}
-          </div>
-        )}
-
-        {/* Sleeve Allocation */}
-        <div style={{ marginBottom:14 }}>
-          <div style={{ fontSize:9, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:6 }}>SLEEVE ALLOCATION</div>
-          {Object.entries(sleeveWeights).map(function(e){
-            var sl=e[0],w=e[1],t=sleeveTargets[sl]||10,diff=w-t;
-            var color=sl==="Core"?C.blue:sl==="Strategic"?C.orange:C.red;
-            return <div key={sl} style={{ display:"grid", gridTemplateColumns:"90px 1fr 45px 45px 55px 40px", gap:6, alignItems:"center", marginBottom:4 }}>
-              <span style={{ fontSize:11, color:color, fontWeight:600 }}>{sl}</span>
-              <div style={{ height:6, background:C.border, borderRadius:3 }}><div style={{ width:Math.min(100,w*1.5)+"%", height:"100%", background:color, borderRadius:3, opacity:0.7 }} /></div>
-              <span style={{ textAlign:"right", fontFamily:font, fontSize:11 }}>{w}%</span>
-              <span style={{ textAlign:"right", fontFamily:font, fontSize:10, color:C.textDim }}>{t}%</span>
-              <span style={{ textAlign:"right", fontFamily:font, fontSize:10, color:diff>0?C.green:diff<0?C.red:C.textMid }}>{diff>0?"+":""}{diff.toFixed(1)}pp</span>
-              <span style={{ textAlign:"right", fontSize:9, color:C.textDim }}>Type</span>
-            </div>;
-          })}
-        </div>
-
-        {/* Core Asset Classes */}
-        <div style={{ marginBottom:14 }}>
-          <div style={{ fontSize:9, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:6 }}>CORE ASSET CLASSES</div>
-          <div style={{ display:"grid", gridTemplateColumns:"110px 55px 55px 60px 1fr", gap:4, fontSize:10 }}>
-            <span style={{ color:C.textDim, fontSize:9 }}>Name</span><span style={{ color:C.textDim, fontSize:9, textAlign:"right" }}>Current</span><span style={{ color:C.textDim, fontSize:9, textAlign:"right" }}>Target</span><span style={{ color:C.textDim, fontSize:9, textAlign:"right" }}>Dev</span><span />
-            {[{name:"Equity",target:85},{name:"Gold",target:5},{name:"Commodities",target:5},{name:"Bonds",target:0},{name:"REITs",target:0},{name:"Crypto",target:0}].map(function(ac){
-              var cur=assetClassWeights[ac.name]||0;
-              var diff=cur-ac.target;
-              var barColor=Math.abs(diff)>10?C.red:Math.abs(diff)>5?C.orange:C.green;
-              return [
-                <span key={ac.name+"n"} style={{ color:C.text }}>{ac.name}</span>,
-                <span key={ac.name+"c"} style={{ textAlign:"right", fontFamily:font }}>{cur}%</span>,
-                <span key={ac.name+"t"} style={{ textAlign:"right", fontFamily:font, color:C.textDim }}>{ac.target}%</span>,
-                <span key={ac.name+"d"} style={{ textAlign:"right", fontFamily:font, color:diff>0?C.green:diff<0?C.red:C.textMid }}>{diff>0?"+":""}{diff.toFixed(1)}pp</span>,
-                <div key={ac.name+"b"} style={{ height:4, background:C.border, borderRadius:2 }}><div style={{ width:Math.min(100,Math.abs(diff)*3)+"%", height:"100%", background:barColor, borderRadius:2, marginLeft:diff<0?"auto":0 }} /></div>,
-              ];
-            })}
-          </div>
-        </div>
-
-        {/* Sector Weights */}
-        <div style={{ marginBottom:14 }}>
-          <div style={{ fontSize:9, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:6 }}>SECTOR WEIGHTS</div>
-          <div style={{ display:"grid", gridTemplateColumns:"110px 55px 55px 60px 1fr", gap:4, fontSize:10 }}>
-            <span style={{ color:C.textDim, fontSize:9 }}>Name</span><span style={{ color:C.textDim, fontSize:9, textAlign:"right" }}>Current</span><span style={{ color:C.textDim, fontSize:9, textAlign:"right" }}>Target</span><span style={{ color:C.textDim, fontSize:9, textAlign:"right" }}>Dev</span><span />
-            {Object.entries(sectorWeights).sort(function(a,b){return b[1]-a[1]}).map(function(e){
-              var s=e[0],w=e[1],t=sectorTargets[s]||5,diff=w-t;
-              var barColor=Math.abs(diff)>10?C.red:Math.abs(diff)>5?C.orange:C.green;
-              return [
-                <span key={s+"n"} style={{ color:C.text }}>{s}</span>,
-                <span key={s+"c"} style={{ textAlign:"right", fontFamily:font }}>{w}%</span>,
-                <span key={s+"t"} style={{ textAlign:"right", fontFamily:font, color:C.textDim }}>{t}%</span>,
-                <span key={s+"d"} style={{ textAlign:"right", fontFamily:font, color:diff>0?C.green:diff<0?C.red:C.textMid }}>{diff>0?"+":""}{diff.toFixed(1)}pp</span>,
-                <div key={s+"b"} style={{ height:4, background:C.border, borderRadius:2 }}><div style={{ width:Math.min(100,Math.abs(diff)*3)+"%", height:"100%", background:barColor, borderRadius:2, marginLeft:diff<0?"auto":0 }} /></div>,
-              ];
-            })}
-          </div>
-        </div>
-
-        {/* Theme Budget */}
-        <div style={{ marginBottom:14 }}>
-          <div style={{ fontSize:9, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:6 }}>THEME BUDGET</div>
-          <div style={{ display:"grid", gridTemplateColumns:"140px 55px 55px 60px 1fr", gap:4, fontSize:10 }}>
-            <span style={{ color:C.textDim, fontSize:9 }}>Theme</span><span style={{ color:C.textDim, fontSize:9, textAlign:"right" }}>Actual</span><span style={{ color:C.textDim, fontSize:9, textAlign:"right" }}>Budget</span><span style={{ color:C.textDim, fontSize:9, textAlign:"right" }}>Ratio</span><span />
-            {Object.entries(themeWeights).sort(function(a,b){return b[1]-a[1]}).slice(0,10).map(function(e){
-              var th=e[0],w=e[1],bud=themeTargets[th]||2;
-              var ratio=bud>0?(w/bud).toFixed(2):"—";
-              var ratioColor=parseFloat(ratio)>1.5?C.red:parseFloat(ratio)>0.8?C.green:C.orange;
-              return [
-                <span key={th+"n"} style={{ color:C.text, overflow:"hidden", textOverflow:"ellipsis" }}>{th}</span>,
-                <span key={th+"a"} style={{ textAlign:"right", fontFamily:font }}>{w}%</span>,
-                <span key={th+"b"} style={{ textAlign:"right", fontFamily:font, color:C.textDim }}>{bud}%</span>,
-                <span key={th+"r"} style={{ textAlign:"right", fontFamily:font, color:ratioColor }}>{ratio}</span>,
-                <div key={th+"br"} style={{ height:4, background:C.border, borderRadius:2 }}><div style={{ width:Math.min(100,parseFloat(ratio)*50)+"%", height:"100%", background:ratioColor, borderRadius:2 }} /></div>,
-              ];
-            })}
-          </div>
-        </div>
-
-        {/* Cap Size */}
-        <div style={{ marginBottom:14 }}>
-          <div style={{ fontSize:9, fontWeight:700, letterSpacing:2, color:C.textDim, textTransform:"uppercase", marginBottom:6 }}>CAP SIZE DISTRIBUTION</div>
-          <div style={{ display:"flex", gap:2, marginBottom:4 }}>
-            {Object.entries({Large:C.blue,Mid:C.orange,Small:C.cyan}).map(function(e){
-              var capHoldings = holdings.filter(function(h){return h.cap===e[0]});
-              var w = capHoldings.reduce(function(s,h){return s+h.weight},0);
-              return <div key={e[0]} style={{ flex:w||1, height:8, background:e[1], borderRadius:e[0]==="Large"?"4px 0 0 4px":e[0]==="Small"?"0 4px 4px 0":"0" }} />;
-            })}
-          </div>
-          <div style={{ display:"flex", justifyContent:"space-between", fontSize:10 }}>
-            {Object.entries({Large:C.blue,Mid:C.orange,Small:C.cyan}).map(function(e){
-              var w = holdings.filter(function(h){return h.cap===e[0]}).reduce(function(s,h){return s+h.weight},0);
-              return <span key={e[0]} style={{ color:e[1] }}>● {e[0]}: {w}%</span>;
-            })}
-          </div>
-        </div>
-      </Card>
-
-      {/* ACTIONS REQUIRED */}
-      {actions.length > 0 && (
-        <Card>
-          <div style={{ fontSize:12, fontWeight:700, marginBottom:10 }}>ACTIONS REQUIRED</div>
-          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-            {actions.map(function(a,i){
-              var isCrit = a.severity==="critical";
-              var bg = isCrit ? C.red+"12" : C.orange+"0a";
-              var border = isCrit ? C.red+"44" : C.orange+"33";
-              var icon = isCrit ? "❌" : "⚠";
-              return <div key={i} style={{ background:bg, border:"1px solid "+border, borderRadius:6, padding:"8px 12px" }}>
-                <div style={{ fontSize:11, color:isCrit?C.red:C.orange, fontWeight:600 }}>{icon} {a.label}</div>
-                <div style={{ fontSize:9, color:C.textDim, marginTop:2 }}>{a.advice}</div>
-              </div>;
-            })}
-          </div>
-        </Card>
-      )}
+  return <div style={{display:"flex",flexDirection:"column",gap:12}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
+      <div>
+        <div style={{fontSize:18,fontWeight:800}}>🧩 Portfolio Builder</div>
+        <div style={{fontSize:10,color:C.textDim,marginTop:3}}>Illustrative allocation diagnostics using fixed sample holdings · live-price gaps remain blank · no orders are generated</div>
+      </div>
+      <div style={{display:"flex",gap:7,alignItems:"center"}}><Badge label={(regime||"MODEL").toUpperCase()} color={SC[regime]||C.gold}/>{lastRefresh&&<span style={{fontSize:9,color:C.textDim}}>Updated {lastRefresh}</span>}</div>
     </div>
-  );
+
+    <div style={{display:"grid",gridTemplateColumns:"repeat(6,minmax(0,1fr))",gap:9}}>
+      {[
+        {label:"CONNECTED MODEL VALUE",value:"$"+totalValue.toLocaleString(undefined,{maximumFractionDigits:0}),sub:priceCoverage+"% live-price coverage",color:C.text},
+        {label:"CONNECTED INVESTED ASSETS",value:"$"+investedAssets.toLocaleString(undefined,{maximumFractionDigits:0}),sub:investedPct==null?"—":investedPct.toFixed(1)+"% of connected model value",color:C.cyan},
+        {label:"CASH RESERVE",value:"$"+modelCashReserve.toLocaleString(),sub:totalValue?((modelCashReserve/totalValue)*100).toFixed(1)+"% of model":"—",color:C.green},
+        {label:"SPECULATIVE EXPOSURE",value:"$"+speculativeExposure.toLocaleString(undefined,{maximumFractionDigits:0}),sub:totalValue?((speculativeExposure/totalValue)*100).toFixed(1)+"% of model":"—",color:C.orange},
+        {label:"SCENARIO DOWNSIDE",value:"$"+scenarioDownside.toLocaleString(undefined,{maximumFractionDigits:0}),sub:"to technical reference floors",color:C.red},
+        {label:"AVG SCENARIO R:R",value:avgScenarioRR==null?"—":avgScenarioRR.toFixed(1)+":1",sub:"heuristic, not forecast",color:C.purple}
+      ].map(function(x){return <Card key={x.label} style={{padding:"11px 12px"}}><div style={{fontSize:8,color:C.textDim,letterSpacing:1}}>{x.label}</div><div style={{fontSize:18,fontWeight:800,fontFamily:font,color:x.color,marginTop:5}}>{x.value}</div><div style={{fontSize:8,color:C.textDim,marginTop:3}}>{x.sub}</div></Card>;})}
+    </div>
+
+    <Card>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:9}}><div><div style={{fontSize:13,fontWeight:800}}>📋 Position Diagnostics</div><div style={{fontSize:9,color:C.textDim,marginTop:2}}>Scenario floor = 97% of 200-day MA or 8% below price, whichever is lower. It is an analytical reference, not a stop order.</div></div>{loading&&<Spinner size={12}/>}</div>
+      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:940}}><thead><tr>{["TICKER","SLEEVE","PRICE","MARKET VALUE","WEIGHT","TREND","SCENARIO FLOOR","SCENARIO R:R","MODEL FLAG"].map(function(h){return <th key={h} style={{textAlign:"left",padding:"7px 6px",fontSize:8,color:C.textDim,borderBottom:"1px solid "+C.border,letterSpacing:1}}>{h}</th>;})}</tr></thead><tbody>
+        {holdings.map(function(h){var rawFlag=h.action&&h.action!=="—"?h.action:null;var flag=rawFlag==="Close"?"Review Exit":rawFlag==="Scale Out"?"Review Reduce":rawFlag==="Hold"?"Maintain":(h.trend==="Bearish"?"Review":"Maintain");var fc=flag==="Review Exit"?C.red:flag==="Review Reduce"||flag==="Review"?C.orange:C.green;return <tr key={h.ticker}>
+          <td style={{...tdS,fontFamily:font,fontWeight:800,color:C.cyan}}>{h.ticker}</td><td style={tdS}>{h.sleeve}</td><td style={{...tdS,fontFamily:font}}>{h.price!=null?"$"+Number(h.price).toFixed(2):"—"}</td><td style={{...tdS,fontFamily:font}}>{h.value!=null?"$"+Number(h.value).toLocaleString(undefined,{maximumFractionDigits:0}):"—"}</td><td style={{...tdS,fontFamily:font}}>{h.weight}%</td><td style={{...tdS,color:h.trend==="Bullish"?C.green:h.trend==="Bearish"?C.red:C.textMid}}>{h.trend}</td><td style={{...tdS,fontFamily:font}}>{h.scenarioFloor!=null?"$"+Number(h.scenarioFloor).toFixed(2):"—"}</td><td style={{...tdS,fontFamily:font}}>{h.scenarioRR!=null?Number(h.scenarioRR).toFixed(1)+":1":"—"}</td><td style={tdS}><span style={{fontSize:9,fontWeight:700,color:fc,background:fc+"18",border:"1px solid "+fc+"44",padding:"2px 6px",borderRadius:4}}>{flag}</span></td>
+        </tr>;})}
+      </tbody></table></div>
+    </Card>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+      <Card><div style={{fontSize:12,fontWeight:800,marginBottom:8}}>Model Sleeve Weights</div>{Object.keys(sleeveWeights).map(function(k){var v=sleeveWeights[k]||0;var target=sleeveTargets[k]||0;var col=k==="Core"?C.blue:k==="Strategic"?C.orange:C.red;return <div key={k} style={{display:"grid",gridTemplateColumns:"90px 1fr 55px 70px",gap:8,alignItems:"center",marginBottom:7}}><span style={{fontSize:10,color:col,fontWeight:700}}>{k}</span><div style={{height:6,background:C.border,borderRadius:3}}><div style={{width:Math.min(100,v)+"%",height:"100%",background:col,borderRadius:3}}/></div><span style={{fontSize:10,fontFamily:font,textAlign:"right"}}>{v.toFixed(1)}%</span><span style={{fontSize:9,color:C.textDim,textAlign:"right"}}>policy {target}%</span></div>;})}<div style={{fontSize:8,color:C.textDim,marginTop:6}}>Model weights and policy targets are fixed demo assumptions; they are not market-value weights or optimized allocations.</div></Card>
+      <Card><div style={{fontSize:12,fontWeight:800,marginBottom:8}}>Model Sector Weights</div>{Object.entries(sectorWeights).sort(function(a,b){return b[1]-a[1]}).map(function(e){return <div key={e[0]} style={{display:"grid",gridTemplateColumns:"120px 1fr 45px",gap:8,alignItems:"center",marginBottom:6}}><span style={{fontSize:10}}>{e[0]}</span><div style={{height:6,background:C.border,borderRadius:3}}><div style={{width:Math.min(100,e[1])+"%",height:"100%",background:C.purple,borderRadius:3}}/></div><span style={{fontSize:10,fontFamily:font,textAlign:"right"}}>{e[1].toFixed(1)}%</span></div>;})}</Card>
+    </div>
+
+    {(flags.length>0||policyFlags.length>0)&&<Card><div style={{fontSize:12,fontWeight:800,marginBottom:4}}>⚠ Model Review Flags</div><div style={{fontSize:9,color:C.textDim,marginBottom:9}}>Descriptive rule outputs only. Confirm any decision with fundamentals, risk limits and current portfolio objectives.</div><div style={{display:"flex",flexDirection:"column",gap:6}}>{flags.slice(0,8).map(function(h){return <div key={h.ticker} style={{fontSize:10,padding:"7px 9px",background:C.orange+"0a",border:"1px solid "+C.orange+"22",borderRadius:5}}><b style={{color:C.cyan}}>{h.ticker}</b> — {h.action&&h.action!=="—"?"model flag: "+(h.action==="Close"?"Review Exit":h.action==="Scale Out"?"Review Reduce":h.action==="Hold"?"Maintain":h.action):"bearish technical trend"}.</div>;})}{policyFlags.map(function(x){return <div key={x.label} style={{fontSize:10,padding:"7px 9px",background:C.cardAlt,border:"1px solid "+C.border,borderRadius:5}}><b>{x.label}</b>: {x.actual.toFixed(1)}% vs illustrative {x.target}% policy ({x.diff>0?"+":""}{x.diff.toFixed(1)} pts).</div>;})}</div></Card>}
+  </div>;
 }
 
-/* ─── EXECUTION STAGE (Stage 5) ────────────────────────────────── */
+/* ─── REBALANCING SIMULATION (Stage 5) ─────────────────────────── */
 function ExecutionStage({ d }) {
-  var _h = useState([]);
-  var holdings = _h[0], setHoldings = _h[1];
-  var _l = useState(true);
-  var loading = _l[0], setLoading = _l[1];
-  var _exp = useState(null);
-  var expandedTicker = _exp[0], setExpandedTicker = _exp[1];
-  var _orderStatus = useState({});
-  var orderStatus = _orderStatus[0], setOrderStatus = _orderStatus[1];
+  var _h=useState([]); var holdings=_h[0],setHoldings=_h[1];
+  var _l=useState(true); var loading=_l[0],setLoading=_l[1];
+  var regime=d?.macroRegime?.season||"Unclassified";
 
-  var regime = d?.macroRegime?.season || "Summer";
-
-  useEffect(function() {
-    (async function() {
+  useEffect(function(){
+    (async function(){
       setLoading(true);
-      try {
-        var tickers = PORTFOLIO_HOLDINGS.map(function(h){return h.ticker}).join(",");
-        var res = await fetch(PORTFOLIO_URL + "?tickers=" + tickers);
-        var json = await res.json();
-        var merged = PORTFOLIO_HOLDINGS.map(function(h) {
-          var d = json.holdings && json.holdings[h.ticker];
-          if (!d || d.error) return { ...h, price:null, trend:"—", phase:"—", action:"—", rsi:null, zScore:null, r6m:null, ma50:null, ma200:null, maDev:null, safetyStop:null };
-          var safetyStop = d.ma200 ? Math.min(d.ma200 * 0.97, d.price * 0.92) : d.price * 0.92;
-          return { ...h, ...d, safetyStop:+safetyStop.toFixed(2) };
-        });
-        setHoldings(merged);
-      } catch(e) {
-        setHoldings(PORTFOLIO_HOLDINGS.map(function(h){return {...h,price:null,trend:"—",action:"—",rsi:null}}));
-      }
+      try{
+        var tickers=PORTFOLIO_HOLDINGS.map(function(h){return h.ticker}).join(",");
+        var r=await fetch(PORTFOLIO_URL+"?tickers="+tickers);
+        if(!r.ok)throw new Error("Portfolio data HTTP "+r.status);
+        var j=await r.json();
+        setHoldings(PORTFOLIO_HOLDINGS.map(function(h){var x=j.holdings&&j.holdings[h.ticker];return x&&!x.error?{...h,...x,value:x.price*h.qty}:{...h,price:null,trend:"—",action:"—",value:null};}));
+      }catch(e){setHoldings(PORTFOLIO_HOLDINGS.map(function(h){return {...h,price:null,trend:"—",action:"—",value:null};}));}
       setLoading(false);
     })();
-  }, []);
+  },[]);
 
-  // Execution timing signals — from live macro data
-  var fgScore = d?.fg?.score != null ? d.fg.score : 50;
-  var vixLevel = parseFloat(d?.vix?.price) || 15;
-  var sp500Price = d?.sp500?.price || "—";
-  var sp500dma50 = d?.sp500?.dma50 || "—";
-  var sp500Label = d?.sp500?.sentiment === "BEARISH" ? "Pullback" : d?.sp500?.sentiment === "BULLISH" ? "Rally" : "Sideways";
-  var pcrDex = parseFloat(d?.options?.dexPCR) || 1.0;
-  var pcrOmega = parseFloat(d?.options?.omegaPCR) || 1.0;
-  var pcrStatus = d?.options?.status || "Neutral";
-  var breadth50 = parseFloat(d?.breadth?.pct50) || 50;
-  var breadth200 = parseFloat(d?.breadth?.pct200) || 50;
-  var breadthLabel = d?.breadth?.sentiment || "Neutral";
+  function n(v){var x=Number(v);return isFinite(x)?x:null;}
+  var fg=n(d?.fg?.score); var vix=n(d?.vix?.price); var pcr=n(d?.options?.dexPCR); var breadth=n(d?.breadth?.pct50);
+  var review=holdings.filter(function(h){return h.action==="Close"||h.action==="Scale Out"||h.trend==="Bearish";});
+  var maintain=holdings.filter(function(h){return review.indexOf(h)<0;});
+  var td={padding:"7px 6px",fontSize:10,borderBottom:"1px solid "+C.border,whiteSpace:"nowrap"};
 
-  var fgLabel = fgScore<=25?"Extreme Fear":fgScore<=44?"Fear":fgScore<=55?"Neutral":fgScore<=75?"Greed":"Extreme Greed";
-  var vixLabel = vixLevel>35?"Extreme":vixLevel>25?"High":vixLevel>15?"Moderate":"Low";
-  var sp500Label = "Pullback"; // Simplified
-  var breadthLabel = breadth50>60?"Bullish":breadth50<40?"Bearish":"Neutral";
+  function contextCard(label,value,detail,color){return <Card style={{padding:"11px 12px"}}><div style={{fontSize:8,color:C.textDim,letterSpacing:1}}>{label}</div><div style={{fontSize:18,fontFamily:font,fontWeight:800,color:color||C.text,marginTop:5}}>{value}</div><div style={{fontSize:8,color:C.textDim,marginTop:3}}>{detail}</div></Card>;}
+  return <div style={{display:"flex",flexDirection:"column",gap:12}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div><div style={{fontSize:18,fontWeight:800}}>🧪 Rebalancing Simulation</div><div style={{fontSize:10,color:C.textDim,marginTop:3}}>Rule-based model flags only · no broker connection · no orders are transmitted</div></div><Badge label={(regime||"MODEL").toUpperCase()} color={SC[regime]||C.gold}/></div>
 
-  // Favorable for buys when fear is high (contrarian)
-  var buySignals = 0;
-  if (fgScore < 30) buySignals++;
-  if (vixLevel > 20) buySignals++;
-  if (pcrDex > 1.2) buySignals++;
-  if (breadth50 > 40) buySignals++;
-  buySignals++; // Base signal
-  var favorable = buySignals >= 3;
-
-  var scaleOuts = holdings.filter(function(h){return h.action==="Scale Out"||h.action==="Close"});
-  var openOrders = holdings.filter(function(h){return h.action==="Hold"});
-  var leveraged = holdings.filter(function(h){return h.sleeve==="Speculative"});
-  var totalOrders = scaleOuts.length + openOrders.length;
-  var sellCount = scaleOuts.length;
-  var buyCount = openOrders.length;
-  var adjustCount = leveraged.length;
-  var netMarginDelta = openOrders.reduce(function(s,h){return s+(h.value||0)*0.03},0) - scaleOuts.reduce(function(s,h){return s+(h.value||0)*0.02},0);
-  var completedCount = Object.keys(orderStatus).filter(function(k){return orderStatus[k]==="done"}).length;
-  var pendingCount = totalOrders - completedCount;
-
-  function markOrder(ticker, status) {
-    setOrderStatus(function(prev){var n={...prev};n[ticker]=status;return n});
-  }
-
-  var tdS = { padding:"7px 6px", fontSize:11, borderBottom:"1px solid "+C.border, whiteSpace:"nowrap" };
-
-  return (
-    <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-      {/* HEADER */}
-      <Card>
-        <div style={{ fontSize:18, fontWeight:700, marginBottom:4 }}>▶ Execution Plan</div>
-        <div style={{ fontSize:11, color:C.textMid, marginBottom:16 }}>Concrete orders for transitioning to the target portfolio. Mark each order as you execute it.</div>
-
-        {/* EXECUTION TIMING */}
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-          <div style={{ fontSize:13, fontWeight:700, display:"flex", alignItems:"center", gap:6 }}>🕐 EXECUTION TIMING</div>
-          <span style={{ background:favorable?C.green+"22":C.red+"22", border:"1px solid "+(favorable?C.green:C.red)+"44", borderRadius:6, padding:"4px 12px", fontSize:11, color:favorable?C.green:C.red, fontWeight:700 }}>
-            {favorable?"📈 Favorable for Buys":"⚠ Caution"} (+{buySignals})
-          </span>
-        </div>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:8, marginBottom:10 }}>
-          {[
-            {icon:"◌",label:"Fear & Greed",val:String(fgScore),sub:fgLabel,color:fgScore<25?C.red:fgScore<45?C.orange:C.green},
-            {icon:"◎",label:"VIX",val:vixLevel.toFixed(1),sub:vixLabel,color:vixLevel>25?C.red:vixLevel>15?C.orange:C.green},
-            {icon:"↘",label:"S&P 500",val:String(sp500Price),sub:"MA50: "+sp500dma50+"\n"+sp500Label,color:sp500Label==="Pullback"?C.orange:sp500Label==="Rally"?C.green:C.textMid},
-            {icon:"↗",label:"Options PCR",val:"DEX "+pcrDex.toFixed(2),sub:"Omega "+pcrOmega.toFixed(2)+"\n"+pcrStatus,color:pcrDex>1.3?C.red:pcrDex<0.7?C.green:C.textMid},
-            {icon:"▣",label:"Market Breadth",val:breadth50.toFixed(0)+"% > MA50",sub:breadth200.toFixed(0)+"% > MA200\n"+breadthLabel,color:breadth50>50?C.green:C.red},
-          ].map(function(s,i){
-            return <div key={i} style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"10px 12px" }}>
-              <div style={{ fontSize:9, color:C.textDim, marginBottom:4, display:"flex", alignItems:"center", gap:4 }}><span>{s.icon}</span> {s.label}</div>
-              <div style={{ fontSize:18, fontWeight:700, fontFamily:font, marginBottom:2 }}>{s.val}</div>
-              <div style={{ fontSize:10, color:s.color, whiteSpace:"pre-line" }}>{s.sub}</div>
-            </div>;
-          })}
-        </div>
-        <div style={{ fontSize:10, color:C.textDim, fontStyle:"italic" }}>
-          {favorable ? "Market in fear / elevated volatility — contrarian indicators favour opening or scaling into positions on pullbacks." : "Elevated greed — consider waiting for a pullback before adding new positions."}
-        </div>
-      </Card>
-
-      {/* ORDER SUMMARY */}
-      <Card>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:8, marginBottom:12 }}>
-          {[
-            {label:"Total Orders",val:String(totalOrders),color:C.text},
-            {label:"Sells",val:String(sellCount),color:C.red},
-            {label:"Buys",val:String(buyCount),color:C.green},
-            {label:"Adjustments",val:String(adjustCount),color:C.orange},
-            {label:"Net Margin Δ",val:(netMarginDelta>=0?"+$":"−$")+Math.abs(netMarginDelta).toLocaleString(undefined,{maximumFractionDigits:2}),color:netMarginDelta>=0?C.green:C.red},
-          ].map(function(c,i){return <div key={i} style={{ textAlign:"center" }}>
-            <div style={{ fontSize:9, color:C.textDim, letterSpacing:1 }}>{c.label}</div>
-            <div style={{ fontSize:22, fontWeight:700, fontFamily:font, color:c.color }}>{c.val}</div>
-          </div>})}
-        </div>
-        <div style={{ fontSize:10, fontWeight:700, color:C.textDim, letterSpacing:1, marginBottom:4 }}>EXECUTION PROGRESS</div>
-        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          <Badge label={pendingCount+"/"+totalOrders+" Pending"} color={C.orange} />
-          <div style={{ flex:1, height:4, background:C.border, borderRadius:2 }}>
-            <div style={{ width:(completedCount/Math.max(1,totalOrders)*100)+"%", height:"100%", background:C.green, borderRadius:2, transition:"width 0.3s" }} />
-          </div>
-          {completedCount>0 && <span style={{ fontSize:10, color:C.green }}>{completedCount} done</span>}
-        </div>
-      </Card>
-
-      {/* SCALE OUT ORDERS */}
-      {scaleOuts.length > 0 && (
-        <Card style={{ borderLeft:"3px solid "+C.red }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-            <div style={{ fontSize:14, fontWeight:700, color:C.red }}>Scale Out <span style={{ background:C.red+"22", border:"1px solid "+C.red+"44", borderRadius:4, padding:"1px 6px", fontSize:11 }}>{scaleOuts.length}</span></div>
-            <Badge label="⏳ WAIT" color={C.textDim} />
-          </div>
-          <table style={{ width:"100%", borderCollapse:"collapse" }}>
-            <thead><tr style={{ borderBottom:"1px solid "+C.border }}>
-              {["","TICKER","NAME","QUANTITY","ORDER TYPE","PRICE","STOP","MARGIN Δ","RATIONALE","STATUS / ACTION"].map(function(h){
-                return <th key={h||"x"} style={{ textAlign:"left", padding:"6px", color:C.textDim, fontSize:8, fontWeight:700, letterSpacing:1, width:h===""?16:"auto" }}>{h}</th>;
-              })}
-            </tr></thead>
-            <tbody>
-              {scaleOuts.map(function(h){
-                var qty = h.action==="Close"?"Sell "+h.qty+" → 0":"Sell "+Math.ceil(h.qty*0.3)+" → "+Math.floor(h.qty*0.7);
-                var marginDelta = -(h.value||0)*0.02;
-                var rationale = "SCALE_OUT ("+(h.action==="Close"?"100":"30")+"%) — "+(h.action==="Close"?"Severe technic...":"Extended rally...");
-                var isDone = orderStatus[h.ticker]==="done";
-                var isSkip = orderStatus[h.ticker]==="skip";
-                return <tr key={h.ticker} style={{ borderBottom:"1px solid "+C.border, opacity:isDone||isSkip?0.4:1 }}>
-                  <td style={{ ...tdS, cursor:"pointer", color:C.textDim }} onClick={function(){setExpandedTicker(expandedTicker==="ex-"+h.ticker?null:"ex-"+h.ticker)}}>∨</td>
-                  <td style={tdS}><div style={{ fontWeight:700, color:C.cyan, fontFamily:font, fontSize:11 }}>{h.ticker}</div><div style={{ fontSize:8, color:h.rsi<30?C.green:h.rsi>70?C.red:C.orange }}>RSI {h.rsi||"—"}</div></td>
-                  <td style={{ ...tdS, color:C.textMid, fontSize:10 }}>{h.name}</td>
-                  <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.orange }}>{qty}</td>
-                  <td style={tdS}><span style={{ background:C.orange+"22", border:"1px solid "+C.orange+"44", color:C.orange, padding:"2px 6px", borderRadius:3, fontSize:8, fontWeight:600 }}>Scale Out</span></td>
-                  <td style={{ ...tdS, fontFamily:font, fontSize:10 }}>${(h.costBasis||0).toFixed(2)}</td>
-                  <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.red }}>${h.safetyStop||"—"}</td>
-                  <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.red }}>${Math.abs(marginDelta).toFixed(2)}</td>
-                  <td style={{ ...tdS, fontSize:9, color:C.textMid, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis" }}>{rationale}</td>
-                  <td style={tdS}>
-                    <div style={{ display:"flex", gap:4 }}>
-                      <button onClick={function(){markOrder(h.ticker,"done")}} title="Mark done" style={{ background:isDone?C.green+"22":"transparent", border:"1px solid "+C.border, borderRadius:"50%", width:22, height:22, cursor:"pointer", color:isDone?C.green:C.textDim, fontSize:10 }}>✓</button>
-                      <button onClick={function(){markOrder(h.ticker,"skip")}} title="Skip" style={{ background:isSkip?C.orange+"22":"transparent", border:"1px solid "+C.border, borderRadius:"50%", width:22, height:22, cursor:"pointer", color:isSkip?C.orange:C.textDim, fontSize:10 }}>⊘</button>
-                      <button onClick={function(){markOrder(h.ticker,null)}} title="Cancel" style={{ background:"transparent", border:"1px solid "+C.border, borderRadius:"50%", width:22, height:22, cursor:"pointer", color:C.textDim, fontSize:10 }}>✕</button>
-                    </div>
-                  </td>
-                </tr>;
-              })}
-            </tbody>
-          </table>
-        </Card>
-      )}
-
-      {/* OPEN / BUY ORDERS */}
-      <Card style={{ borderLeft:"3px solid "+C.green }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-            <span style={{ fontSize:14, fontWeight:700, color:C.green }}>Open</span>
-            <Badge label={String(openOrders.length)} color={C.green} />
-            {leveraged.length>0 && <Badge label={"⚡ "+leveraged.length+" leveraged"} color={C.yellow} />}
-          </div>
-          <button style={{ background:C.green+"22", border:"1px solid "+C.green+"44", borderRadius:6, padding:"4px 12px", fontSize:10, color:C.green, fontWeight:700, cursor:"pointer" }}>⚡ ACTION NOW</button>
-        </div>
-        <table style={{ width:"100%", borderCollapse:"collapse" }}>
-          <thead><tr style={{ borderBottom:"1px solid "+C.border }}>
-            {["","TICKER","NAME","QUANTITY","ORDER TYPE","PRICE","STOP","MARGIN Δ","RATIONALE","STATUS / ACTION"].map(function(h){
-              return <th key={h||"x"} style={{ textAlign:"left", padding:"6px", color:C.textDim, fontSize:8, fontWeight:700, letterSpacing:1, width:h===""?16:"auto" }}>{h}</th>;
-            })}
-          </tr></thead>
-          <tbody>
-            {openOrders.map(function(h){
-              var marginDelta = (h.value||0)*0.03;
-              var isLev = h.sleeve==="Speculative";
-              var rationale = "OPEN — "+h.sleeve+" theme '"+(h.themes||[])[0]+"'...";
-              var isDone = orderStatus["buy-"+h.ticker]==="done";
-              return <tr key={h.ticker} style={{ borderBottom:"1px solid "+C.border, opacity:isDone?0.4:1 }}>
-                <td style={{ ...tdS, cursor:"pointer", color:C.textDim }}>∨</td>
-                <td style={tdS}>
-                  <div style={{ fontWeight:700, color:C.cyan, fontFamily:font, fontSize:11 }}>{h.ticker}</div>
-                  {isLev && <div style={{ background:C.yellow+"22", border:"1px solid "+C.yellow+"44", color:C.yellow, borderRadius:3, padding:"0 4px", fontSize:7, fontWeight:700, marginTop:2 }}>⚡LEVERAGED</div>}
-                </td>
-                <td style={{ ...tdS, color:C.textMid, fontSize:10 }}>{h.name}</td>
-                <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.green }}>Buy {h.qty}</td>
-                <td style={tdS}><span style={{ background:C.green+"22", border:"1px solid "+C.green+"44", color:C.green, padding:"2px 6px", borderRadius:3, fontSize:8, fontWeight:600 }}>Open</span></td>
-                <td style={{ ...tdS, fontFamily:font, fontSize:10 }}>${(h.price||0).toFixed(2)}</td>
-                <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.red }}>${h.safetyStop||"—"}</td>
-                <td style={{ ...tdS, fontFamily:font, fontSize:10, color:C.green }}>+${marginDelta.toFixed(2)}</td>
-                <td style={{ ...tdS, fontSize:9, color:C.textMid, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis" }}>{rationale}</td>
-                <td style={tdS}>
-                  <div style={{ display:"flex", gap:4 }}>
-                    <button onClick={function(){markOrder("buy-"+h.ticker,"done")}} style={{ background:isDone?C.green+"22":"transparent", border:"1px solid "+C.border, borderRadius:"50%", width:22, height:22, cursor:"pointer", color:isDone?C.green:C.textDim, fontSize:10 }}>✓</button>
-                    <button onClick={function(){markOrder("buy-"+h.ticker,"skip")}} style={{ background:"transparent", border:"1px solid "+C.border, borderRadius:"50%", width:22, height:22, cursor:"pointer", color:C.textDim, fontSize:10 }}>⊘</button>
-                    <button onClick={function(){markOrder("buy-"+h.ticker,null)}} style={{ background:"transparent", border:"1px solid "+C.border, borderRadius:"50%", width:22, height:22, cursor:"pointer", color:C.textDim, fontSize:10 }}>✕</button>
-                  </div>
-                </td>
-              </tr>;
-            })}
-          </tbody>
-        </table>
-      </Card>
-
-      {/* EXECUTION NOTES */}
-      <Card>
-        <div style={{ fontSize:12, fontWeight:700, marginBottom:6, display:"flex", alignItems:"center", gap:6 }}>📋 EXECUTION NOTES</div>
-        <div style={{ fontSize:11, color:C.textMid }}>
-          Resize {scaleOuts.length} existing position(s). Open {openOrders.length} new position(s). Net margin {netMarginDelta>=0?"increase":"decrease"}: ${Math.abs(netMarginDelta).toLocaleString(undefined,{maximumFractionDigits:2})}
-        </div>
-      </Card>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:9}}>
+      {contextCard("FEAR & GREED",fg==null?"—":fg.toFixed(0),fg==null?"feed unavailable":"context indicator",fg==null?C.textDim:fg<25?C.red:fg>75?C.green:C.orange)}
+      {contextCard("VIX",vix==null?"—":vix.toFixed(2),vix==null?"feed unavailable":"equity implied-volatility index",vix==null?C.textDim:vix>30?C.red:vix>20?C.orange:C.green)}
+      {contextCard("PUT / CALL",pcr==null?"—":pcr.toFixed(2),pcr==null?"direct feed unavailable":pcr>1.1?"higher put activity":pcr<0.7?"lower put activity":"middle range",C.purple)}
+      {contextCard("BREADTH > 50D",breadth==null?"—":breadth.toFixed(1)+"%",breadth==null?"direct feed unavailable":"share of tracked universe above 50D MA",C.cyan)}
     </div>
-  );
+
+    <Card><div style={{fontSize:12,fontWeight:800,marginBottom:5}}>Market Context</div><div style={{fontSize:10,color:C.textMid,lineHeight:1.6}}>These indicators describe the connected market environment. They are intentionally not collapsed into a “buy,” “sell,” or timing recommendation. Missing feeds remain unavailable rather than being replaced with default values.</div></Card>
+
+    <Card style={{borderLeft:"3px solid "+C.orange}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><div><div style={{fontSize:13,fontWeight:800,color:C.orange}}>Reduce / Review Flags</div><div style={{fontSize:9,color:C.textDim,marginTop:2}}>Positions where the upstream technical model reports a reduction/exit review state or a bearish trend. Review does not imply an order.</div></div><Badge label={review.length+" flags"} color={C.orange}/></div>
+      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:760}}><thead><tr>{["TICKER","CURRENT VALUE","TREND","MODEL FLAG","RSI","6M RETURN","REVIEW NOTE"].map(function(x){return <th key={x} style={{textAlign:"left",padding:"7px 6px",fontSize:8,color:C.textDim,borderBottom:"1px solid "+C.border}}>{x}</th>;})}</tr></thead><tbody>{review.length?review.map(function(h){var flag=h.action==="Close"?"Review Exit":h.action==="Scale Out"?"Review Reduce":h.action==="Hold"?"Maintain":"Review";return <tr key={h.ticker}><td style={{...td,color:C.cyan,fontWeight:800,fontFamily:font}}>{h.ticker}</td><td style={{...td,fontFamily:font}}>{h.value!=null?"$"+Number(h.value).toLocaleString(undefined,{maximumFractionDigits:0}):"—"}</td><td style={{...td,color:h.trend==="Bearish"?C.red:C.textMid}}>{h.trend}</td><td style={{...td,color:C.orange,fontWeight:700}}>{flag}</td><td style={{...td,fontFamily:font}}>{h.rsi!=null?Number(h.rsi).toFixed(0):"—"}</td><td style={{...td,fontFamily:font,color:h.r6m>0?C.green:h.r6m<0?C.red:C.text}}>{h.r6m!=null?Number(h.r6m).toFixed(1)+"%":"—"}</td><td style={{...td,color:C.textMid}}>Confirm against fundamentals and portfolio policy.</td></tr>; }):<tr><td colSpan={7} style={{padding:14,color:C.textDim,fontSize:10}}>No reduce/review flags from the connected technical model.</td></tr>}</tbody></table></div>
+    </Card>
+
+    <Card style={{borderLeft:"3px solid "+C.green}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><div><div style={{fontSize:13,fontWeight:800,color:C.green}}>Maintain Flags</div><div style={{fontSize:9,color:C.textDim,marginTop:2}}>Positions without a current reduce/review flag. “Maintain” is a model state, not a recommendation to buy.</div></div><Badge label={maintain.length+" positions"} color={C.green}/></div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:7}}>{maintain.map(function(h){return <div key={h.ticker} style={{background:C.cardAlt,border:"1px solid "+C.border,borderRadius:6,padding:"9px 10px"}}><div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontFamily:font,fontWeight:800,color:C.cyan}}>{h.ticker}</span><span style={{fontSize:9,color:h.trend==="Bullish"?C.green:C.textMid}}>{h.trend}</span></div><div style={{fontSize:9,color:C.textDim,marginTop:5}}>{h.sleeve} · {h.sector}</div></div>;})}</div>
+    </Card>
+
+    <Card><div style={{fontSize:12,fontWeight:800,marginBottom:6}}>Simulation Notes</div><div style={{fontSize:9,color:C.textDim,lineHeight:1.7}}>• The model portfolio is illustrative and uses fixed sample quantities/cost bases.<br/>• Technical flags can change as prices and indicators update.<br/>• No slippage, tax, liquidity, transaction-cost, suitability or investor-specific constraints are modeled.<br/>• This page is a portfolio-analysis demonstration, not a brokerage execution system.</div></Card>
+    {loading&&<div style={{fontSize:10,color:C.cyan}}>Loading connected technical data…</div>}
+  </div>;
 }
 
 /* ─── PORTFOLIO TAB VIEW ─────────────────────────────────────── */
 
 
 /* ─── US MACRO CALENDAR TAB ─────────────────────────────────────── */
-function TradingViewEconomicCalendar() {
-  var containerId = "tv-economic-calendar";
-  useEffect(function(){
-    var container=document.getElementById(containerId);
-    if(!container) return;
-    container.innerHTML="";
-    var script=document.createElement("script");
-    script.src="https://s3.tradingview.com/external-embedding/embed-widget-events.js";
-    script.type="text/javascript";
-    script.async=true;
-    script.innerHTML=JSON.stringify({
-      colorTheme:"dark",isTransparent:true,locale:"en",countryFilter:"us",
-      importanceFilter:"-1,0,1",width:"100%",height:620
-    });
-    container.appendChild(script);
-    return function(){ if(container) container.innerHTML=""; };
-  },[]);
-  return <div id={containerId} style={{width:"100%",minHeight:620}}/>;
-}
-
 function USMacroCalendarTab() {
   var today=new Date();
   var _view=useState(new Date(today.getFullYear(),today.getMonth(),1));
@@ -4344,6 +3237,7 @@ function USMacroCalendarTab() {
   var _warnings=useState([]); var warnings=_warnings[0],setWarnings=_warnings[1];
   var _selectedLoading=useState(false); var selectedLoading=_selectedLoading[0],setSelectedLoading=_selectedLoading[1];
   var _selectedError=useState(""); var selectedError=_selectedError[0],setSelectedError=_selectedError[1];
+  var _retry=useState(0); var retryToken=_retry[0],setRetryToken=_retry[1];
 
   var year=view.getFullYear(), month=view.getMonth()+1;
   var monthName=view.toLocaleDateString("en-US",{month:"long",year:"numeric"});
@@ -4382,7 +3276,7 @@ function USMacroCalendarTab() {
       setError(e.message||"Macro calendar unavailable"); setEvents([]); setLoading(false);
     });
     return function(){cancelled=true;};
-  },[year,month]);
+  },[year,month,retryToken]);
 
   function moveMonth(delta){setView(new Date(year,view.getMonth()+delta,1));}
   function goToday(){setView(new Date(today.getFullYear(),today.getMonth(),1));}
@@ -4420,7 +3314,7 @@ function USMacroCalendarTab() {
       .catch(function(e){setSelectedLoading(false);setSelectedError(e.message||"Release values unavailable");});
   }
 
-  var categories=["All","Inflation","Labor","Growth","Fed","Survey"];
+  var categories=["All","Inflation","Labor","Growth","Fed"];
   var filtered=events.filter(function(e){return filter==="All"||e.category===filter;});
   var byDate={};
   filtered.forEach(function(e){if(!byDate[e.date])byDate[e.date]=[];byDate[e.date].push(e);});
@@ -4447,12 +3341,13 @@ function USMacroCalendarTab() {
   if(error){
     return <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-        <div><div style={{fontSize:20,fontWeight:800}}>US Macro Calendar</div><div style={{fontSize:10,color:C.textDim,marginTop:3}}>High-impact U.S. economic releases · Eastern Time</div></div>
-        <Badge label="TRADINGVIEW FALLBACK" color={C.orange}/>
+        <div><div style={{fontSize:20,fontWeight:800}}>US Macro Calendar</div><div style={{fontSize:10,color:C.textDim,marginTop:3}}>Curated U.S. economic-release schedule · Eastern Time</div></div>
+        <Badge label="SCHEDULE UNAVAILABLE" color={C.orange}/>
       </div>
       <Card>
-        <div style={{fontSize:11,color:C.orange,marginBottom:10}}>Monthly grid unavailable: {error}. Showing TradingView's live U.S. economic calendar instead.</div>
-        <TradingViewEconomicCalendar/>
+        <div style={{fontSize:12,fontWeight:800,marginBottom:5}}>Official schedule could not be loaded</div>
+        <div style={{fontSize:10,color:C.textMid,lineHeight:1.6,marginBottom:10}}>The dashboard is intentionally not substituting a broad third-party calendar because it may include events outside the curated U.S. macro set. Error: {error}</div>
+        <button onClick={function(){setRetryToken(function(x){return x+1})}} style={{background:C.blue,border:"none",borderRadius:6,color:C.text,padding:"7px 12px",fontSize:10,fontWeight:700,cursor:"pointer"}}>Retry official schedule</button>
       </Card>
     </div>;
   }
@@ -4563,7 +3458,7 @@ function USMacroCalendarTab() {
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:10,color:C.text}}>
                   <span style={{width:14,textAlign:"center",color:C.textDim}}>↘</span>
-                  <span style={{color:C.textDim}}>Surprise:</span>
+                  <span style={{color:C.textDim}}>Relative Surprise:</span>
                   <span style={{fontWeight:700,color:surpriseColor}}>{surprise}</span>
                 </div>
               </div>
@@ -4578,9 +3473,10 @@ function USMacroCalendarTab() {
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:10,color:C.text}}>
                   <span style={{width:14,textAlign:"center",color:C.textDim}}>↘</span>
-                  <span style={{color:C.textDim}}>Previous Surprise:</span>
+                  <span style={{color:C.textDim}}>Previous Rel. Surprise:</span>
                   <span style={{fontWeight:700,color:previousSurpriseColor}}>{previousSurprise}</span>
                 </div>
+                {(selected.consensusSource||selected.valueSource)&&<div style={{fontSize:9,color:C.textDim,lineHeight:1.4,paddingLeft:24}}>Actual/previous: {selected.valueSource||"—"}{selected.consensusSource?" · Forecast: "+selected.consensusSource:" · Forecast unavailable"}. Relative surprise is a dashboard calculation, not an official agency statistic.</div>}
               </div>
             </div>
 
@@ -4597,7 +3493,7 @@ function USMacroCalendarTab() {
 
       {warnings.length>0&&<div style={{marginTop:8,fontSize:8,color:C.textDim}}>Some release feeds were unavailable: {warnings.slice(0,2).join(" · ")}{warnings.length>2?" · +"+(warnings.length-2)+" more":""}</div>}
       <div style={{display:"flex",gap:12,alignItems:"center",marginTop:9,fontSize:9,color:C.textDim}}>
-        {["Inflation","Labor","Growth","Fed","Survey"].map(function(c){return <span key={c} style={{display:"flex",alignItems:"center",gap:4}}><span style={{width:7,height:7,borderRadius:"50%",background:categoryColor(c)}}/>{c}</span>;})}
+        {["Inflation","Labor","Growth","Fed"].map(function(c){return <span key={c} style={{display:"flex",alignItems:"center",gap:4}}><span style={{width:7,height:7,borderRadius:"50%",background:categoryColor(c)}}/>{c}</span>;})}
         <span style={{marginLeft:"auto"}}>Curated high-value U.S. releases only — company earnings excluded</span>
       </div>
     </Card>
@@ -4616,7 +3512,7 @@ function ComparablesTab() {
     GOOG:["META","AMZN","MSFT","NFLX","AAPL"],
     META:["GOOGL","AMZN","NFLX","MSFT","AAPL"],
     AMZN:["WMT","COST","GOOGL","MSFT","META"],
-    TSLA:["GM","F","RIVN","TM","HMC"],
+    TSLA:["GM","F","RIVN","LCID","CARG"],
     HOOD:["SCHW","IBKR","COIN","GS","MS"],
     JPM:["BAC","WFC","C","GS","MS"],
     BAC:["JPM","WFC","C","GS","MS"],
@@ -4627,9 +3523,9 @@ function ComparablesTab() {
     COST:["WMT","TGT","AMZN","KR","BJ"],
     HD:["LOW","WMT","TGT","COST","TSCO"],
     LOW:["HD","WMT","TGT","COST","TSCO"],
-    CRM:["ORCL","MSFT","NOW","ADBE","SAP"],
-    ORCL:["MSFT","CRM","SAP","IBM","ADBE"],
-    NFLX:["DIS","WBD","PARA","GOOGL","META"]
+    CRM:["ORCL","MSFT","NOW","ADBE","INTU"],
+    ORCL:["MSFT","CRM","IBM","ADBE","NOW"],
+    NFLX:["DIS","WBD","FOXA","GOOGL","META"]
   };
 
   const [ticker,setTicker]=useState("MSFT");
@@ -4681,13 +3577,13 @@ function ComparablesTab() {
     var marketCap=q&&Number(q.marketCap);
     if(!isFinite(marketCap)||marketCap<=0){
       var shares=Number(sec&&sec.shares);
-      if(price&&isFinite(shares)&&shares>0)marketCap=price*shares; else marketCap=null;
+      if(sec&&sec.marketCapDerivationAllowed===true&&price&&isFinite(shares)&&shares>0)marketCap=price*shares; else marketCap=null;
     }
     var cash=sec&&sec.cash!=null?Number(sec.cash):null;
     var debt=sec&&sec.debt!=null?Number(sec.debt):null;
-    var ev=marketCap!=null&&cash!=null&&debt!=null?marketCap+debt-cash:null;
+    var ev=sec&&sec.evMetricsMeaningful===false?null:(marketCap!=null&&cash!=null&&debt!=null?marketCap+debt-cash:null);
     var ebitda=latest&&latest.ebitda!=null?Number(latest.ebitda):null;
-    var trailingPE=q&&Number(q.trailingPE!=null?q.trailingPE:q.pe);
+    var trailingPE=q&&Number(q.trailingPE);
     if(!isFinite(trailingPE)||trailingPE<=0)trailingPE=null;
     var revGrowth=prior&&prior.revenue&&latest&&latest.revenue!=null?(Number(latest.revenue)/Number(prior.revenue)-1)*100:null;
     var grossMargin=ratios.grossMargin!=null?Number(ratios.grossMargin):(latest.revenue&&latest.grossProfit!=null?Number(latest.grossProfit)/Number(latest.revenue)*100:null);
@@ -4698,7 +3594,9 @@ function ComparablesTab() {
       ticker:t,name:(sec&&sec.name)||t,industry:(sec&&sec.industry)||"",isTarget:isTarget,
       price:price,marketCap:marketCap,revenueGrowth:revGrowth,grossMargin:grossMargin,operatingMargin:operatingMargin,netMargin:netMargin,
       roe:ratios.roe!=null?Number(ratios.roe):null,roic:ratios.roic!=null?Number(ratios.roic):null,pe:trailingPE,evEbitda:evEbitda,
-      freeCashFlow:latest&&latest.freeCashFlow!=null?Number(latest.freeCashFlow):null,debtToEquity:ratios.debtToEquity!=null?Number(ratios.debtToEquity):null,
+      freeCashFlow:latest&&latest.freeCashFlow!=null?Number(latest.freeCashFlow):null,
+      fcfMargin:latest&&latest.revenue&&latest.freeCashFlow!=null?Number(latest.freeCashFlow)/Number(latest.revenue)*100:null,
+      debtToEquity:ratios.debtToEquity!=null?Number(ratios.debtToEquity):null,
       latestFY:latest&&latest.periodLabel||null,verifiedAsOf:sec&&sec.verifiedAsOf||null
     };
   }
@@ -4742,6 +3640,7 @@ function ComparablesTab() {
     pe:median(peers.map(function(r){return r.pe;})),
     evEbitda:median(peers.map(function(r){return r.evEbitda;})),
     freeCashFlow:median(peers.map(function(r){return r.freeCashFlow;})),
+    fcfMargin:median(peers.map(function(r){return r.fcfMargin;})),
     debtToEquity:median(peers.map(function(r){return r.debtToEquity;})),
     marketCap:median(peers.map(function(r){return r.marketCap;}))
   };
@@ -4749,7 +3648,7 @@ function ComparablesTab() {
   var evPremium=target?pctDiff(target.evEbitda,peerMedians.evEbitda):null;
   var opDelta=target&&peerMedians.operatingMargin!=null&&target.operatingMargin!=null?target.operatingMargin-peerMedians.operatingMargin:null;
   var growthDelta=target&&peerMedians.revenueGrowth!=null&&target.revenueGrowth!=null?target.revenueGrowth-peerMedians.revenueGrowth:null;
-  var valuationText=target?(pePremium==null&&evPremium==null?"Insufficient comparable valuation data":((pePremium!=null?"P/E "+(pePremium>=0?"premium ":"discount ")+Math.abs(pePremium).toFixed(1)+"%":"P/E unavailable")+(evPremium!=null?" · EV/EBITDA "+(evPremium>=0?"premium ":"discount ")+Math.abs(evPremium).toFixed(1)+"%":""))):"—";
+  var valuationText=target?(pePremium==null&&evPremium==null?"Insufficient comparable valuation data":((pePremium!=null?"P/E "+(pePremium>=0?"premium ":"discount ")+Math.abs(pePremium).toFixed(1)+"%":"P/E unavailable")+(evPremium!=null?" · simplified EV/derived EBITDA "+(evPremium>=0?"premium ":"discount ")+Math.abs(evPremium).toFixed(1)+"%":""))):"—";
   var operatingText=target?((growthDelta!=null?(growthDelta>=0?"Growth above peers":"Growth below peers"):"Growth comparison unavailable")+(opDelta!=null?" · Operating margin "+(opDelta>=0?"+":"")+opDelta.toFixed(1)+" pts vs median":"")):"—";
 
   var metricRows=[
@@ -4761,8 +3660,9 @@ function ComparablesTab() {
     {key:"roe",label:"ROE",format:fmtPct,higher:true},
     {key:"roic",label:"ROIC",format:fmtPct,higher:true},
     {key:"pe",label:"P/E (TTM)",format:fmtMult,higher:false},
-    {key:"evEbitda",label:"EV / EBITDA",format:fmtMult,higher:false},
+    {key:"evEbitda",label:"Simplified EV / Derived EBITDA*",format:fmtMult,higher:false},
     {key:"freeCashFlow",label:"Free Cash Flow",format:fmtMoney,higher:true},
+    {key:"fcfMargin",label:"FCF Margin",format:fmtPct,higher:true},
     {key:"debtToEquity",label:"Debt / Equity",format:fmtMult,higher:false}
   ];
 
@@ -4771,7 +3671,7 @@ function ComparablesTab() {
       <div>
         <div style={{display:"flex",alignItems:"center",gap:9}}>
           <div style={{fontSize:20,fontWeight:800}}>🏢 Comparable Company Analysis</div>
-          <Badge label="SEC + LIVE QUOTES" color={C.green}/>
+          <Badge label="SEC + QUOTE FEED" color={C.green}/>
         </div>
         <div style={{fontSize:10,color:C.textDim,marginTop:4}}>Benchmark valuation, growth, profitability and cash flow against a selected peer set.</div>
       </div>
@@ -4787,7 +3687,8 @@ function ComparablesTab() {
         <div style={{fontSize:9,color:C.textDim,letterSpacing:1,textTransform:"uppercase"}}>Peer Set</div>
         <input value={peerInput} onChange={function(e){setPeerInput(e.target.value.toUpperCase())}} style={{width:"100%",background:C.bg,border:"1px solid "+C.border,borderRadius:7,color:C.text,padding:"8px 10px",fontFamily:font,fontSize:10}} placeholder="AAPL, GOOGL, AMZN, ORCL, CRM"/>
       </div>
-      <div style={{fontSize:8,color:C.textDim,marginTop:6}}>Up to 6 peers. You can edit the set before running the analysis.</div>
+      <div style={{fontSize:8,color:C.textDim,marginTop:6}}>Up to 6 peers. Auto Peers uses a curated suggested set; edit it before analysis because peer selection is judgment-based, not an authoritative industry classification.</div>
+      <div style={{fontSize:8,color:C.textDim,marginTop:4}}>* EBITDA is a filing-derived proxy (operating income + D&amp;A when available), not company-reported adjusted EBITDA. Simplified EV uses market cap + the SEC debt proxy − filed cash. EV/EBITDA is suppressed for financial institutions.</div>
     </Card>
 
     {error&&<div style={{marginTop:10,background:C.red+"10",border:"1px solid "+C.red+"44",borderRadius:8,padding:"8px 10px",fontSize:10,color:C.red}}>{error}</div>}
@@ -4830,7 +3731,7 @@ function ComparablesTab() {
             {label:"Revenue growth",v:growthDelta,unit:" pts",good:function(x){return x>=0;}},
             {label:"Operating margin",v:opDelta,unit:" pts",good:function(x){return x>=0;}},
             {label:"Net margin",v:target.netMargin!=null&&peerMedians.netMargin!=null?target.netMargin-peerMedians.netMargin:null,unit:" pts",good:function(x){return x>=0;}},
-            {label:"Free cash flow",v:target.freeCashFlow!=null&&peerMedians.freeCashFlow!=null?pctDiff(target.freeCashFlow,peerMedians.freeCashFlow):null,unit:"% vs median",good:function(x){return x>=0;}}
+            {label:"FCF margin",v:target.fcfMargin!=null&&peerMedians.fcfMargin!=null?target.fcfMargin-peerMedians.fcfMargin:null,unit:" pts",good:function(x){return x>=0;}}
           ].map(function(x){return <div key={x.label} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid "+C.border}}><span style={{fontSize:10,color:C.textMid}}>{x.label}</span><span style={{fontFamily:font,fontSize:10,fontWeight:800,color:x.v==null?C.textDim:x.good(x.v)?C.green:C.red}}>{x.v==null?"—":(x.v>=0?"+":"")+x.v.toFixed(1)+x.unit}</span></div>;})}
         </Card>
         <Card>
@@ -4883,17 +3784,6 @@ function FinancialsTabView({ d }) {
   function pctChange(a,b){ return a!=null&&b!=null&&Number(b)!==0 ? (Number(a)/Number(b)-1)*100 : null; }
   function cagr(first,last,years){ return first>0&&last>0&&years>0 ? (Math.pow(last/first,1/years)-1)*100 : null; }
 
-  function parseAIJson(txt) {
-    var clean = String(txt||"").replace(/```json\s*/gi,"").replace(/```\s*/gi,"").trim();
-    try { return JSON.parse(clean); } catch(e) {}
-    var depth=0,start=-1,last=null;
-    for(var i=0;i<clean.length;i++){
-      if(clean[i]==="{"){if(depth===0)start=i;depth++;}
-      else if(clean[i]==="}"){depth--;if(depth===0&&start>=0){try{last=JSON.parse(clean.slice(start,i+1));}catch(e2){}start=-1;}}
-    }
-    return last;
-  }
-
   function normalizeFinancialData(parsed) {
     if(!parsed||!parsed.historical||!parsed.historical.length) throw new Error("No usable financial data returned");
     var moneyScale = Number(parsed.financialValuesScale || parsed.moneyScale || 1);
@@ -4931,50 +3821,6 @@ function FinancialsTabView({ d }) {
     return parsed;
   }
 
-  function mergeFinancialPeriods(base, repair) {
-    var out={...base};
-    var byYear={};
-    (base.historical||[]).forEach(function(h){if(h&&h.year)byYear[h.year]=h;});
-    (repair.historical||[]).forEach(function(h){
-      if(!h||!h.year) return;
-      var prev=byYear[h.year]||{};
-      byYear[h.year]={...prev,...h};
-    });
-    out.historical=Object.keys(byYear).map(function(y){return byYear[y];}).sort(function(a,b){return a.year-b.year;}).slice(-5);
-    if(repair.currentPeriod&&repair.currentPeriod.revenue!=null) out.currentPeriod=repair.currentPeriod;
-    ["cash","debt","shares","ratios","sources","verifiedAsOf","name","sector","industry"].forEach(function(k){
-      if(repair[k]!=null) out[k]=repair[k];
-    });
-    return out;
-  }
-
-  function needsHistoryRepair(data) {
-    var hist=(data&&data.historical)||[];
-    if(hist.length<4) return true;
-    var years=hist.map(function(h){return Number(h.year);}).filter(Boolean).sort(function(a,b){return a-b;});
-    if(!years.length) return true;
-    // In 2026, most calendar-year issuers should have FY2025 available.  For
-    // non-calendar fiscal years the verifier can explicitly mark a later FY2026.
-    var latest=Math.max.apply(null,years);
-    return latest < (new Date().getFullYear()-1);
-  }
-
-  function primaryDataPrompt(t) {
-    var currentYear=new Date().getFullYear();
-    return "Today is "+new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})+". Research ticker "+t+" using ONLY official SEC filings (10-K/10-Q/8-K earnings exhibits) and the company's official investor-relations site. Return ONLY valid JSON. ACCURACY AND RECENCY ARE MORE IMPORTANT THAN COMPLETENESS. Do not use aggregators, search snippets, Macrotrends, Yahoo, Google Finance, StockAnalysis, CompaniesMarketCap, or blogs for statement values. First determine the issuer's fiscal-year end. Then return the FIVE most recent COMPLETED fiscal years actually reported as of today. Do not stop at older years if newer 10-Ks exist. For a calendar-year issuer in "+currentYear+", this will normally be FY "+(currentYear-5)+" through FY "+(currentYear-1)+". If the issuer has already completed FY"+currentYear+" (for example a June fiscal year), include FY"+currentYear+" and shift the five-year window accordingly. If the current fiscal year is not complete, return the latest "+currentYear+" interim/YTD period separately in currentPeriod; never annualize it. Use GAAP figures. IMPORTANT UNITS RULE: If the official table is stated in thousands, millions, or billions, you may copy the displayed numeric values but MUST set financialValuesScale to the exact multiplier required to convert every returned money field to raw USD (1, 1000, 1000000, or 1000000000). Do the same for diluted shares with shareValuesScale. Do not mix units between periods. For every annual period, use the fiscal-year label and exact period end date from the filing. Free cash flow = operating cash flow minus capital expenditures only if both values are verified. EBITDA may be null if not directly reported or reliably derivable. If any number cannot be confirmed, use null. Never fabricate or estimate historical values. Include at least two official source URLs when available. Schema: "+
-      '{"ticker":"'+t+'","name":"Company Name","sector":"Sector","industry":"Industry","fiscalYearEnd":"Month/Day","financialValuesScale":1000000,"shareValuesScale":1000000,"currentPrice":null,"marketCap":null,"enterpriseValue":null,"pe":null,"evEbitda":null,"dividendYield":null,"cash":null,"debt":null,"shares":null,"historical":[{"year":2021,"periodLabel":"FY 2021","periodType":"FY","periodEnd":"YYYY-MM-DD","revenue":null,"grossProfit":null,"ebitda":null,"operatingIncome":null,"netIncome":null,"eps":null,"operatingCashFlow":null,"capex":null,"freeCashFlow":null},{"year":2022,"periodLabel":"FY 2022","periodType":"FY","periodEnd":"YYYY-MM-DD","revenue":null,"grossProfit":null,"ebitda":null,"operatingIncome":null,"netIncome":null,"eps":null,"operatingCashFlow":null,"capex":null,"freeCashFlow":null},{"year":2023,"periodLabel":"FY 2023","periodType":"FY","periodEnd":"YYYY-MM-DD","revenue":null,"grossProfit":null,"ebitda":null,"operatingIncome":null,"netIncome":null,"eps":null,"operatingCashFlow":null,"capex":null,"freeCashFlow":null},{"year":2024,"periodLabel":"FY 2024","periodType":"FY","periodEnd":"YYYY-MM-DD","revenue":null,"grossProfit":null,"ebitda":null,"operatingIncome":null,"netIncome":null,"eps":null,"operatingCashFlow":null,"capex":null,"freeCashFlow":null},{"year":2025,"periodLabel":"FY 2025","periodType":"FY","periodEnd":"YYYY-MM-DD","revenue":null,"grossProfit":null,"ebitda":null,"operatingIncome":null,"netIncome":null,"eps":null,"operatingCashFlow":null,"capex":null,"freeCashFlow":null}],"currentPeriod":{"year":2026,"periodLabel":"2026 YTD","periodType":"YTD","periodEnd":"YYYY-MM-DD","revenue":null,"grossProfit":null,"ebitda":null,"operatingIncome":null,"netIncome":null,"eps":null,"operatingCashFlow":null,"capex":null,"freeCashFlow":null},"ratios":{"grossMargin":null,"operatingMargin":null,"ebitdaMargin":null,"netMargin":null,"roe":null,"roa":null,"roic":null,"currentRatio":null,"debtToEquity":null,"interestCoverage":null},"sources":[{"label":"SEC annual filing","url":"https://...","type":"SEC"},{"label":"Investor relations","url":"https://...","type":"IR"}],"verifiedAsOf":"YYYY-MM-DD"}';
-  }
-
-  function historyRepairPrompt(t, candidate) {
-    var currentYear=new Date().getFullYear();
-    var have=(candidate.historical||[]).map(function(h){return h.year;}).join(", ");
-    return "Today is "+new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})+". The first research pass for "+t+" returned an incomplete fiscal history (years currently present: "+have+"). Using ONLY the issuer's official SEC 10-K/10-Q/8-K earnings exhibits and official investor-relations reports, repair the dataset. Determine the issuer's fiscal-year end and return the FIVE most recent COMPLETED fiscal years available as of today, plus the latest "+currentYear+" YTD/interim period if the current fiscal year is not complete. Explicitly search for the newest annual reports before using older years. Do not omit FY2024 or FY2025 when official reports exist. Preserve GAAP definitions and exact fiscal period-end dates. IMPORTANT: include financialValuesScale and shareValuesScale so all monetary/share values can be converted to raw units; do not mix scales. Missing/unverifiable values must be null, never estimated. Return ONLY a complete corrected company JSON in the same schema as the candidate. Candidate: "+JSON.stringify(candidate);
-  }
-
-  function verificationPrompt(t, candidate) {
-    return "Act as an independent financial-data verifier. Today is "+new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})+". Verify EVERY non-null financial statement value in the candidate JSON for ticker "+t+" against official SEC filings and/or the company's official investor-relations reports. Ignore all third-party aggregators. FIRST verify that the historical array contains the FIVE most recent COMPLETED fiscal years available as of today. If a newer 10-K exists than the latest year in the candidate, add it and remove the oldest year so the array remains five completed FYs. Check fiscal-year labels/end dates, revenue, gross profit, operating income, net income, diluted EPS, cash, debt, diluted shares, operating cash flow, capex, and free cash flow. For FCF verify OCF minus CapEx. Verify the financialValuesScale/shareValuesScale metadata against the units stated in the official tables. EBITDA should stay null unless directly reported or reliably derivable from official filings. CORRECT any mismatches. Do not estimate missing values. If current-year interim data exists, include the latest official YTD period separately in currentPeriod. Return ONLY JSON with keys verifiedData and verification. verification must contain status, checkedValues, correctedValues, notes, latestOfficialPeriod, missingFiscalYears, and sources. Candidate JSON: "+JSON.stringify(candidate);
-  }
-
   function loadLiveQuote(t) {
     setQuoteAsOf(null); setQuoteWarning("");
     fetch(PORTFOLIO_URL + "?tickers=" + encodeURIComponent(t))
@@ -4982,7 +3828,7 @@ function FinancialsTabView({ d }) {
       .then(function(qj){
         var q = qj && qj.holdings ? qj.holdings[t] : null;
         var livePrice = q && Number(q.price);
-        if (!livePrice || isNaN(livePrice)) throw new Error("No live quote returned");
+        if (!livePrice || isNaN(livePrice)) throw new Error("No connected quote returned");
         setCompany(function(prev){
           if(!prev || (prev.ticker||t).toUpperCase()!==t) return prev;
           var next={...prev,currentPrice:livePrice};
@@ -4990,23 +3836,23 @@ function FinancialsTabView({ d }) {
           var vendorCap=Number(q.marketCap);
           var shares=Number(next.shares)||0;
           if(isFinite(vendorCap)&&vendorCap>0){
-            next.marketCap=vendorCap; next.marketCapSource="Live quote provider"; next.marketCapEstimated=false;
+            next.marketCap=vendorCap; next.marketCapSource="Connected quote provider"; next.marketCapEstimated=false;
             if(next.marketCapDerivationAllowed&&shares>0){
               var derived=livePrice*shares, gap=Math.abs(vendorCap-derived)/vendorCap;
-              next.marketCapCrossCheck={derived:derived,differencePct:gap*100,status:gap<=0.35?"PASS":"WARN"};
+              next.marketCapCrossCheck={derived:derived,differencePct:gap*100,status:gap<=0.10?"PASS":"WARN"};
             }
           } else if(next.marketCapDerivationAllowed===true&&shares>0){
             next.marketCap=livePrice*shares; next.marketCapSource=(next.sharesBasis||"SEC shares outstanding")+(next.sharesAsOf?" · as of "+next.sharesAsOf:""); next.marketCapEstimated=false;
           } else {
-            next.marketCap=null; next.marketCapSource=next.multipleShareClasses?"Withheld: multiple listed share classes":next.sharesApproximate?"Withheld: only approximate diluted-share count available":"Live provider did not return market cap";
+            next.marketCap=null; next.marketCapSource=next.multipleShareClasses?"Withheld: multiple listed share classes":next.sharesApproximate?"Withheld: only approximate diluted-share count available":"Connected quote provider did not return market cap";
           }
           var debt=next.debt!=null?Number(next.debt):null, cash=next.cash!=null?Number(next.cash):null;
           if(next.marketCap!=null&&debt!=null&&cash!=null&&next.currency==="USD"&&next.evMetricsMeaningful!==false){
-            next.enterpriseValue=next.marketCap+debt-cash; next.enterpriseValueSource="Market cap + filed debt − filed cash";
+            next.enterpriseValue=next.marketCap+debt-cash; next.enterpriseValueSource="Simplified EV = market cap + filed interest-bearing debt proxy − filed cash proxy";
           } else { next.enterpriseValue=null; }
-          var trailingPE=Number(q.trailingPE!=null?q.trailingPE:q.pe), trailingEPS=Number(q.trailingEps!=null?q.trailingEps:q.epsTrailingTwelveMonths);
+          var trailingPE=Number(q.trailingPE), trailingEPS=Number(q.trailingEps!=null?q.trailingEps:q.epsTrailingTwelveMonths);
           next.pe=isFinite(trailingPE)&&trailingPE>0?trailingPE:null; next.trailingEps=isFinite(trailingEPS)&&trailingEPS>0?trailingEPS:null;
-          var dy=Number(q.dividendYield!=null?q.dividendYield:q.trailingAnnualDividendYield);
+          var dy=Number(q.trailingAnnualDividendYield);
           if(isFinite(dy)&&dy>=0) next.dividendYield=dy<=1?dy*100:dy;
           var latestHist=next.historical&&next.historical.length?next.historical[next.historical.length-1]:null;
           next.priceToLatestFYEps=(latestHist&&Number(latestHist.eps)>0)?livePrice/Number(latestHist.eps):null;
@@ -5015,7 +3861,7 @@ function FinancialsTabView({ d }) {
         });
         setQuoteAsOf(new Date());
       })
-      .catch(function(){setQuoteWarning("Live quote unavailable — price-based valuation metrics are withheld rather than showing stale data.");});
+      .catch(function(){setQuoteWarning("Connected quote unavailable — price-based valuation metrics are withheld rather than showing stale data.");});
   }
 
   function loadEarningsData(t) {
@@ -5047,7 +3893,7 @@ function FinancialsTabView({ d }) {
     var ends=hist.map(function(h){return h.periodEnd;}).filter(Boolean).sort();
     for(var i=1;i<ends.length;i++){if(ends[i]===ends[i-1])return {ok:false,reason:"Duplicate fiscal-year periods returned"};}
     var latestEnd=ends.length?ends[ends.length-1]:null;
-    if(latestEnd){var age=(Date.now()-Date.parse(latestEnd))/86400000;if(isFinite(age)&&age>800)return {ok:false,reason:"SEC annual history appears stale (latest period ended "+latestEnd+")"};}
+    if(latestEnd){var age=(Date.now()-Date.parse(latestEnd))/86400000;if(isFinite(age)&&age>550)return {ok:false,reason:"SEC annual history appears stale (latest period ended "+latestEnd+")"};}
     if(data.currentPeriod&&latestEnd&&data.currentPeriod.periodEnd&&data.currentPeriod.periodEnd<=latestEnd)return {ok:false,reason:"Interim period is not newer than the latest completed fiscal year"};
     return {ok:true,latestEnd:latestEnd,warnings:(data.validation&&data.validation.warnings)||[]};
   }
@@ -5056,7 +3902,7 @@ function FinancialsTabView({ d }) {
     var t = String(rawTicker||"").trim().toUpperCase();
     if (!t) return;
     setTicker(t); setInputTicker(t); setLoading(true); setError(""); setCompany(null); setSubTab("Overview");
-    setEarningsData(null); setEarningsError(""); loadEarningsData(t);
+    setEarningsData(null); setEarningsError("");
     setVerifyStage("Loading SEC XBRL company facts…");
 
     // Primary path: deterministic SEC Company Facts extraction from our Vercel proxy.
@@ -5071,7 +3917,7 @@ function FinancialsTabView({ d }) {
         var quality=validateSecDataset(parsed);
         if(!quality.ok) throw new Error(quality.reason);
         parsed.verification={
-          status:(parsed.validation&&parsed.validation.status==="PASS")?"SEC VERIFIED":"SEC VERIFIED · WARNINGS",
+          status:(parsed.validation&&parsed.validation.status==="PASS")?"SEC XBRL · PASS":"SEC XBRL · WARNINGS",
           checkedValues:(parsed.validation&&parsed.validation.checkedValues)||0,
           correctedValues:0,
           notes:(parsed.dataMethod||"SEC Company Facts deterministic extraction")+". "+(parsed.metricNotes||"Unavailable or structurally ambiguous metrics are left blank."),
@@ -5121,13 +3967,14 @@ function FinancialsTabView({ d }) {
 
   function TrendChart({title,metric,format,color}){
     var hist=company&&company.historical?company.historical:[];
-    var vals=hist.map(function(h){return Number(h[metric])}).filter(function(v){return !isNaN(v)});
-    if(vals.length<2) return <Card><div style={{fontSize:12,fontWeight:700}}>{title}</div><div style={{height:100,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:C.textDim}}>Not enough verified data</div></Card>;
+    var usable=hist.map(function(h){return {h:h,v:Number(h[metric])};}).filter(function(x){return Number.isFinite(x.v);});
+    var vals=usable.map(function(x){return x.v;});
+    if(vals.length<2) return <Card><div style={{fontSize:12,fontWeight:700}}>{title}</div><div style={{height:100,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:C.textDim}}>Not enough filed data</div></Card>;
     var min=Math.min.apply(null,vals), max=Math.max.apply(null,vals), range=max-min||1;
     var W=360,H=105,pad=10;
-    var pts=hist.map(function(h,i){var v=Number(h[metric]);var x=pad+(i/(Math.max(1,hist.length-1)))*(W-pad*2);var y=H-pad-((v-min)/range)*(H-pad*2);return {x:x,y:y,v:v,label:h.periodLabel||h.year};});
+    var pts=usable.map(function(x,i){var v=x.v;var px=pad+(i/(Math.max(1,usable.length-1)))*(W-pad*2);var y=H-pad-((v-min)/range)*(H-pad*2);return {x:px,y:y,v:v,label:x.h.periodLabel||x.h.year,year:x.h.year};});
     var path=pts.map(function(p,i){return (i?"L":"M")+p.x+","+p.y}).join(" ");
-    var latest=pts[pts.length-1], prev=pts[pts.length-2], change=prev&&prev.v?pctChange(latest.v,prev.v):null;
+    var latest=pts[pts.length-1], prev=pts[pts.length-2], change=prev&&prev.v>0&&latest.v>=0?pctChange(latest.v,prev.v):null;
     return <Card>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
         <div><div style={{fontSize:11,fontWeight:700}}>{title}</div><div style={{fontFamily:font,fontSize:18,fontWeight:700,marginTop:4}}>{format?format(latest.v):fmtMoney(latest.v)}</div></div>
@@ -5139,7 +3986,7 @@ function FinancialsTabView({ d }) {
         <path d={path} fill="none" stroke={color||C.cyan} strokeWidth="2" vectorEffect="non-scaling-stroke"/>
         {pts.map(function(p,i){return <circle key={i} cx={p.x} cy={p.y} r="2.5" fill={color||C.cyan}/>})}
       </svg>
-      <div style={{display:"flex",justifyContent:"space-between",fontSize:8,color:C.textDim}}>{hist.map(function(h){return <span key={h.periodLabel||h.year}>{String(h.year).slice(-2)}</span>})}</div>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:8,color:C.textDim}}>{pts.map(function(p){return <span key={p.label}>{String(p.year||p.label).slice(-2)}</span>})}</div>
     </Card>
   }
 
@@ -5180,10 +4027,10 @@ function FinancialsTabView({ d }) {
     var ticks=[0,1,2,3,4].map(function(i){var v=min+(max-min)*(i/4);return {v:v,y:yy(v)}});
     var reported=qs.filter(function(q){return q.reported!==false&&q.actual!=null});
     var latestR=reported.length?reported[reported.length-1]:null;
-    var surprise=latestR&&latestR.estimate!=null&&Number(latestR.estimate)!==0?(Number(latestR.actual)/Number(latestR.estimate)-1)*100:null;
+    var surprise=latestR&&latestR.estimate!=null&&Number(latestR.estimate)!==0?((Number(latestR.actual)-Number(latestR.estimate))/Math.abs(Number(latestR.estimate))*100):null;
     return <Card>
       <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start",marginBottom:10}}>
-        <div><div style={{fontSize:13,fontWeight:800}}>🟢 Earnings & Estimates</div><div style={{fontSize:9,color:C.textDim,marginTop:3}}>{(earningsData&&earningsData.basis==="gaap"?"GAAP":"Adjusted")} EPS vs consensus · oldest → newest · {(earningsData&&earningsData.verificationStatus)||"source check pending"}</div></div>
+        <div><div style={{fontSize:13,fontWeight:800}}>🟢 Earnings & Estimates</div><div style={{fontSize:9,color:C.textDim,marginTop:3}}>{(earningsData&&earningsData.basis)||"Reported EPS vs consensus"} · oldest → newest · {(earningsData&&earningsData.verificationStatus)||"source check pending"}</div></div>
         {earningsData&&earningsData.nextEarningsDate&&<div style={{textAlign:"right"}}><div style={{fontSize:8,color:C.textDim,textTransform:"uppercase",letterSpacing:1}}>Next earnings {earningsData.nextEarningsConfirmed===true?"· CONFIRMED":""}</div><div style={{fontFamily:font,fontSize:12,fontWeight:700,color:C.cyan}}>{earningsData.nextEarningsDate}</div>{earningsData.nextEstimate!=null&&<div style={{fontSize:9,color:C.textMid}}>Consensus EPS ${Number(earningsData.nextEstimate).toFixed(2)}</div>}</div>}
       </div>
       {latestR&&<div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap"}}><Badge label={latestR.period+" actual $"+Number(latestR.actual).toFixed(2)} color={C.text}/>{latestR.estimate!=null&&<Badge label={"estimate $"+Number(latestR.estimate).toFixed(2)} color={C.textDim}/>} {surprise!=null&&<Badge label={(surprise>=0?"Beat +":"Miss ")+surprise.toFixed(1)+"%"} color={surprise>=0?C.green:C.red}/>}</div>}
@@ -5204,9 +4051,12 @@ function FinancialsTabView({ d }) {
   var histDisplay=company ? hist.concat(company.currentPeriod?[company.currentPeriod]:[]) : [];
   var a=assumptions[scenario];
   var forecast=[];
-  var dcfEnabled=!!(company&&company.dcfComparableToQuote!==false&&company.profile!=="financial"&&company.currency==="USD");
-  if(dcfEnabled&&company&&latest&&latest.revenue){
-    var revenue=Number(latest.revenue), prevRevenue=revenue, prevNwc=revenue*(a.nwcPct/100);
+  var forecastEnabled=!!(company&&company.dcfComparableToQuote!==false&&company.profile!=="financial"&&company.currency==="USD"&&latest&&Number(latest.revenue)>0);
+  var dcfBridgeReady=!!(forecastEnabled&&company.cash!=null&&isFinite(Number(company.cash))&&company.debt!=null&&isFinite(Number(company.debt))&&Number(company.shares)>0);
+  var dcfEnabled=forecastEnabled&&dcfBridgeReady;
+  if(forecastEnabled){
+    var revenue=Number(latest.revenue), prevNwc=revenue*(a.nwcPct/100);
+    var baseFY=Number(latest.fiscalYear||latest.year||String(latest.periodEnd||"").slice(0,4));
     for(var y=1;y<=5;y++){
       revenue=revenue*(1+a.revGrowth/100);
       var ebitda=revenue*a.ebitdaMargin/100;
@@ -5218,29 +4068,30 @@ function FinancialsTabView({ d }) {
       var nwc=revenue*a.nwcPct/100;
       var deltaNwc=nwc-prevNwc;
       var ufcf=nopat+da-capex-deltaNwc;
-      forecast.push({year:(Number(latest.year)||2026)+y,revenue:revenue,ebitda:ebitda,ebit:ebit,taxes:taxes,nopat:nopat,da:da,capex:capex,deltaNwc:deltaNwc,ufcf:ufcf});
-      prevNwc=nwc; prevRevenue=revenue;
+      forecast.push({year:isFinite(baseFY)?baseFY+y:"FY+"+y,revenue:revenue,ebitda:ebitda,ebit:ebit,taxes:taxes,nopat:nopat,da:da,capex:capex,deltaNwc:deltaNwc,ufcf:ufcf});
+      prevNwc=nwc;
     }
   }
-  var WACC=a.wacc/100,G=a.terminalGrowth/100,pvFcf=0,terminalValue=0,pvTerminal=0,enterpriseValue=0,equityValue=0,impliedPrice=null,upside=null;
+  var WACC=a.wacc/100,G=a.terminalGrowth/100,pvFcf=null,terminalValue=null,pvTerminal=null,enterpriseValue=null,equityValue=null,impliedPrice=null,upside=null;
   if(dcfEnabled&&forecast.length&&WACC>G){
+    pvFcf=0;
     forecast.forEach(function(f,i){pvFcf+=f.ufcf/Math.pow(1+WACC,i+1)});
     terminalValue=forecast[forecast.length-1].ufcf*(1+G)/(WACC-G);
     pvTerminal=terminalValue/Math.pow(1+WACC,forecast.length);
     enterpriseValue=pvFcf+pvTerminal;
-    equityValue=enterpriseValue-(Number(company.debt)||0)+(Number(company.cash)||0);
-    if(Number(company.shares)>0) impliedPrice=equityValue/Number(company.shares);
-    if(impliedPrice&&Number(company.currentPrice)>0) upside=(impliedPrice/Number(company.currentPrice)-1)*100;
+    equityValue=enterpriseValue-Number(company.debt)+Number(company.cash);
+    impliedPrice=equityValue/Number(company.shares);
+    if(isFinite(impliedPrice)&&Number(company.currentPrice)>0) upside=(impliedPrice/Number(company.currentPrice)-1)*100;
   }
 
   var revYoY=pctChange(latest.revenue,prior.revenue);
-  var niYoY=pctChange(latest.netIncome,prior.netIncome);
+  var niYoY=Number(prior.netIncome)>0&&Number(latest.netIncome)>=0?pctChange(latest.netIncome,prior.netIncome):null;
   var revCagr=hist.length>1?cagr(Number(first.revenue),Number(latest.revenue),hist.length-1):null;
   var fcfMargin=latest.revenue&&latest.freeCashFlow!=null?latest.freeCashFlow/latest.revenue*100:null;
   var netCash=(company&&company.cash!=null&&company.debt!=null)?Number(company.cash)-Number(company.debt):null;
   var verification=company&&company.verification?company.verification:{};
-  var verifyColor=(String(verification.status||"").indexOf("SEC VERIFIED")===0&&!(verification.warnings||[]).length)?C.green:C.orange;
-  var statementRows=[["Revenue","revenue"],["Gross Profit","grossProfit"],["EBITDA","ebitda"],["Operating Income","operatingIncome"],["Net Income","netIncome"],["Free Cash Flow","freeCashFlow"]];
+  var verifyColor=(String(verification.status||"").indexOf("SEC XBRL · PASS")===0&&!(verification.warnings||[]).length)?C.green:C.orange;
+  var statementRows=[["Revenue","revenue"],["Gross Profit","grossProfit"],["EBITDA (derived proxy)","ebitda"],["Operating Income","operatingIncome"],["Net Income","netIncome"],["Free Cash Flow","freeCashFlow"]];
   var ratioKeys=["grossMargin","operatingMargin","ebitdaMargin","netMargin","roe","roa","roic","currentRatio","debtToEquity","interestCoverage"];
 
   function NumInput({label,k}){return <label style={{display:"block"}}><div style={{fontSize:9,color:C.textDim,marginBottom:4}}>{label}</div><div style={{display:"flex",alignItems:"center",background:C.cardAlt,border:"1px solid "+C.border,borderRadius:6,padding:"0 8px"}}><input type="number" step="0.1" value={a[k]} onChange={function(e){var v=Number(e.target.value);setAssumptions(function(prev){var n={...prev};n[scenario]={...n[scenario],[k]:v};return n})}} style={{width:"100%",background:"transparent",border:0,color:C.text,fontFamily:font,fontSize:11,padding:"8px 0",outline:"none"}}/><span style={{fontSize:9,color:C.textDim}}>%</span></div></label>}
@@ -5249,15 +4100,15 @@ function FinancialsTabView({ d }) {
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <div>
         <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:18}}>💼</span><div style={{fontSize:18,fontWeight:800}}>Company Financial Analysis</div>{company&&<Badge label={verification.status||"PRIMARY SOURCES"} color={verifyColor}/>}</div>
-        <div style={{fontSize:9,color:C.textDim,marginTop:4}}>Official filings · Independent verification · Live quote · Forecasting · DCF valuation</div>
+        <div style={{fontSize:9,color:C.textDim,marginTop:4}}>SEC XBRL filings · Connected quote feed · Illustrative forecasting · DCF sensitivity analysis</div>
       </div>
       <div style={{display:"flex",gap:7,alignItems:"center"}}>
         <input value={inputTicker} onChange={function(e){setInputTicker(e.target.value.toUpperCase())}} onKeyDown={function(e){if(e.key==="Enter")loadCompany(inputTicker)}} placeholder="Ticker" style={{width:110,background:C.card,border:"1px solid "+C.border,borderRadius:7,color:C.text,fontFamily:font,fontSize:11,padding:"9px 10px",outline:"none"}}/>
-        <button onClick={function(){loadCompany(inputTicker)}} disabled={loading} style={{background:"linear-gradient(135deg,"+C.cyan+","+C.blue+")",border:0,borderRadius:7,color:"#061018",fontWeight:800,fontSize:10,padding:"10px 16px",cursor:loading?"default":"pointer",opacity:loading?.65:1}}>{loading?"Verifying…":"Analyze"}</button>
+        <button onClick={function(){loadCompany(inputTicker)}} disabled={loading} style={{background:"linear-gradient(135deg,"+C.cyan+","+C.blue+")",border:0,borderRadius:7,color:"#061018",fontWeight:800,fontSize:10,padding:"10px 16px",cursor:loading?"default":"pointer",opacity:loading?.65:1}}>{loading?"Loading…":"Analyze"}</button>
       </div>
     </div>
 
-    {loading&&<Card><div style={{display:"flex",alignItems:"center",gap:10}}><Spinner/><div><div style={{fontSize:11,fontWeight:700}}>Loading {ticker}</div><div style={{fontSize:9,color:C.textDim,marginTop:2}}>{verifyStage||"Researching official filings…"}</div></div></div></Card>}
+    {loading&&<Card><div style={{display:"flex",alignItems:"center",gap:10}}><Spinner/><div><div style={{fontSize:11,fontWeight:700}}>Loading {ticker}</div><div style={{fontSize:9,color:C.textDim,marginTop:2}}>{verifyStage||"Loading SEC filings…"}</div></div></div></Card>}
     {error&&<div style={{background:C.red+"12",border:"1px solid "+C.red+"55",borderRadius:8,padding:"10px 12px",color:C.red,fontSize:10}}>{error}</div>}
 
     {company&&<>
@@ -5268,23 +4119,23 @@ function FinancialsTabView({ d }) {
             <div style={{fontSize:9,color:C.textDim,marginTop:5}}>{company.sector||"—"} · {company.industry||"—"}</div>
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-            <Badge label={(verification.checkedValues||0)+" values checked"} color={verifyColor}/>
-            {(verification.correctedValues||0)>0&&<Badge label={(verification.correctedValues||0)+" corrected"} color={C.orange}/>} 
-            {company.verifiedAsOf&&<span style={{fontSize:9,color:C.textDim}}>Verified {company.verifiedAsOf}</span>}
+            <Badge label={(verification.checkedValues||0)+" SEC values loaded"} color={verifyColor}/>
+            {company.verifiedAsOf&&<span style={{fontSize:9,color:C.textDim}}>Retrieved {company.verifiedAsOf}</span>}
           </div>
         </div>
-        <div style={{display:"flex",gap:6,marginTop:12,flexWrap:"wrap"}}>{["Overview","Statements","Earnings","Forecast","Valuation"].map(function(t){return <button key={t} onClick={function(){setSubTab(t)}} style={{background:subTab===t?C.blue+"22":"transparent",border:"1px solid "+(subTab===t?C.blue+"66":C.border),borderRadius:5,color:subTab===t?C.text:C.textDim,padding:"5px 10px",fontSize:9,cursor:"pointer"}}>{t}</button>})}</div>
+        <div style={{display:"flex",gap:6,marginTop:12,flexWrap:"wrap"}}>{["Overview","Statements","Earnings","Forecast","Valuation"].map(function(t){return <button key={t} onClick={function(){setSubTab(t);if(t==="Earnings"&&!earningsData&&!earningsLoading)loadEarningsData(ticker)}} style={{background:subTab===t?C.blue+"22":"transparent",border:"1px solid "+(subTab===t?C.blue+"66":C.border),borderRadius:5,color:subTab===t?C.text:C.textDim,padding:"5px 10px",fontSize:9,cursor:"pointer"}}>{t}</button>})}</div>
       </Card>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(6,minmax(0,1fr))",gap:9}}>
-        <Metric icon="●" label="Price" value={company.currentPrice?"$"+Number(company.currentPrice).toFixed(2):"—"} color={C.cyan} sub={quoteAsOf?"Live · "+quoteAsOf.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}):"Live quote pending"}/>
-        <Metric icon="◫" label="Market Cap" value={fmtMoney(company.marketCap)} color={C.blue} sub={company.marketCap!=null?(company.marketCapSource||"Live/derived"):(company.marketCapSource||"Requires live provider market cap or safe filed-share fallback")}/>
-        <Metric icon="◇" label="Enterprise Value" value={fmtMoney(company.enterpriseValue)} color={C.purple} sub={company.profile==="financial"?"Not emphasized for financial institutions":company.currency!=="USD"?"Withheld across currency mismatch":company.enterpriseValue!=null?(company.enterpriseValueSource||"Simplified EV"):"Requires market cap + cash + debt"}/>
-        <Metric icon="×" label="P / E (TTM)" value={company.pe!=null?Number(company.pe).toFixed(1)+"x":"—"} sub={company.pe!=null?"Quote-provider trailing P/E":"TTM P/E unavailable"}/>
-        <Metric icon="×" label="EV / FY EBITDA" value={company.evToLatestFYEBITDA!=null?Number(company.evToLatestFYEBITDA).toFixed(1)+"x":"—"} sub={company.evMetricsMeaningful===false?"Not meaningful for this industry":"EV ÷ latest completed FY EBITDA"}/>
-        <Metric icon="%" label="Dividend Yield" value={company.dividendYield!=null?fmtPct(company.dividendYield):"—"}/>
+        <Metric icon="●" label="Price" value={company.currentPrice?"$"+Number(company.currentPrice).toFixed(2):"—"} color={C.cyan} sub={quoteAsOf?"Quote retrieved · "+quoteAsOf.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}):"Quote pending"}/>
+        <Metric icon="◫" label="Market Cap" value={fmtMoney(company.marketCap)} color={C.blue} sub={company.marketCap!=null?(company.marketCapSource||"Quote/derived"):(company.marketCapSource||"Requires quote-provider market cap or safe filed-share fallback")}/>
+        <Metric icon="◇" label="Simplified Enterprise Value" value={fmtMoney(company.enterpriseValue)} color={C.purple} sub={company.profile==="financial"?"Not emphasized for financial institutions":company.currency!=="USD"?"Withheld across currency mismatch":company.enterpriseValue!=null?(company.enterpriseValueSource||"Simplified EV"):"Requires market cap + cash + debt"}/>
+        <Metric icon="×" label="P / E (TTM)" value={company.pe!=null?Number(company.pe).toFixed(1)+"x":"—"} sub={company.pe!=null?"Connected quote-provider trailing P/E":"TTM P/E unavailable"}/>
+        <Metric icon="×" label="Simplified EV / Derived FY EBITDA*" value={company.evToLatestFYEBITDA!=null?Number(company.evToLatestFYEBITDA).toFixed(1)+"x":"—"} sub={company.evMetricsMeaningful===false?"Not meaningful for this industry":"EV ÷ filing-derived FY EBITDA proxy"}/>
+        <Metric icon="%" label="Trailing Dividend Yield" value={company.dividendYield!=null?fmtPct(company.dividendYield):"—"} sub={company.dividendYield!=null?"Connected quote provider":"Unavailable"}/>
       </div>
       {quoteWarning&&<div style={{fontSize:9,color:C.orange,background:C.orange+"0D",border:"1px solid "+C.orange+"33",borderRadius:6,padding:"7px 9px"}}>{quoteWarning}</div>}
+      {company.marketCapCrossCheck&&company.marketCapCrossCheck.status==="WARN"&&<div style={{fontSize:9,color:C.orange,background:C.orange+"0D",border:"1px solid "+C.orange+"33",borderRadius:6,padding:"7px 9px"}}>Market-cap cross-check warning: the connected provider value differs from price × the latest usable SEC share count by {company.marketCapCrossCheck.differencePct.toFixed(1)}%. The provider market cap remains displayed, and the discrepancy is disclosed rather than silently reconciled.</div>}
 
       {subTab==="Overview"&&<>
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:9}}>
@@ -5304,15 +4155,15 @@ function FinancialsTabView({ d }) {
             <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}><thead><tr><th style={{textAlign:"left",padding:7,color:C.textDim}}>Metric</th>{histDisplay.map(function(h){return <th key={h.periodLabel||h.year} style={{textAlign:"right",padding:7,color:h.periodType==="YTD"?C.orange:C.textDim}}>{h.periodLabel||h.year}</th>})}</tr></thead><tbody>{statementRows.map(function(r){return <tr key={r[1]}><td style={{padding:7,borderTop:"1px solid "+C.border,color:C.textMid}}>{r[0]}</td>{histDisplay.map(function(h){return <td key={h.periodLabel||h.year} style={{padding:7,borderTop:"1px solid "+C.border,textAlign:"right",fontFamily:font,color:h.periodType==="YTD"?C.orange:C.text}}>{fmtMoney(h[r[1]])}</td>})}</tr>})}<tr><td style={{padding:7,borderTop:"1px solid "+C.border,color:C.textMid}}>Diluted EPS (SEC)</td>{histDisplay.map(function(h){return <td key={h.periodLabel||h.year} style={{padding:7,borderTop:"1px solid "+C.border,textAlign:"right",fontFamily:font,color:h.periodType==="YTD"?C.orange:C.text}}>{h.eps!=null?"$"+Number(h.eps).toFixed(2):"—"}</td>})}</tr></tbody></table></div>
           </Card>
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
-            <Card><div style={{fontSize:12,fontWeight:700,marginBottom:9}}>🧾 Key Ratios</div>{ratioKeys.map(function(k){var v=company.ratios?company.ratios[k]:null;var label=k.replace(/([A-Z])/g," $1").replace(/^./,function(s){return s.toUpperCase()});var isMult=["currentRatio","debtToEquity","interestCoverage"].includes(k);return <Row key={k} label={label} val={v==null?"—":isMult?Number(v).toFixed(2)+"x":fmtPct(v)}/>})}</Card>
-            <Card><div style={{fontSize:12,fontWeight:700,marginBottom:8}}>✅ Data Integrity</div><div style={{display:"flex",alignItems:"center",gap:7,marginBottom:8}}><Badge label={verification.status||"PARTIAL"} color={verifyColor}/><span style={{fontSize:9,color:C.textDim}}>{verification.latestOfficialPeriod||latest.periodLabel||"Latest official filing"}</span></div><div style={{fontSize:9,color:C.textMid,lineHeight:1.55,marginBottom:8}}>{verification.notes||"Statement values are restricted to SEC filings and company investor relations sources."}</div>{(company.sources||verification.sources||[]).slice(0,4).map(function(src,i){return <a key={i} href={src.url} target="_blank" rel="noreferrer" style={{display:"block",fontSize:9,color:C.cyan,textDecoration:"none",marginBottom:5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>↗ {src.label||src.type||"Official source"}</a>})}{(verification.warnings||[]).slice(0,3).map(function(w,i){return <div key={"warn"+i} style={{fontSize:8,color:C.orange,lineHeight:1.45,marginTop:5}}>⚠ {w}</div>})}<div style={{marginTop:9,paddingTop:8,borderTop:"1px solid "+C.border}}><Row label="Cash" val={fmtMoney(company.cash)}/><Row label="Debt" val={fmtMoney(company.debt)}/></div></Card>
+            <Card><div style={{fontSize:12,fontWeight:700,marginBottom:9}}>🧾 Key Ratios</div>{ratioKeys.map(function(k){var v=company.ratios?company.ratios[k]:null;var label=k==="ebitdaMargin"?"EBITDA Margin (derived proxy)":k.replace(/([A-Z])/g," $1").replace(/^./,function(s){return s.toUpperCase()});var isMult=["currentRatio","debtToEquity","interestCoverage"].includes(k);return <Row key={k} label={label} val={v==null?"—":isMult?Number(v).toFixed(2)+"x":fmtPct(v)}/>})}</Card>
+            <Card><div style={{fontSize:12,fontWeight:700,marginBottom:8}}>✅ Data Integrity</div><div style={{display:"flex",alignItems:"center",gap:7,marginBottom:8}}><Badge label={verification.status||"PARTIAL"} color={verifyColor}/><span style={{fontSize:9,color:C.textDim}}>{verification.latestOfficialPeriod||latest.periodLabel||"Latest official filing"}</span></div><div style={{fontSize:9,color:C.textMid,lineHeight:1.55,marginBottom:8}}>{verification.notes||"Statement values are restricted to deterministic SEC Company Facts extraction. Unsupported or ambiguous values remain blank."}</div>{(company.sources||verification.sources||[]).slice(0,4).map(function(src,i){return <a key={i} href={src.url} target="_blank" rel="noreferrer" style={{display:"block",fontSize:9,color:C.cyan,textDecoration:"none",marginBottom:5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>↗ {src.label||src.type||"Official source"}</a>})}{(verification.warnings||[]).slice(0,3).map(function(w,i){return <div key={"warn"+i} style={{fontSize:8,color:C.orange,lineHeight:1.45,marginTop:5}}>⚠ {w}</div>})}<div style={{marginTop:9,paddingTop:8,borderTop:"1px solid "+C.border}}><Row label="Filed cash proxy" val={fmtMoney(company.cash)}/><Row label="Cash basis" val={company.cashBasis||"—"}/><Row label="Debt" val={fmtMoney(company.debt)}/></div></Card>
           </div>
         </div>
       </>}
 
       {subTab==="Statements"&&<>
-        <Card><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}><div style={{fontSize:14,fontWeight:700}}>📚 Verified Financial Statements</div><Badge label={verification.status||"PARTIAL"} color={verifyColor}/></div><div style={{fontSize:9,color:C.textDim,marginBottom:12}}>Annual values are completed fiscal years only. The newest structured interim filing (10-Q or eligible 6-K) is shown separately and is never annualized.</div><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr><th style={{textAlign:"left",padding:8,color:C.textDim}}>Metric</th>{histDisplay.map(function(h){return <th key={h.periodLabel||h.year} style={{textAlign:"right",padding:8,color:h.periodType==="YTD"?C.orange:C.textDim}}><div>{h.periodLabel||h.year}</div>{h.periodEnd&&<div style={{fontSize:7,fontWeight:400,marginTop:2}}>{h.periodEnd}</div>}</th>})}</tr></thead><tbody>{statementRows.concat([["Diluted EPS (SEC)","eps"]]).map(function(r){return <tr key={r[1]}><td style={{padding:8,borderTop:"1px solid "+C.border,color:C.textMid,fontWeight:600}}>{r[0]}</td>{histDisplay.map(function(h){var v=h[r[1]];return <td key={h.periodLabel||h.year} style={{padding:8,borderTop:"1px solid "+C.border,textAlign:"right",fontFamily:font,color:h.periodType==="YTD"?C.orange:C.text}}>{r[1]==="eps"?(v!=null?"$"+Number(v).toFixed(2):"—"):fmtMoney(v)}</td>})}</tr>})}</tbody></table></div></Card>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}><Card><div style={{fontSize:12,fontWeight:700,marginBottom:8}}>Balance Sheet Snapshot</div><Row label="Cash & equivalents" val={fmtMoney(company.cash)}/><Row label="Total debt" val={fmtMoney(company.debt)}/><Row label="Net cash / (debt)" val={fmtMoney(netCash)} color={netCash==null?C.textDim:(netCash>=0?C.green:C.red)}/><Row label="Filed shares" val={company.shares?Number(company.shares).toLocaleString():"—"}/><Row label="Share basis" val={company.sharesBasis||"—"}/></Card><Card><div style={{fontSize:12,fontWeight:700,marginBottom:8}}>Verification Summary</div><Row label="Values checked" val={verification.checkedValues||"—"}/><Row label="Corrections made" val={verification.correctedValues||0}/><Row label="Verified as of" val={company.verifiedAsOf||"—"}/><div style={{fontSize:9,color:C.textDim,lineHeight:1.5,marginTop:8}}>If a figure cannot be confirmed from SEC XBRL, the dashboard leaves it blank rather than estimating it. Historical per-share values are shown from SEC filings; older periods around stock splits may have different as-filed presentation bases.</div></Card></div>
+        <Card><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}><div style={{fontSize:14,fontWeight:700}}>📚 SEC Filed Financial Statements</div><Badge label={verification.status||"PARTIAL"} color={verifyColor}/></div><div style={{fontSize:9,color:C.textDim,marginBottom:12}}>Annual values are completed fiscal years only. For supported U.S. domestic issuers, the newest structured 10-Q interim period is shown separately and is never annualized.</div><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr><th style={{textAlign:"left",padding:8,color:C.textDim}}>Metric</th>{histDisplay.map(function(h){return <th key={h.periodLabel||h.year} style={{textAlign:"right",padding:8,color:h.periodType==="YTD"?C.orange:C.textDim}}><div>{h.periodLabel||h.year}</div>{h.periodEnd&&<div style={{fontSize:7,fontWeight:400,marginTop:2}}>{h.periodEnd}</div>}</th>})}</tr></thead><tbody>{statementRows.concat([["Diluted EPS (SEC)","eps"]]).map(function(r){return <tr key={r[1]}><td style={{padding:8,borderTop:"1px solid "+C.border,color:C.textMid,fontWeight:600}}>{r[0]}</td>{histDisplay.map(function(h){var v=h[r[1]];return <td key={h.periodLabel||h.year} style={{padding:8,borderTop:"1px solid "+C.border,textAlign:"right",fontFamily:font,color:h.periodType==="YTD"?C.orange:C.text}}>{r[1]==="eps"?(v!=null?"$"+Number(v).toFixed(2):"—"):fmtMoney(v)}</td>})}</tr>})}</tbody></table></div></Card>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}><Card><div style={{fontSize:12,fontWeight:700,marginBottom:8}}>Balance Sheet Snapshot</div><Row label="Filed cash proxy" val={fmtMoney(company.cash)}/><Row label="Cash basis" val={company.cashBasis||"—"}/><Row label="Total debt" val={fmtMoney(company.debt)}/><Row label="Net cash / (debt)" val={fmtMoney(netCash)} color={netCash==null?C.textDim:(netCash>=0?C.green:C.red)}/><Row label="Filed shares" val={company.shares?Number(company.shares).toLocaleString():"—"}/><Row label="Share basis" val={company.sharesBasis||"—"}/></Card><Card><div style={{fontSize:12,fontWeight:700,marginBottom:8}}>Verification Summary</div><Row label="SEC values loaded" val={verification.checkedValues||"—"}/><Row label="Retrieved as of" val={company.retrievedAsOf?String(company.retrievedAsOf).slice(0,10):(company.verifiedAsOf||"—")}/><div style={{fontSize:9,color:C.textDim,lineHeight:1.5,marginTop:8}}>If a figure cannot be extracted consistently from SEC XBRL, the dashboard leaves it blank rather than estimating it. EBITDA, when shown, is a derived proxy from operating income plus D&A; it is not adjusted EBITDA. Historical per-share values may reflect the presentation basis in the underlying filing. The DCF per-share bridge uses the SEC share count returned by the endpoint, not a separately forecast diluted-share schedule.</div></Card></div>
       </>}
 
       {subTab==="Earnings"&&<>
@@ -5322,22 +4173,22 @@ function FinancialsTabView({ d }) {
         </div>
         <div style={{marginTop:12,display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:9}}>
           <Metric label="Next Earnings" value={(earningsData&&earningsData.nextEarningsDate)||"—"} color={C.cyan} sub={earningsData&&earningsData.nextEarningsConfirmed===true?"Company-confirmed date":"Unconfirmed / unavailable"} icon="◷"/>
-          <Metric label="Consensus EPS" value={earningsData&&earningsData.nextEstimate!=null?"$"+Number(earningsData.nextEstimate).toFixed(2):"—"} color={C.purple} sub={(earningsData&&earningsData.basis==="gaap"?"GAAP":"Adjusted")+" analyst consensus"} icon="◎"/>
-          <Metric label="Data As Of" value={(earningsData&&earningsData.dataAsOf)||"—"} color={C.text} sub="Earnings estimate research timestamp" icon="✓"/>
+          <Metric label="Consensus EPS" value={earningsData&&earningsData.nextEstimate!=null?"$"+Number(earningsData.nextEstimate).toFixed(2):"—"} color={C.purple} sub={earningsData&&earningsData.provider?("Provider-defined EPS basis · "+earningsData.provider):"Analyst consensus unavailable"} icon="◎"/>
+          <Metric label="Data As Of" value={(earningsData&&earningsData.dataAsOf)||"—"} color={C.text} sub="Earnings provider retrieval date" icon="✓"/>
         </div>
         <div style={{fontSize:9,color:C.textDim,lineHeight:1.55,marginTop:10,padding:"9px 11px",border:"1px solid "+C.border,borderRadius:7,background:C.cardAlt}}>SEC XBRL remains the source of truth for filed financial statements. Analyst EPS estimates are not SEC-reported figures and can vary by provider. The dashboard only plots estimate values returned with a cited market-data source; unavailable estimates remain blank. TradingView widget data may be real-time, delayed, or end-of-day depending on the market and instrument.</div>
       </>}
 
-      {subTab==="Forecast"&&(!dcfEnabled?<Card><div style={{fontSize:13,fontWeight:700,marginBottom:6}}>Forecast / DCF intentionally disabled</div><div style={{fontSize:10,color:C.textMid,lineHeight:1.6}}>This issuer uses a financial-institution profile, multiple listed share classes, or a non-USD reporting currency. The dashboard will not mix incompatible accounting and quote units. Filed statements remain available in Overview and Statements.</div></Card>:<div style={{display:"grid",gridTemplateColumns:"330px 1fr",gap:12}}>
-        <Card><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><div style={{fontSize:13,fontWeight:700}}>⚙ Forecast Assumptions</div><div style={{display:"flex",gap:4}}>{["Bear","Base","Bull"].map(function(s){var cc=s==="Bear"?C.red:s==="Bull"?C.green:C.blue;return <button key={s} onClick={function(){setScenario(s)}} style={{background:scenario===s?cc+"22":"transparent",border:"1px solid "+(scenario===s?cc+"66":C.border),borderRadius:4,color:scenario===s?cc:C.textDim,padding:"4px 7px",fontSize:9,cursor:"pointer"}}>{s}</button>})}</div></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><NumInput label="Revenue Growth" k="revGrowth"/><NumInput label="EBITDA Margin" k="ebitdaMargin"/><NumInput label="Tax Rate" k="taxRate"/><NumInput label="D&A / Revenue" k="daPct"/><NumInput label="CapEx / Revenue" k="capexPct"/><NumInput label="NWC / ΔRevenue" k="nwcPct"/><NumInput label="WACC" k="wacc"/><NumInput label="Terminal Growth" k="terminalGrowth"/></div><div style={{fontSize:9,color:C.textDim,lineHeight:1.5,marginTop:12}}>Forecasts are model assumptions built on the latest verified fiscal year. They are not reported company guidance.</div></Card>
+      {subTab==="Forecast"&&(!forecastEnabled?<Card><div style={{fontSize:13,fontWeight:700,marginBottom:6}}>Forecast / DCF intentionally disabled</div><div style={{fontSize:10,color:C.textMid,lineHeight:1.6}}>This issuer uses a financial-institution profile, an unsupported share/currency structure, or lacks a usable SEC revenue base. The dashboard will not manufacture an operating forecast from incompatible inputs. Filed statements remain available in Overview and Statements.</div></Card>:<div style={{display:"grid",gridTemplateColumns:"330px 1fr",gap:12}}>
+        <Card><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><div style={{fontSize:13,fontWeight:700}}>⚙ Forecast Assumptions</div><div style={{display:"flex",gap:4}}>{["Bear","Base","Bull"].map(function(s){var cc=s==="Bear"?C.red:s==="Bull"?C.green:C.blue;return <button key={s} onClick={function(){setScenario(s)}} style={{background:scenario===s?cc+"22":"transparent",border:"1px solid "+(scenario===s?cc+"66":C.border),borderRadius:4,color:scenario===s?cc:C.textDim,padding:"4px 7px",fontSize:9,cursor:"pointer"}}>{s}</button>})}</div></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><NumInput label="Revenue Growth" k="revGrowth"/><NumInput label="EBITDA Margin" k="ebitdaMargin"/><NumInput label="Tax Rate" k="taxRate"/><NumInput label="D&A / Revenue" k="daPct"/><NumInput label="CapEx / Revenue" k="capexPct"/><NumInput label="NWC / Revenue" k="nwcPct"/><NumInput label="WACC" k="wacc"/><NumInput label="Terminal Growth" k="terminalGrowth"/></div><div style={{fontSize:9,color:C.textDim,lineHeight:1.5,marginTop:12}}>Forecasts are illustrative model assumptions anchored to the latest SEC-loaded fiscal year when the needed driver is available. Otherwise the displayed default assumption is used. They are not reported company guidance or analyst consensus.</div></Card>
         <Card><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:9}}><div style={{fontSize:13,fontWeight:700}}>📊 5-Year Operating Forecast</div><Badge label={scenario+" Case"} color={scenario==="Bear"?C.red:scenario==="Bull"?C.green:C.blue}/></div><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}><thead><tr>{["Year","Revenue","EBITDA","EBIT","Taxes","NOPAT","D&A","CapEx","ΔNWC","UFCF"].map(function(h){return <th key={h} style={{textAlign:h==="Year"?"left":"right",padding:6,color:C.textDim}}>{h}</th>})}</tr></thead><tbody>{forecast.map(function(f){return <tr key={f.year}>{[f.year,f.revenue,f.ebitda,f.ebit,f.taxes,f.nopat,f.da,f.capex,f.deltaNwc,f.ufcf].map(function(v,i){return <td key={i} style={{padding:7,borderTop:"1px solid "+C.border,textAlign:i===0?"left":"right",fontFamily:font,color:i===9?C.green:C.text}}>{i===0?v:fmtMoney(v)}</td>})}</tr>})}</tbody></table></div></Card>
       </div>)}
 
-      {subTab==="Valuation"&&(!dcfEnabled?<Card><div style={{fontSize:13,fontWeight:700,marginBottom:6}}>Valuation bridge unavailable</div><div style={{fontSize:10,color:C.textMid,lineHeight:1.6}}>A per-share DCF is withheld because the accounting currency/share structure is not safely comparable to the U.S. quote, or because EV-based valuation is not meaningful for this financial-industry profile.</div></Card>:<>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:9}}><Metric label="PV of 5Y FCF" value={fmtMoney(pvFcf)} color={C.cyan}/><Metric label="PV Terminal Value" value={fmtMoney(pvTerminal)} color={C.blue}/><Metric label="Enterprise Value" value={fmtMoney(enterpriseValue)} color={C.purple}/><Metric label="Equity Value" value={fmtMoney(equityValue)} color={C.green}/><Metric label="Implied Share Price" value={impliedPrice?"$"+impliedPrice.toFixed(2):"—"} color={upside!=null?(upside>=0?C.green:C.red):C.text} sub={upside!=null?((upside>=0?"+":"")+upside.toFixed(1)+"% vs live price"):"Requires live quote + shares"}/></div>
+      {subTab==="Valuation"&&(!dcfEnabled?<Card><div style={{fontSize:13,fontWeight:700,marginBottom:6}}>Valuation bridge unavailable</div><div style={{fontSize:10,color:C.textMid,lineHeight:1.6}}>A per-share DCF is withheld unless the issuer has a supported non-financial USD profile plus filed cash, an interest-bearing-debt proxy, and a usable SEC share count. Missing bridge inputs are not treated as zero.</div></Card>:<>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:9}}><Metric label="PV of 5Y FCF" value={fmtMoney(pvFcf)} color={C.cyan}/><Metric label="PV Terminal Value" value={fmtMoney(pvTerminal)} color={C.blue}/><Metric label="Simplified Enterprise Value" value={fmtMoney(enterpriseValue)} color={C.purple}/><Metric label="Equity Value" value={fmtMoney(equityValue)} color={C.green}/><Metric label="Implied Share Price" value={impliedPrice?"$"+impliedPrice.toFixed(2):"—"} color={upside!=null?(upside>=0?C.green:C.red):C.text} sub={upside!=null?((upside>=0?"+":"")+upside.toFixed(1)+"% vs connected quote"):"Requires connected quote + shares"}/></div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          <Card><div style={{fontSize:13,fontWeight:700,marginBottom:10}}>💰 DCF Bridge</div><Row label="PV of Forecast UFCF" val={fmtMoney(pvFcf)}/><Row label="Terminal Value" val={fmtMoney(terminalValue)}/><Row label="PV of Terminal Value" val={fmtMoney(pvTerminal)}/><div style={{borderTop:"1px solid "+C.border,margin:"8px 0"}}/><Row label="Enterprise Value" val={fmtMoney(enterpriseValue)}/><Row label="Less: Debt" val={fmtMoney(company.debt)}/><Row label="Add: Cash" val={fmtMoney(company.cash)}/><Row label="Equity Value" val={fmtMoney(equityValue)}/><Row label="Diluted Shares" val={company.shares?Number(company.shares).toLocaleString():"—"}/><div style={{borderTop:"1px solid "+C.border,margin:"8px 0"}}/><Row label="Current Price" val={company.currentPrice?"$"+Number(company.currentPrice).toFixed(2):"—"}/><Row label="DCF Implied Price" val={impliedPrice?"$"+impliedPrice.toFixed(2):"—"}/><Row label="Upside / Downside" val={upside!=null?(upside>=0?"+":"")+upside.toFixed(1)+"%":"—"} color={upside!=null?(upside>=0?C.green:C.red):C.text}/></Card>
-          <Card><div style={{fontSize:13,fontWeight:700,marginBottom:4}}>🧮 WACC × Terminal Growth</div><div style={{fontSize:9,color:C.textDim,marginBottom:10}}>Implied price sensitivity; highlighted cell is the active model assumption.</div><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"separate",borderSpacing:4,fontSize:10}}><thead><tr><th style={{padding:6,color:C.textDim}}>WACC \ g</th>{[-0.5,0,0.5].map(function(x){return <th key={x} style={{padding:6,color:C.textDim,textAlign:"right"}}>{(a.terminalGrowth+x).toFixed(1)}%</th>})}</tr></thead><tbody>{[-1,0,1].map(function(wx){var ww=a.wacc+wx;return <tr key={wx}><td style={{padding:7,fontFamily:font,color:C.textDim}}>{ww.toFixed(1)}%</td>{[-0.5,0,0.5].map(function(gx){var w=ww/100,g=(a.terminalGrowth+gx)/100,pt=null;if(forecast.length&&w>g&&company.shares){var pv=0;forecast.forEach(function(f,i){pv+=f.ufcf/Math.pow(1+w,i+1)});var tv=forecast[4].ufcf*(1+g)/(w-g);var ev=pv+tv/Math.pow(1+w,5);var eq=ev-(Number(company.debt)||0)+(Number(company.cash)||0);pt=eq/Number(company.shares);}var base=wx===0&&gx===0;return <td key={gx} style={{padding:10,border:"1px solid "+(base?C.blue+"77":C.border),borderRadius:5,textAlign:"right",fontFamily:font,background:base?C.blue+"18":C.cardAlt,color:base?C.cyan:C.text}}>{pt?"$"+pt.toFixed(2):"—"}</td>})}</tr>})}</tbody></table></div></Card>
+          <Card><div style={{fontSize:13,fontWeight:700,marginBottom:10}}>💰 Illustrative DCF Bridge</div><Row label="PV of Forecast UFCF" val={fmtMoney(pvFcf)}/><Row label="Terminal Value" val={fmtMoney(terminalValue)}/><Row label="PV of Terminal Value" val={fmtMoney(pvTerminal)}/><div style={{borderTop:"1px solid "+C.border,margin:"8px 0"}}/><Row label="Simplified Enterprise Value" val={fmtMoney(enterpriseValue)}/><Row label="Less: Debt" val={fmtMoney(company.debt)}/><Row label="Add: Filed cash proxy" val={fmtMoney(company.cash)}/><Row label="Equity Value" val={fmtMoney(equityValue)}/><Row label="SEC Shares Outstanding" val={company.shares?Number(company.shares).toLocaleString():"—"}/><div style={{borderTop:"1px solid "+C.border,margin:"8px 0"}}/><Row label="Current Price" val={company.currentPrice?"$"+Number(company.currentPrice).toFixed(2):"—"}/><Row label="DCF Implied Price" val={impliedPrice?"$"+impliedPrice.toFixed(2):"—"}/><Row label="Upside / Downside" val={upside!=null?(upside>=0?"+":"")+upside.toFixed(1)+"%":"—"} color={upside!=null?(upside>=0?C.green:C.red):C.text}/></Card>
+          <Card><div style={{fontSize:13,fontWeight:700,marginBottom:4}}>🧮 Illustrative WACC × Terminal Growth</div><div style={{fontSize:9,color:C.textDim,marginBottom:10}}>Illustrative implied-price sensitivity; highlighted cell is the active model assumption. This is not a price target.</div><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"separate",borderSpacing:4,fontSize:10}}><thead><tr><th style={{padding:6,color:C.textDim}}>WACC \ g</th>{[-0.5,0,0.5].map(function(x){return <th key={x} style={{padding:6,color:C.textDim,textAlign:"right"}}>{(a.terminalGrowth+x).toFixed(1)}%</th>})}</tr></thead><tbody>{[-1,0,1].map(function(wx){var ww=a.wacc+wx;return <tr key={wx}><td style={{padding:7,fontFamily:font,color:C.textDim}}>{ww.toFixed(1)}%</td>{[-0.5,0,0.5].map(function(gx){var w=ww/100,g=(a.terminalGrowth+gx)/100,pt=null;if(forecast.length&&w>g&&company.shares){var pv=0;forecast.forEach(function(f,i){pv+=f.ufcf/Math.pow(1+w,i+1)});var tv=forecast[4].ufcf*(1+g)/(w-g);var ev=pv+tv/Math.pow(1+w,5);var eq=ev-(Number(company.debt)||0)+(Number(company.cash)||0);pt=eq/Number(company.shares);}var base=wx===0&&gx===0;return <td key={gx} style={{padding:10,border:"1px solid "+(base?C.blue+"77":C.border),borderRadius:5,textAlign:"right",fontFamily:font,background:base?C.blue+"18":C.cardAlt,color:base?C.cyan:C.text}}>{pt?"$"+pt.toFixed(2):"—"}</td>})}</tr>})}</tbody></table></div></Card>
         </div>
       </>)}
     </>}
@@ -5345,9 +4196,9 @@ function FinancialsTabView({ d }) {
 }
 
 function PortfolioTabView({ d }) {
-  var _portfolios = useState([{id:"claude",name:"The Claude Portfolio",holdings:PORTFOLIO_HOLDINGS,inception:"2026-04-01",cash:3000}]);
+  var _portfolios = useState([{id:"model",name:"Model Portfolio",holdings:PORTFOLIO_HOLDINGS,inception:"2026-04-01",cash:3000}]);
   var portfolios = _portfolios[0], setPortfolios = _portfolios[1];
-  var _activePf = useState("claude");
+  var _activePf = useState("model");
   var activePf = _activePf[0], setActivePf = _activePf[1];
   var _liveData = useState({});
   var liveData = _liveData[0], setLiveData = _liveData[1];
@@ -5387,10 +4238,10 @@ function PortfolioTabView({ d }) {
   var merged = pf.holdings.map(function(h) {
     var d = liveData[h.ticker];
     var price = d ? d.price : null;
-    var value = price ? price * h.qty : h.weight/100*50000;
+    var value = price != null && isFinite(Number(price)) ? Number(price) * h.qty : null;
     var costTotal = h.costBasis * h.qty;
-    var gainLoss = price ? (price - h.costBasis) * h.qty : 0;
-    var gainPct = price && h.costBasis ? ((price/h.costBasis-1)*100) : 0;
+    var gainLoss = price != null && h.costBasis!=null ? (price - h.costBasis) * h.qty : null;
+    var gainPct = price != null && h.costBasis ? ((price/h.costBasis-1)*100) : null;
     return { ...h, price:price, value:value, costTotal:costTotal, gainLoss:gainLoss, gainPct:gainPct, trend:d?d.trend:"—", rsi:d?d.rsi:null, ma50:d?d.ma50:null, ma200:d?d.ma200:null };
   });
 
@@ -5402,9 +4253,13 @@ function PortfolioTabView({ d }) {
   });
 
   // Summary
-  var totalValue = merged.reduce(function(s,h){return s+(h.value||0)},0) + (pf.cash||0);
-  var totalGainLoss = merged.reduce(function(s,h){return s+(h.gainLoss||0)},0);
-  var totalGainPct = totalValue > 0 ? ((totalValue - 50000)/50000*100) : 0;
+  var pricedHoldings = merged.filter(function(h){return h.price!=null&&h.value!=null;});
+  var totalValue = pricedHoldings.reduce(function(s,h){return s+Number(h.value||0)},0) + (pf.cash||0);
+  var gainRows = pricedHoldings.filter(function(h){return h.gainLoss!=null&&h.costBasis!=null&&Number(h.costBasis)>0;});
+  var totalGainLoss = gainRows.reduce(function(s,h){return s+Number(h.gainLoss)},0);
+  var totalCostBasis = gainRows.reduce(function(s,h){return s+Number(h.costBasis)*Number(h.qty||0)},0);
+  var totalGainPct = gainRows.length&&totalCostBasis>0 ? totalGainLoss/totalCostBasis*100 : null;
+  var priceCoverage = merged.length ? Math.round(pricedHoldings.length/merged.length*100) : 0;
   var holdingCount = merged.length;
   var coreCount = merged.filter(function(h){return h.sleeve==="Core"}).length;
   var satCount = merged.filter(function(h){return h.sleeve!=="Core"}).length;
@@ -5454,17 +4309,21 @@ function PortfolioTabView({ d }) {
       if (parts.length < 1 || !parts[tickerIdx]) return;
       var ticker = parts[tickerIdx].toUpperCase();
       if (!ticker || ticker.length > 10) return;
+      var qtyVal=qtyIdx>=0?parseFloat(parts[qtyIdx]):NaN;
+      var costVal=costIdx>=0?parseFloat(parts[costIdx]):NaN;
+      if(!isFinite(qtyVal)||qtyVal<=0||!isFinite(costVal)||costVal<0) return;
+      var weightVal=weightIdx>=0?parseFloat(parts[weightIdx]):null;
       newHoldings.push({
         ticker: ticker,
         name: nameIdx>=0 && parts[nameIdx] ? parts[nameIdx] : ticker,
         sector: sectorIdx>=0 && parts[sectorIdx] ? parts[sectorIdx] : "Unknown",
-        weight: weightIdx>=0 ? (parseFloat(parts[weightIdx])||5) : 5,
-        qty: qtyIdx>=0 ? (parseInt(parts[qtyIdx])||1) : 1,
+        weight: isFinite(weightVal)?weightVal:0,
+        qty: qtyVal,
         sleeve: sleeveIdx>=0 && parts[sleeveIdx] ? parts[sleeveIdx] : "Core",
-        cap: capIdx>=0 && parts[capIdx] ? parts[capIdx] : "Large",
+        cap: capIdx>=0 && parts[capIdx] ? parts[capIdx] : "Unknown",
         assetClass: assetIdx>=0 && parts[assetIdx] ? parts[assetIdx] : "Equity",
         themes: themeIdx>=0 && parts[themeIdx] ? parts[themeIdx].split(";").filter(Boolean) : [],
-        costBasis: costIdx>=0 ? (parseFloat(parts[costIdx])||0) : 0,
+        costBasis: costVal,
       });
     });
     if (newHoldings.length > 0) {
@@ -5506,12 +4365,8 @@ function PortfolioTabView({ d }) {
         </div>
         <div style={{ display:"flex", gap:6 }}>
           <button onClick={function(){setShowUpload(!showUpload)}} style={{ background:C.blue, border:"none", borderRadius:6, color:C.text, padding:"6px 12px", fontSize:10, fontWeight:700, cursor:"pointer" }}>↑ Upload CSV</button>
-          <button style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, color:C.textMid, padding:"6px 12px", fontSize:10, fontWeight:700, cursor:"pointer" }}>⇄ Import Transactions</button>
           <button onClick={refreshPrices} style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, color:C.textMid, padding:"6px 12px", fontSize:10, fontWeight:700, cursor:"pointer" }}>⟳ Refresh Prices</button>
-          <button style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, color:C.textMid, padding:"6px 12px", fontSize:10, fontWeight:700, cursor:"pointer" }}>📂 Open</button>
           <button onClick={function(){setShowNewPf(!showNewPf)}} style={{ background:C.green+"22", border:"1px solid "+C.green+"44", borderRadius:6, color:C.green, padding:"6px 12px", fontSize:10, fontWeight:700, cursor:"pointer" }}>🏦 New Portfolio</button>
-          <button style={{ background:C.blue+"22", border:"1px solid "+C.blue+"44", borderRadius:6, color:C.blue, padding:"6px 12px", fontSize:10, fontWeight:700, cursor:"pointer" }}>💾 Save</button>
-          <button style={{ background:C.red+"22", border:"1px solid "+C.red+"44", borderRadius:6, color:C.red, padding:"6px 12px", fontSize:10, fontWeight:700, cursor:"pointer" }}>🗑 Clear All</button>
         </div>
       </div>
 
@@ -5539,7 +4394,7 @@ function PortfolioTabView({ d }) {
       {showUpload && (
         <Card>
           <div style={{ fontSize:14, fontWeight:700, marginBottom:4 }}>↑ Upload CSV</div>
-          <div style={{ fontSize:10, color:C.textDim, marginBottom:10 }}>Upload a .csv file or paste CSV data below. Minimum columns: ticker, qty, costBasis. Optional: name, sector, weight, sleeve, cap, assetClass, themes (semicolon-separated).</div>
+          <div style={{ fontSize:10, color:C.textDim, marginBottom:10 }}>Upload a .csv file or paste CSV data below. A header row is strongly recommended. Required economic fields: ticker, qty, costBasis. Rows missing valid quantity or cost basis are skipped. Optional: name, sector, weight, sleeve, cap, assetClass, themes (semicolon-separated).</div>
 
           {/* File drop zone */}
           <div
@@ -5594,7 +4449,7 @@ function PortfolioTabView({ d }) {
           })()}
 
           <div style={{ display:"flex", gap:8, marginTop:10, alignItems:"center" }}>
-            <button onClick={importCSV} disabled={!csvText.trim()} style={{ background:csvText.trim()?C.blue:C.border, border:"none", borderRadius:6, color:csvText.trim()?C.text:C.textDim, padding:"8px 18px", fontSize:11, fontWeight:700, cursor:csvText.trim()?"pointer":"default" }}>Import {csvText.trim() ? csvText.trim().split("\n").length-1+" holdings" : ""}</button>
+            <button onClick={importCSV} disabled={!csvText.trim()} style={{ background:csvText.trim()?C.blue:C.border, border:"none", borderRadius:6, color:csvText.trim()?C.text:C.textDim, padding:"8px 18px", fontSize:11, fontWeight:700, cursor:csvText.trim()?"pointer":"default" }}>Import CSV</button>
             <button onClick={function(){setCsvText("");setShowUpload(false)}} style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, color:C.textMid, padding:"8px 14px", fontSize:11, cursor:"pointer" }}>Cancel</button>
             {csvText.trim() && <button onClick={function(){setCsvText("")}} style={{ background:"transparent", border:"none", color:C.red, fontSize:10, cursor:"pointer" }}>Clear</button>}
           </div>
@@ -5613,16 +4468,17 @@ function PortfolioTabView({ d }) {
       {/* SUMMARY CARDS */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
         <Card style={{ padding:"14px 16px" }}>
-          <div style={{ fontSize:9, color:C.textDim, letterSpacing:1, marginBottom:6 }}>TOTAL VALUE</div>
+          <div style={{ fontSize:9, color:C.textDim, letterSpacing:1, marginBottom:6 }}>CONNECTED VALUE + CASH</div>
           <div style={{ fontSize:26, fontWeight:700, fontFamily:font }}>${totalValue.toLocaleString(undefined,{maximumFractionDigits:2})}</div>
+          <div style={{fontSize:9,color:C.textDim,marginTop:2}}>{priceCoverage}% connected-price coverage</div>
         </Card>
         <Card style={{ padding:"14px 16px" }}>
-          <div style={{ fontSize:9, color:C.textDim, letterSpacing:1, marginBottom:6 }}>TOTAL GAIN/LOSS</div>
+          <div style={{ fontSize:9, color:C.textDim, letterSpacing:1, marginBottom:6 }}>CONNECTED GAIN/LOSS</div>
           <div style={{ display:"flex", alignItems:"center", gap:8 }}>
             <span style={{ fontSize:12 }}>📈</span>
-            <span style={{ fontSize:26, fontWeight:700, fontFamily:font, color:totalGainLoss>=0?C.green:C.red }}>{totalGainLoss>=0?"+":""}${Math.abs(totalGainLoss).toLocaleString(undefined,{maximumFractionDigits:2})}</span>
+            <span style={{ fontSize:26, fontWeight:700, fontFamily:font, color:gainRows.length?(totalGainLoss>=0?C.green:C.red):C.textDim }}>{gainRows.length?((totalGainLoss>=0?"+":"-")+"$"+Math.abs(totalGainLoss).toLocaleString(undefined,{maximumFractionDigits:2})):"—"}</span>
           </div>
-          <div style={{ fontSize:11, color:totalGainPct>=0?C.green:C.red, marginTop:2 }}>{totalGainPct>=0?"+":""}{totalGainPct.toFixed(2)}%</div>
+          <div style={{ fontSize:11, color:totalGainPct>=0?C.green:C.red, marginTop:2 }}>{totalGainPct==null?"—":(totalGainPct>=0?"+":"")+totalGainPct.toFixed(2)+"% since cost basis"}</div>
         </Card>
         <Card style={{ padding:"14px 16px" }}>
           <div style={{ fontSize:9, color:C.textDim, letterSpacing:1, marginBottom:6 }}>HOLDINGS</div>
@@ -5632,61 +4488,34 @@ function PortfolioTabView({ d }) {
         </Card>
       </div>
 
-      {/* PORTFOLIO PERFORMANCE */}
+      {/* COST-BASIS SNAPSHOT */}
       <Card>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-            <span style={{ fontSize:13, fontWeight:700 }}>📈 Portfolio Performance</span>
-            {(function(){
-              var rets = merged.filter(function(h){return h.gainPct}).map(function(h){return h.gainPct/100});
-              var avg = rets.length>0?rets.reduce(function(s,r){return s+r},0)/rets.length:0;
-              var stdDev = rets.length>1?Math.sqrt(rets.reduce(function(s,r){return s+(r-avg)*(r-avg)},0)/(rets.length-1)):0.01;
-              var downside = rets.filter(function(r){return r<0});
-              var dsDev = downside.length>0?Math.sqrt(downside.reduce(function(s,r){return s+r*r},0)/downside.length):0.01;
-              var sharpe = stdDev>0?+(avg/stdDev).toFixed(2):0;
-              var sortino = dsDev>0?+(avg/dsDev).toFixed(2):0;
-              var rating = sortino>2?"Excellent":sortino>1?"Good":sortino>0.5?"Moderate":"Poor";
-              var ratingColor = sortino>2?C.green:sortino>1?C.green:sortino>0.5?C.orange:C.red;
-              return [
-                <span key="sh" style={{ fontSize:10, color:C.textDim }}>Sharpe: <span style={{ color:sharpe>1?C.green:sharpe>0.5?C.orange:C.red, fontWeight:700 }}>{sharpe}</span></span>,
-                <span key="so" style={{ fontSize:10, color:C.textDim }}>Sortino: <span style={{ color:sortino>1?C.green:sortino>0.5?C.orange:C.red, fontWeight:700 }}>{sortino}</span></span>,
-                <Badge key="rt" label={rating} color={ratingColor} />,
-              ];
-            })()}
-          </div>
-        </div>
-        <div style={{ display:"flex", gap:8, marginBottom:12 }}>
-          {[{p:"6M",ret:totalGainPct,sp:"-1.3"},{p:"1Y",ret:totalGainPct,sp:"+13.5"},{p:"3Y",ret:totalGainPct,sp:"+39.5"},{p:"5Y",ret:totalGainPct,sp:"+59.8"},{p:"10Y",ret:totalGainPct,sp:"+221.9"}].map(function(t){
-            return <div key={t.p} style={{ background:C.cardAlt, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", textAlign:"center", minWidth:60 }}>
-              <div style={{ fontSize:9, color:C.textDim }}>{t.p}</div>
-              <div style={{ fontSize:12, fontWeight:700, color:C.green }}>+{t.ret.toFixed(1)}%</div>
-              <div style={{ fontSize:8, color:C.textDim }}>S&P {t.sp}%</div>
-            </div>;
-          })}
-        </div>
-        <div style={{ background:C.cardAlt, borderRadius:6, padding:8, height:180 }}>
-          <svg width="100%" height="160" viewBox="0 0 800 160" preserveAspectRatio="none" style={{ display:"block" }}>
-            <line x1="0" y1="100" x2="800" y2="100" stroke={C.textDim} strokeWidth="0.5" strokeDasharray="4,4" opacity="0.3" />
-            <text x="5" y="12" fill={C.textDim} fontSize="8">+{Math.max(1,Math.abs(totalGainPct*1.2)).toFixed(0)}%</text>
-            <text x="5" y="98" fill={C.textDim} fontSize="8">+0%</text>
-            {(function(){
-              // Generate portfolio line from individual holding returns
-              var pts = merged.map(function(h,i){
-                var x = (i / Math.max(1, merged.length-1)) * 800;
-                var cumReturn = h.gainPct || 0;
-                var y = 100 - (cumReturn / Math.max(1, Math.abs(totalGainPct)*1.5)) * 80;
-                return x.toFixed(0)+","+Math.max(5,Math.min(155,y)).toFixed(0);
-              }).join(" ");
-              return <polyline points={pts} fill="none" stroke={C.cyan} strokeWidth="2" />;
-            })()}
-            <polyline points="0,100 80,102 160,98 240,100 320,103 400,100 480,97 560,95 640,98 720,96 800,100" fill="none" stroke={C.red} strokeWidth="1.5" strokeDasharray="4,2" opacity="0.6" />
-            <text x="700" y="38" fill={C.cyan} fontSize="9">Portfolio</text>
-            <text x="700" y="96" fill={C.red} fontSize="9">S&P 500</text>
-          </svg>
-          <div style={{ display:"flex", justifyContent:"space-between", fontSize:8, color:C.textDim, marginTop:2 }}>
-            <span>Apr 25</span><span>Jun 25</span><span>Aug 25</span><span>Oct 25</span><span>Dec 25</span><span>Feb 26</span><span>Apr 26</span>
-          </div>
-        </div>
+        {(function(){
+          var valid=merged.filter(function(h){return h.price!=null&&h.qty!=null&&h.costBasis!=null;});
+          var totalCost=valid.reduce(function(a,h){return a+Number(h.costBasis)*Number(h.qty)},0);
+          var currentMV=valid.reduce(function(a,h){return a+Number(h.price)*Number(h.qty)},0);
+          var gl=currentMV-totalCost;
+          var glPct=totalCost>0?gl/totalCost*100:null;
+          var winners=valid.filter(function(h){return Number(h.price)>=Number(h.costBasis)}).length;
+          var losers=valid.length-winners;
+          var best=valid.slice().sort(function(a,b){return (b.gainPct||0)-(a.gainPct||0)})[0]||null;
+          var worst=valid.slice().sort(function(a,b){return (a.gainPct||0)-(b.gainPct||0)})[0]||null;
+          return <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:12}}><div><div style={{fontSize:13,fontWeight:800}}>🧾 Cost-Basis Snapshot</div><div style={{fontSize:9,color:C.textDim,marginTop:3}}>Current market values compared with the sample holdings' fixed cost bases. This is not a time-period performance series.</div></div><Badge label="COST BASIS" color={C.cyan}/></div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(6,minmax(0,1fr))",gap:8}}>
+              {[
+                {l:"INVESTED COST",v:totalCost?"$"+totalCost.toLocaleString(undefined,{maximumFractionDigits:0}):"—",c:C.text},
+                {l:"CURRENT MARKET VALUE",v:currentMV?"$"+currentMV.toLocaleString(undefined,{maximumFractionDigits:0}):"—",c:C.cyan},
+                {l:"SINCE-COST G/L",v:valid.length?(gl>=0?"+":"-")+"$"+Math.abs(gl).toLocaleString(undefined,{maximumFractionDigits:0}):"—",c:gl>=0?C.green:C.red},
+                {l:"SINCE-COST %",v:glPct==null?"—":(glPct>=0?"+":"")+glPct.toFixed(1)+"%",c:glPct>=0?C.green:C.red},
+                {l:"WINNERS / LOSERS",v:winners+" / "+losers,c:C.purple},
+                {l:"COVERAGE",v:valid.length+" / "+merged.length,c:C.orange}
+              ].map(function(x){return <div key={x.l} style={{background:C.cardAlt,border:"1px solid "+C.border,borderRadius:6,padding:"8px 9px"}}><div style={{fontSize:7,color:C.textDim,letterSpacing:1}}>{x.l}</div><div style={{fontFamily:font,fontSize:14,fontWeight:800,color:x.c,marginTop:4}}>{x.v}</div></div>;})}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:9}}><div style={{background:C.green+"08",border:"1px solid "+C.green+"22",borderRadius:6,padding:"8px 10px",fontSize:10}}>Best since cost basis: <b style={{color:C.cyan}}>{best?best.ticker:"—"}</b> {best&&best.gainPct!=null?((best.gainPct>=0?"+":"")+best.gainPct.toFixed(1)+"%"):""}</div><div style={{background:C.red+"08",border:"1px solid "+C.red+"22",borderRadius:6,padding:"8px 10px",fontSize:10}}>Weakest since cost basis: <b style={{color:C.cyan}}>{worst?worst.ticker:"—"}</b> {worst&&worst.gainPct!=null?((worst.gainPct>=0?"+":"")+worst.gainPct.toFixed(1)+"%"):""}</div></div>
+            <div style={{fontSize:9,color:C.textDim,lineHeight:1.6,marginTop:9}}>A true 6M/1Y return, Sharpe ratio, Sortino ratio, beta, realized volatility and maximum drawdown require dated historical portfolio valuations/returns. Those metrics are intentionally withheld until a validated portfolio equity-curve feed is connected.</div>
+          </div>;
+        })()}
       </Card>
 
       {/* FILTERS */}
@@ -5706,8 +4535,10 @@ function PortfolioTabView({ d }) {
 
       {/* HOLDINGS TABLE grouped by sleeve */}
       {sleeveGroups.filter(function(g){return g.holdings.length>0}).map(function(group){
-        var groupValue = group.holdings.reduce(function(s,h){return s+(h.value||0)},0);
-        var groupGL = group.holdings.reduce(function(s,h){return s+(h.gainLoss||0)},0);
+        var groupPriced = group.holdings.filter(function(h){return h.value!=null;});
+        var groupValue = groupPriced.reduce(function(s,h){return s+Number(h.value)},0);
+        var groupGLRows = group.holdings.filter(function(h){return h.gainLoss!=null;});
+        var groupGL = groupGLRows.reduce(function(s,h){return s+Number(h.gainLoss)},0);
         return (
           <Card key={group.name} style={{ padding:"10px 12px" }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
@@ -5717,8 +4548,8 @@ function PortfolioTabView({ d }) {
                 <span style={{ fontSize:10, color:C.textDim }}>{group.holdings.length} holdings</span>
               </div>
               <div style={{ fontSize:10, color:C.textDim }}>
-                Value: <span style={{ color:C.text, fontWeight:700, fontFamily:font }}>${groupValue.toLocaleString(undefined,{maximumFractionDigits:2})}</span>
-                <span style={{ marginLeft:8 }}>G/L: <span style={{ color:groupGL>=0?C.green:C.red, fontWeight:700, fontFamily:font }}>{groupGL>=0?"+":""}${Math.abs(groupGL).toLocaleString(undefined,{maximumFractionDigits:2})}</span></span>
+                Value: <span style={{ color:C.text, fontWeight:700, fontFamily:font }}>{groupPriced.length?"$"+groupValue.toLocaleString(undefined,{maximumFractionDigits:2}):"—"}</span>
+                <span style={{ marginLeft:8 }}>G/L: <span style={{ color:groupGLRows.length?(groupGL>=0?C.green:C.red):C.textDim, fontWeight:700, fontFamily:font }}>{groupGLRows.length?((groupGL>=0?"+":"-")+"$"+Math.abs(groupGL).toLocaleString(undefined,{maximumFractionDigits:2})):"—"}</span></span>
               </div>
             </div>
             <div style={{ overflowX:"auto" }}>
@@ -5740,9 +4571,9 @@ function PortfolioTabView({ d }) {
                       <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10 }}>{h.qty}</td>
                       <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10 }}>{h.price?"$"+h.price.toFixed(2):"—"}</td>
                       <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:C.textDim }}>${(h.costTotal||0).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-                      <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, fontWeight:600 }}>${(h.value||0).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-                      <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:h.gainLoss>=0?C.green:C.red }}>{h.gainLoss>=0?"+":""}${Math.abs(h.gainLoss||0).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-                      <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:h.gainPct>=0?C.green:C.red, fontWeight:700 }}>{h.gainPct>=0?"+":""}{(h.gainPct||0).toFixed(2)}%</td>
+                      <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, fontWeight:600 }}>{h.value!=null?"$"+Number(h.value).toLocaleString(undefined,{maximumFractionDigits:2}):"—"}</td>
+                      <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:h.gainLoss==null?C.textDim:(h.gainLoss>=0?C.green:C.red) }}>{h.gainLoss==null?"—":((h.gainLoss>=0?"+":"-")+"$"+Math.abs(Number(h.gainLoss)).toLocaleString(undefined,{maximumFractionDigits:2}))}</td>
+                      <td style={{ ...tdS, textAlign:"right", fontFamily:font, fontSize:10, color:h.gainPct==null?C.textDim:(h.gainPct>=0?C.green:C.red), fontWeight:700 }}>{h.gainPct==null?"—":((h.gainPct>=0?"+":"")+Number(h.gainPct).toFixed(2)+"%")}</td>
                       <td style={{ ...tdS, fontSize:9, color:C.textDim }}>{(h.themes||[]).join(", ")}</td>
                     </tr>;
                   })}
@@ -5768,63 +4599,8 @@ function PortfolioTabView({ d }) {
         </Card>
       )}
 
-      {/* EARNINGS CALENDAR */}
-      <Card>
-        <div style={{ fontSize:14, fontWeight:700, display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-          <span>📅</span> Earnings Calendar
-          <span style={{ fontSize:10, color:C.textDim, fontWeight:400 }}>Upcoming earnings for your holdings</span>
-        </div>
-        {(function(){
-          // Approximate earnings dates — in production this would come from an API
-          var earningsDates = {
-            AVGO:{ next:"2026-06-12", q:"Q2 FY26" },
-            MSFT:{ next:"2026-04-29", q:"Q3 FY26" },
-            LLY:{ next:"2026-05-01", q:"Q1 FY26" },
-            AMZN:{ next:"2026-05-01", q:"Q1 FY26" },
-            META:{ next:"2026-04-30", q:"Q1 FY26" },
-            GOOGL:{ next:"2026-04-29", q:"Q1 FY26" },
-            UNH:{ next:"2026-07-15", q:"Q2 FY26" },
-            NVDA:{ next:"2026-05-28", q:"Q1 FY26" },
-            VST:{ next:"2026-05-06", q:"Q1 FY26" },
-            CEG:{ next:"2026-05-08", q:"Q1 FY26" },
-            XOM:{ next:"2026-05-02", q:"Q1 FY26" },
-            PLTR:{ next:"2026-05-05", q:"Q1 FY26" },
-            FCX:{ next:"2026-07-22", q:"Q2 FY26" },
-            AU:{ next:"2026-05-09", q:"Q1 FY26" },
-            GLD:{ next:null, q:"N/A (ETF)" },
-          };
-          var now = new Date();
-          var upcoming = merged.map(function(h){
-            var ed = earningsDates[h.ticker];
-            if (!ed || !ed.next) return null;
-            var d = new Date(ed.next);
-            var daysUntil = Math.ceil((d - now) / (1000*60*60*24));
-            if (daysUntil < -7) return null;
-            return { ticker:h.ticker, name:h.name, date:ed.next, q:ed.q, days:daysUntil, weight:h.weight };
-          }).filter(Boolean).sort(function(a,b){return a.days-b.days});
-
-          return (
-            <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-              {upcoming.length === 0 && <div style={{ color:C.textDim, fontSize:11 }}>No upcoming earnings in the next 90 days</div>}
-              {upcoming.map(function(e){
-                var urgency = e.days <= 3 ? C.red : e.days <= 7 ? C.orange : e.days <= 14 ? C.yellow : C.green;
-                var label = e.days < 0 ? Math.abs(e.days)+"d ago" : e.days === 0 ? "TODAY" : e.days+"d";
-                return <div key={e.ticker} style={{ display:"grid", gridTemplateColumns:"60px 150px 90px 80px 50px 1fr", gap:8, alignItems:"center", padding:"6px 0", borderBottom:"1px solid "+C.border }}>
-                  <span style={{ fontWeight:700, color:C.cyan, fontFamily:font, fontSize:11 }}>{e.ticker}</span>
-                  <span style={{ fontSize:10, color:C.textMid }}>{e.name}</span>
-                  <span style={{ fontSize:10, color:C.textDim }}>{e.q}</span>
-                  <span style={{ fontSize:10, fontFamily:font }}>{e.date}</span>
-                  <span style={{ background:urgency+"22", color:urgency, padding:"2px 6px", borderRadius:3, fontSize:9, fontWeight:700, textAlign:"center" }}>{label}</span>
-                  <div style={{ height:4, background:C.border, borderRadius:2 }}>
-                    <div style={{ width:Math.max(3, Math.min(100, (90-e.days)/90*100))+"%", height:"100%", background:urgency, borderRadius:2 }} />
-                  </div>
-                </div>;
-              })}
-            </div>
-          );
-        })()}
-      </Card>
-
+      {/* Earnings dates intentionally live in Financials → Earnings.
+          Keeping them out of this portfolio view prevents stale hard-coded dates. */}
       {/* Cash on account */}
       <Card>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
